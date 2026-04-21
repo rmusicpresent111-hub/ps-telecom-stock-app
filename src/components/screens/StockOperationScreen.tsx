@@ -105,7 +105,7 @@ export default function StockOperationScreen() {
 
   const handleSelectSuggestion = (p: Product) => {
     setProduct(p);
-    setProductName(p.name);
+    setProductName(''); // Clear search bar for next typing
     setShowSuggestions(false);
     setPrice(String(p.sellingPrice));
     setQuantity('');
@@ -115,8 +115,8 @@ export default function StockOperationScreen() {
     setProductName(val);
     if (isSell) {
       setShowSuggestions(true);
-      // If editing away from selected product, deselect
-      if (product && val !== product.name) {
+      // If editing, deselect current product
+      if (product) {
         setProduct(null);
         setPrice('');
         setQuantity('');
