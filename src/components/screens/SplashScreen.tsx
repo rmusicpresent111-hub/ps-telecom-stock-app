@@ -16,7 +16,7 @@ const iconPositions = [
 ];
 
 export default function SplashScreen() {
-  const { navigateTo, hasSeenOnboarding } = useAppStore();
+  const { navigateTo, hasSeenTutorial, isAuthenticated } = useAppStore();
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
@@ -35,14 +35,20 @@ export default function SplashScreen() {
     }, interval);
 
     const navTimer = setTimeout(() => {
-      navigateTo(hasSeenOnboarding ? 'language' : 'welcome');
+      if (!hasSeenTutorial) {
+        navigateTo('welcome');
+      } else if (isAuthenticated) {
+        navigateTo('dashboard');
+      } else {
+        navigateTo('language');
+      }
     }, duration);
 
     return () => {
       clearInterval(timer);
       clearTimeout(navTimer);
     };
-  }, [navigateTo, hasSeenOnboarding]);
+  }, [navigateTo, hasSeenTutorial, isAuthenticated]);
 
   return (
     <div className="animated-bg min-h-screen flex flex-col items-center justify-center relative overflow-hidden">

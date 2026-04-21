@@ -27,6 +27,10 @@ interface AppState {
   hasSeenOnboarding: boolean;
   setHasSeenOnboarding: (val: boolean) => void;
 
+  // Tutorial (new welcome + tutorial flow)
+  hasSeenTutorial: boolean;
+  setHasSeenTutorial: (val: boolean) => void;
+
   // Selected Category
   selectedCategoryId: string | null;
   setSelectedCategoryId: (id: string | null) => void;
@@ -91,6 +95,10 @@ export const useAppStore = create<AppState>()(
       hasSeenOnboarding: false,
       setHasSeenOnboarding: (val) => set({ hasSeenOnboarding: val }),
 
+      // Tutorial
+      hasSeenTutorial: false,
+      setHasSeenTutorial: (val) => set({ hasSeenTutorial: val }),
+
       // Selected items
       selectedCategoryId: null,
       setSelectedCategoryId: (id) => set({ selectedCategoryId: id }),
@@ -119,6 +127,7 @@ export const useAppStore = create<AppState>()(
         language: state.language,
         theme: state.theme,
         hasSeenOnboarding: state.hasSeenOnboarding,
+        hasSeenTutorial: state.hasSeenTutorial,
         user: state.user,
         isAuthenticated: state.isAuthenticated,
         shopName: state.shopName,
