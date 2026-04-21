@@ -40,26 +40,15 @@ export default function StockOperationScreen() {
         const products = data.products || [];
         setAllProducts(products);
 
-        // If a product was pre-selected, set it
-        if (selectedProductId) {
-          const found = products.find((p: Product) => p.id === selectedProductId);
-          if (found) {
-            setProduct(found);
-            setProductName(found.name);
-            if (stockOperationType === 'SELL') {
-              setPrice(String(found.sellingPrice));
-            } else if (stockOperationType === 'STOCK_IN') {
-              setPrice(String(found.purchasePrice));
-            }
-          }
-        }
+        // Product name field stays blank always - user must type/search
+        setProductName('');
       }
     } catch {
       toast.error(t('error', language));
     } finally {
       setFetching(false);
     }
-  }, [user?.id, selectedCategoryId, selectedProductId, stockOperationType, language]);
+  }, [user?.id, selectedCategoryId, language]);
 
   useEffect(() => {
     fetchProducts();
