@@ -25,6 +25,8 @@ import HistoryScreen from '@/components/screens/HistoryScreen';
 import ProfileScreen from '@/components/screens/ProfileScreen';
 import ReportsScreen from '@/components/screens/ReportsScreen';
 import DailyBookScreen from '@/components/screens/DailyBookScreen';
+import WelcomeScreen from '@/components/screens/WelcomeScreen';
+import TutorialScreen from '@/components/screens/TutorialScreen';
 import BottomNav from '@/components/BottomNav';
 
 const screenComponents: Record<Screen, React.ComponentType> = {
@@ -49,6 +51,8 @@ const screenComponents: Record<Screen, React.ComponentType> = {
   'add-category': AddCategoryScreen,
   'daily-book': DailyBookScreen,
   invoice: DashboardScreen, // placeholder
+  welcome: WelcomeScreen,
+  tutorial: TutorialScreen,
 };
 
 const showBottomNavScreens: Screen[] = [

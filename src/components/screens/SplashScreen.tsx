@@ -26,7 +26,7 @@ export default function SplashScreen() {
     }, interval);
 
     const navTimer = setTimeout(() => {
-      navigateTo(hasSeenOnboarding ? 'language' : 'onboarding');
+      navigateTo(hasSeenOnboarding ? 'language' : 'welcome');
     }, duration);
 
     return () => {

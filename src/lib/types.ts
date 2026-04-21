@@ -1,5 +1,7 @@
 export type Screen =
   | 'splash'
+  | 'welcome'
+  | 'tutorial'
   | 'onboarding'
   | 'language'
   | 'login'

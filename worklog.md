@@ -32,3 +32,27 @@ Stage Summary:
 - Fix: Added model existence check in db.ts before reusing cached client
 - All APIs verified working: GET, POST, PUT, DELETE for cash-entries and expenses
 - Daily Book feature now fully functional
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Add premium welcome page with PS TELECOM realistic photo and 6-page tutorial
+
+Work Log:
+- Generated realistic PS TELECOM shop photo using AI image generation (768x1344 portrait)
+- Generated 6 tutorial illustrations (tutorial-1.png through tutorial-6-new.png)
+- Created WelcomeScreen component with premium design (hero image, neon branding, feature pills, CTA button)
+- Created TutorialScreen component with 6 pages (Dashboard, Products, Stock, Profit, Daily Book, Reports)
+- Updated SplashScreen to redirect to 'welcome' instead of 'onboarding' for new users
+- Updated Screen type to include 'welcome' and 'tutorial' screens
+- Updated page.tsx to register WelcomeScreen and TutorialScreen components
+- Fixed duplicate type entries in types.ts
+- Lint passes clean, dev server running on port 3000
+
+Stage Summary:
+- App flow: Splash → Welcome (premium landing) → Tutorial (6 pages) → Language → Login
+- Premium WelcomeScreen with PS TELECOM shop photo, neon glow branding, feature pills, animated background
+- 6-page TutorialScreen with swipe navigation, progress bar, accent-colored transitions, image frames with glow
+- Tutorial covers: Dashboard Overview, Product Management, Stock In/Out, Profit Tracking, Daily Book, Reports & Backup
+- Each tutorial page has trilingual support (EN/BN/HI) and unique accent color
+- All images generated and saved in /public folder
