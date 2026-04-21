@@ -159,3 +159,26 @@ Stage Summary:
 - AddCategory screen supports both photo and emoji icon selection
 - Category detail screen shows image banner with gradient overlay
 - ESLint passes with no errors
+
+---
+Task ID: 8
+Agent: Main Developer
+Task: Add Sale Overview and Stock Overview charts to home page + Category-wise Stock Value Report
+
+Work Log:
+- Updated /api/dashboard route to include saleOverview (last 7 days daily sales) and stockOverview (stock by category) data
+- Added Sale Overview section to DashboardScreen: summary cards + bar chart using recharts with ChartContainer
+- Added Stock Overview section to DashboardScreen: summary cards + donut/pie chart with legend
+- Added new `stock-value` report type to /api/reports route with category-wise stock value data, product details, and grand totals
+- Completely redesigned ReportsScreen with 4 tabs: Stock Value, Category-wise, Daily, Monthly
+- Stock Value tab shows: grand total summary cards, horizontal bar chart of category stock values, expandable category cards with product details
+- Each category card shows: selling value, quantity, product count, low stock indicator, progress bar for value share
+- Expanded category shows: purchase/selling/profit breakdown + product list with individual stock values
+- Download buttons: CSV (with full product detail export) and JSON
+- All charts use glass-card-strong styling consistent with the app theme
+
+Stage Summary:
+- Dashboard home page now shows Sale Overview (7-day bar chart) and Stock Overview (pie chart + legend) below categories
+- Reports screen has new Stock Value tab as default with category-wise stock value report
+- Reports are downloadable as CSV or JSON with full product-level details
+- Add Product screen already auto-clears fields while keeping category selected (from previous session fix)

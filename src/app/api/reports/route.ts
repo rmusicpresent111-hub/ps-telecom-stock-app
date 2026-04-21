@@ -120,6 +120,68 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ type: 'monthly', data: monthly });
     }
 
+    if (type === 'stock-value') {
+      // Category-wise stock value report
+      const categories = await db.category.findMany({
+        where: { userId },
+        include: {
+          products: {
+            select: {
+              id: true,
+              name: true,
+              quantity: true,
+              purchasePrice: true,
+              sellingPrice: true,
+              lowStockThreshold: true,
+            },
+          },
+        },
+      });
+
+      const stockValueData = categories.map((cat) => {
+        const totalQty = cat.products.reduce((sum, p) => sum + p.quantity, 0);
+        const totalPurchaseValue = cat.products.reduce((sum, p) => sum + p.quantity * p.purchasePrice, 0);
+        const totalSellingValue = cat.products.reduce((sum, p) => sum + p.quantity * p.sellingPrice, 0);
+        const totalProfit = totalSellingValue - totalPurchaseValue;
+        const lowStockCount = cat.products.filter(p => p.quantity <= p.lowStockThreshold).length;
+        const productCount = cat.products.length;
+
+        return {
+          categoryId: cat.id,
+          categoryName: cat.name,
+          categoryImage: cat.image,
+          productCount,
+          totalQty,
+          totalPurchaseValue,
+          totalSellingValue,
+          totalProfit,
+          lowStockCount,
+          products: cat.products.map(p => ({
+            id: p.id,
+            name: p.name,
+            quantity: p.quantity,
+            purchasePrice: p.purchasePrice,
+            sellingPrice: p.sellingPrice,
+            stockValue: p.quantity * p.sellingPrice,
+            purchaseValue: p.quantity * p.purchasePrice,
+            lowStock: p.quantity <= p.lowStockThreshold,
+          })),
+        };
+      }).filter(item => item.productCount > 0);
+
+      // Grand totals
+      const grandTotal = {
+        totalProducts: stockValueData.reduce((s, d) => s + d.productCount, 0),
+        totalQty: stockValueData.reduce((s, d) => s + d.totalQty, 0),
+        totalPurchaseValue: stockValueData.reduce((s, d) => s + d.totalPurchaseValue, 0),
+        totalSellingValue: stockValueData.reduce((s, d) => s + d.totalSellingValue, 0),
+        totalProfit: stockValueData.reduce((s, d) => s + d.totalProfit, 0),
+        totalLowStock: stockValueData.reduce((s, d) => s + d.lowStockCount, 0),
+      };
+
+      return NextResponse.json({ type: 'stock-value', data: stockValueData, grandTotal });
+    }
+
     if (type === 'category') {
       // Group by product category
       const categoryMap = new Map<string, {
