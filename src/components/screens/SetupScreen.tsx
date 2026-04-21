@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/store/appStore';
+import { supabase } from '@/lib/supabase';
 import {
   Database,
   CheckCircle2,
@@ -187,11 +188,33 @@ export default function SetupScreen() {
   const checkConnection = async () => {
     setChecking(true);
     try {
-      const res = await fetch('/api/setup');
-      const data = await res.json();
-      setTableStatus(data.tables as TableStatus);
+      const tables: Record<string, boolean> = {};
 
-      if (data.status === 'ready') {
+      const { error: usersError } = await supabase.from('users').select('id').limit(1);
+      tables.users = !usersError;
+
+      const { error: catError } = await supabase.from('categories').select('id').limit(1);
+      tables.categories = !catError;
+
+      const { error: prodError } = await supabase.from('products').select('id').limit(1);
+      tables.products = !prodError;
+
+      const { error: txnError } = await supabase.from('transactions').select('id').limit(1);
+      tables.transactions = !txnError;
+
+      const { error: cashError } = await supabase.from('cash_entries').select('id').limit(1);
+      tables.cash_entries = !cashError;
+
+      const { error: expError } = await supabase.from('expenses').select('id').limit(1);
+      tables.expenses = !expError;
+
+      const { error: settingsError } = await supabase.from('app_settings').select('id').limit(1);
+      tables.app_settings = !settingsError;
+
+      setTableStatus(tables as TableStatus);
+
+      const allReady = Object.values(tables).every(v => v);
+      if (allReady) {
         setStep(3);
       } else {
         setStep(2);
@@ -229,30 +252,8 @@ export default function SetupScreen() {
   const handleDirectSetup = async () => {
     if (!dbUrl.trim()) return;
     setSetupLoading(true);
-    setSetupError('');
-
-    try {
-      const res = await fetch('/api/setup/database', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          databaseUrl: dbUrl.trim(),
-          setupKey: 'ps-telecom-setup-2025',
-        }),
-      });
-
-      const data = await res.json();
-
-      if (data.success) {
-        await checkConnection();
-      } else {
-        setSetupError(data.error || 'Failed to setup database');
-      }
-    } catch {
-      setSetupError('Network error. Please try again.');
-    } finally {
-      setSetupLoading(false);
-    }
+    setSetupError('Direct database setup is not available in the mobile app. Please use the Supabase Dashboard SQL Editor to run the schema instead.');
+    setSetupLoading(false);
   };
 
   const handleContinue = () => {
