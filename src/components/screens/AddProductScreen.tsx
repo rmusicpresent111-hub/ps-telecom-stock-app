@@ -84,8 +84,19 @@ export default function AddProductScreen() {
 
       if (res?.ok) {
         toast.success(isEditing ? t('updated', language) : t('added', language));
-        setSelectedProductId(null);
-        goBack();
+        if (isEditing) {
+          setSelectedProductId(null);
+          goBack();
+        } else {
+          // Clear all fields but keep the selected category
+          setName('');
+          setQuantity('');
+          setBoxNumber('');
+          setPurchasePrice('');
+          setSellingPrice('');
+          setLowStockThreshold('5');
+          // categoryId stays the same - auto selected for next product
+        }
       } else {
         const err = await res?.json();
         toast.error(err?.error || t('error', language));
