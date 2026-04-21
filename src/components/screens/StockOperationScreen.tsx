@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Product } from '@/lib/types';
 import { motion } from 'framer-motion';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Search } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function StockOperationScreen() {
@@ -15,13 +15,17 @@ export default function StockOperationScreen() {
     selectedCategoryId,
   } = useAppStore();
 
+  const isSell = stockOperationType === 'SELL';
+
   const [product, setProduct] = useState<Product | null>(null);
   const [productName, setProductName] = useState('');
   const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
 
   const fetchProducts = useCallback(async () => {
     if (!user?.id) return;
@@ -61,8 +65,20 @@ export default function StockOperationScreen() {
     fetchProducts();
   }, [fetchProducts]);
 
-  // Auto-match product by name as user types
+  // Close suggestions on outside click
   useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (suggestionsRef.current && !suggestionsRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // For non-SELL: auto-match product by exact name
+  useEffect(() => {
+    if (isSell) return; // SELL uses suggestion tap
     if (!productName.trim()) {
       setProduct(null);
       return;
@@ -72,15 +88,41 @@ export default function StockOperationScreen() {
     );
     if (matched) {
       setProduct(matched);
-      if (stockOperationType === 'SELL') {
-        setPrice(String(matched.sellingPrice));
-      } else if (stockOperationType === 'STOCK_IN') {
+      if (stockOperationType === 'STOCK_IN') {
         setPrice(String(matched.purchasePrice));
       }
     } else {
       setProduct(null);
     }
-  }, [productName, allProducts, stockOperationType]);
+  }, [productName, allProducts, stockOperationType, isSell]);
+
+  // SELL: filtered suggestions
+  const sellSuggestions = isSell && productName.trim()
+    ? allProducts.filter(p =>
+        p.name.toLowerCase().includes(productName.toLowerCase())
+      )
+    : isSell ? allProducts : [];
+
+  const handleSelectSuggestion = (p: Product) => {
+    setProduct(p);
+    setProductName(p.name);
+    setShowSuggestions(false);
+    setPrice(String(p.sellingPrice));
+    setQuantity('');
+  };
+
+  const handleProductNameChange = (val: string) => {
+    setProductName(val);
+    if (isSell) {
+      setShowSuggestions(true);
+      // If editing away from selected product, deselect
+      if (product && val !== product.name) {
+        setProduct(null);
+        setPrice('');
+        setQuantity('');
+      }
+    }
+  };
 
   const getTitle = () => {
     switch (stockOperationType) {
@@ -175,9 +217,154 @@ export default function StockOperationScreen() {
           <div className="text-center py-12 text-white/40">{t('loading', language)}</div>
         ) : allProducts.length === 0 ? (
           <div className="text-center py-12 text-white/40">{t('noData', language)}</div>
-        ) : (
+        ) : isSell ? (
+          /* ==================== INSTANT SELL LAYOUT ==================== */
           <>
-            {/* Form */}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="glass-card-strong p-6 space-y-4"
+            >
+              {/* Step 1: Product name with suggestion dropdown */}
+              <div className="relative" ref={suggestionsRef}>
+                <label className="text-xs text-white/60 mb-1 block">{t('productName', language)}</label>
+                <div className="relative">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                  <input
+                    type="text"
+                    value={productName}
+                    onChange={(e) => handleProductNameChange(e.target.value)}
+                    onFocus={() => setShowSuggestions(true)}
+                    placeholder={t('searchProducts', language)}
+                    className="glass-input w-full pl-10 pr-4 py-3 text-sm"
+                    autoFocus
+                  />
+                </div>
+
+                {/* Suggestion dropdown */}
+                {showSuggestions && sellSuggestions.length > 0 && !product && (
+                  <div className="absolute z-50 left-0 right-0 top-full mt-1 glass-card-strong max-h-60 overflow-y-auto rounded-xl">
+                    {sellSuggestions.map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => handleSelectSuggestion(p)}
+                        className="w-full px-4 py-3 text-left text-sm flex items-center justify-between hover:bg-white/10 transition-colors border-b border-white/5 last:border-b-0"
+                      >
+                        <div className="flex-1">
+                          <span className="text-white/90">{p.name}</span>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className={`text-[10px] ${p.quantity <= p.lowStockThreshold ? 'text-orange-400' : 'text-green-400'}`}>
+                              Stock: {p.quantity}
+                            </span>
+                            <span className="text-[10px] text-cyan-400/60">₹{p.sellingPrice}</span>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* No results */}
+                {showSuggestions && productName.trim() && sellSuggestions.length === 0 && !product && (
+                  <div className="absolute z-50 left-0 right-0 top-full mt-1 glass-card-strong rounded-xl p-4 text-center">
+                    <span className="text-xs text-white/40">{t('noData', language)}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Step 2: After product selected, show Quantity & Selling Price */}
+              {product && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="space-y-4"
+                >
+                  {/* Selected product info */}
+                  <div className="glass-card p-3 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-white/90">{product.name}</p>
+                      <p className={`text-[11px] ${product.quantity <= product.lowStockThreshold ? 'text-orange-400' : 'text-green-400'}`}>
+                        Stock: {product.quantity}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setProduct(null);
+                        setProductName('');
+                        setPrice('');
+                        setQuantity('');
+                        setShowSuggestions(false);
+                      }}
+                      className="text-xs text-white/40 hover:text-white/70 px-2 py-1"
+                    >
+                      ✕ Change
+                    </button>
+                  </div>
+
+                  {/* Quantity */}
+                  <div>
+                    <label className="text-xs text-white/60 mb-1 block">{t('quantity', language)}</label>
+                    <input
+                      type="number"
+                      value={quantity}
+                      onChange={(e) => setQuantity(e.target.value)}
+                      placeholder="0"
+                      className="glass-input w-full px-4 py-3 text-sm"
+                      autoFocus
+                    />
+                  </div>
+
+                  {/* Selling Price */}
+                  <div>
+                    <label className="text-xs text-white/60 mb-1 block">{t('sellingPrice', language)}</label>
+                    <input
+                      type="number"
+                      value={price}
+                      onChange={(e) => setPrice(e.target.value)}
+                      placeholder="₹0"
+                      className="glass-input w-full px-4 py-3 text-sm"
+                    />
+                  </div>
+
+                  {/* Total preview */}
+                  {quantity && price && (
+                    <div className="pt-2 border-t border-white/10">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-white/60">Total Amount</span>
+                        <span className="text-lg font-bold" style={{ color: accent }}>
+                          ₹{(parseInt(quantity) * parseFloat(price)).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </motion.div>
+
+            {/* Confirm button */}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="mt-6"
+            >
+              <button
+                onClick={handleConfirm}
+                disabled={loading || !quantity || !product}
+                className="neon-btn-solid w-full py-3 font-semibold text-sm disabled:opacity-50"
+                style={{
+                  background: `linear-gradient(135deg, ${accent}44, ${accent}88)`,
+                  color: 'white',
+                }}
+              >
+                {loading ? t('loading', language) : t('confirm', language)}
+              </button>
+            </motion.div>
+          </>
+        ) : (
+          /* ==================== STOCK IN / STOCK OUT LAYOUT ==================== */
+          <>
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -190,7 +377,9 @@ export default function StockOperationScreen() {
                 <input
                   type="text"
                   value={productName}
-                  onChange={(e) => setProductName(e.target.value)}
+                  onChange={(e) => {
+                    setProductName(e.target.value);
+                  }}
                   placeholder={t('productName', language)}
                   className="glass-input w-full px-4 py-3 text-sm"
                   autoFocus
@@ -217,7 +406,6 @@ export default function StockOperationScreen() {
                       onChange={(e) => setQuantity(e.target.value)}
                       placeholder="0"
                       className="glass-input w-full px-4 py-3 text-sm"
-                      autoFocus
                     />
                   </div>
 
