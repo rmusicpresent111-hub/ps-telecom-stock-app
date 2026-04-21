@@ -5,8 +5,10 @@ import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { DashboardStats, Category, Product } from '@/lib/types';
 import { motion } from 'framer-motion';
-import { Search, Plus, Package, AlertTriangle, ArrowLeftRight, IndianRupee, User, ChevronRight } from 'lucide-react';
+import { Search, Plus, Package, AlertTriangle, ArrowLeftRight, IndianRupee, User, ChevronRight, TrendingUp, BarChart3 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Bar, BarChart, XAxis, YAxis, CartesianGrid, Cell, Pie, PieChart as RechartsPieChart, ResponsiveContainer } from 'recharts';
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 
 const defaultCategories = [
   { name: 'Mobile', image: '/categories/mobile.png', emoji: '📱' },
@@ -30,6 +32,43 @@ const defaultCategories = [
   { name: 'Refrigerator', image: '/categories/refrigerator.png', emoji: '❄️' },
 ];
 
+const saleChartConfig: ChartConfig = {
+  sales: {
+    label: 'Sales (₹)',
+    color: '#00f0ff',
+  },
+  quantity: {
+    label: 'Items Sold',
+    color: '#b44aff',
+  },
+};
+
+const stockChartConfig: ChartConfig = {
+  quantity: {
+    label: 'Stock Qty',
+    color: '#39ff14',
+  },
+  value: {
+    label: 'Value (₹)',
+    color: '#00f0ff',
+  },
+};
+
+const PIE_COLORS = ['#00f0ff', '#b44aff', '#39ff14', '#ff6b00', '#ff006e', '#ffd700', '#00e5ff', '#e040fb', '#76ff03', '#ff9100', '#f50057', '#ffea00', '#18ffff', '#d500f9', '#64dd17', '#ff3d00', '#c51162', '#aeea00', '#00b8d4'];
+
+interface SaleOverviewItem {
+  date: string;
+  label: string;
+  sales: number;
+  quantity: number;
+}
+
+interface StockOverviewItem {
+  category: string;
+  quantity: number;
+  value: number;
+}
+
 export default function DashboardScreen() {
   const {
     user, language, shopName, navigateTo,
@@ -39,6 +78,8 @@ export default function DashboardScreen() {
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
+  const [saleOverview, setSaleOverview] = useState<SaleOverviewItem[]>([]);
+  const [stockOverview, setStockOverview] = useState<StockOverviewItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchDashboard = useCallback(async () => {
@@ -50,6 +91,8 @@ export default function DashboardScreen() {
         const data = await res.json();
         setStats(data.stats);
         setLowStockProducts(data.lowStockProducts || []);
+        setSaleOverview(data.saleOverview || []);
+        setStockOverview(data.stockOverview || []);
         if (data.categories?.length > 0) {
           setCategories(data.categories);
         }
@@ -81,6 +124,11 @@ export default function DashboardScreen() {
   };
 
   const displayCategories = categories.length > 0 ? categories : [];
+
+  const totalSaleAmount = saleOverview.reduce((sum, d) => sum + d.sales, 0);
+  const totalSoldItems = saleOverview.reduce((sum, d) => sum + d.quantity, 0);
+  const totalStockQty = stockOverview.reduce((sum, d) => sum + d.quantity, 0);
+  const totalStockVal = stockOverview.reduce((sum, d) => sum + d.value, 0);
 
   return (
     <div className="animated-bg min-h-screen pb-24">
@@ -277,6 +325,154 @@ export default function DashboardScreen() {
               ))}
             </div>
           )}
+        </motion.div>
+
+        {/* Sale Overview Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
+          className="mt-8"
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <TrendingUp size={18} className="text-cyan-400" />
+            <h2 className="text-lg font-bold">Sale Overview</h2>
+          </div>
+
+          <div className="glass-card-strong p-4">
+            {/* Summary stats */}
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(0,240,255,0.12), rgba(0,200,212,0.05))', border: '1px solid rgba(0,240,255,0.2)' }}>
+                <p className="text-[10px] text-white/50 mb-1">7-Day Sales</p>
+                <p className="text-lg font-bold text-cyan-400">₹{totalSaleAmount.toLocaleString()}</p>
+              </div>
+              <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(180,74,255,0.12), rgba(140,50,220,0.05))', border: '1px solid rgba(180,74,255,0.2)' }}>
+                <p className="text-[10px] text-white/50 mb-1">Items Sold</p>
+                <p className="text-lg font-bold text-purple-400">{totalSoldItems}</p>
+              </div>
+            </div>
+
+            {/* Bar chart */}
+            {saleOverview.length > 0 ? (
+              <ChartContainer config={saleChartConfig} className="h-[180px] w-full">
+                <BarChart data={saleOverview} margin={{ top: 5, right: 5, left: -15, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                  <XAxis
+                    dataKey="label"
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 10 }}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 10 }}
+                    tickFormatter={(val: number) => `₹${val >= 1000 ? `${(val/1000).toFixed(0)}k` : val}`}
+                  />
+                  <ChartTooltip
+                    content={<ChartTooltipContent />}
+                  />
+                  <Bar
+                    dataKey="sales"
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={28}
+                  >
+                    {saleOverview.map((_entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={index === saleOverview.length - 1 ? '#00f0ff' : 'rgba(0,240,255,0.4)'}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ChartContainer>
+            ) : (
+              <div className="h-[120px] flex items-center justify-center">
+                <p className="text-xs text-white/30">No sales data yet</p>
+              </div>
+            )}
+          </div>
+        </motion.div>
+
+        {/* Stock Overview Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.6 }}
+          className="mt-6"
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <BarChart3 size={18} className="text-green-400" />
+            <h2 className="text-lg font-bold">Stock Overview</h2>
+          </div>
+
+          <div className="glass-card-strong p-4">
+            {/* Summary stats */}
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(57,255,20,0.12), rgba(0,200,120,0.05))', border: '1px solid rgba(57,255,20,0.2)' }}>
+                <p className="text-[10px] text-white/50 mb-1">Total Stock</p>
+                <p className="text-lg font-bold text-green-400">{totalStockQty.toLocaleString()} pcs</p>
+              </div>
+              <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(0,240,255,0.12), rgba(0,150,255,0.05))', border: '1px solid rgba(0,240,255,0.2)' }}>
+                <p className="text-[10px] text-white/50 mb-1">Stock Value</p>
+                <p className="text-lg font-bold text-cyan-400">₹{totalStockVal.toLocaleString()}</p>
+              </div>
+            </div>
+
+            {/* Pie chart for stock distribution */}
+            {stockOverview.length > 0 ? (
+              <>
+                <ChartContainer config={stockChartConfig} className="h-[200px] w-full">
+                  <RechartsPieChart>
+                    <ChartTooltip
+                      content={<ChartTooltipContent />}
+                    />
+                    <Pie
+                      data={stockOverview}
+                      dataKey="quantity"
+                      nameKey="category"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={75}
+                      innerRadius={40}
+                      strokeWidth={2}
+                      stroke="rgba(10,10,30,0.8)"
+                    >
+                      {stockOverview.map((_entry, index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={PIE_COLORS[index % PIE_COLORS.length]}
+                        />
+                      ))}
+                    </Pie>
+                  </RechartsPieChart>
+                </ChartContainer>
+
+                {/* Legend */}
+                <div className="mt-3 max-h-36 overflow-y-auto space-y-1.5">
+                  {stockOverview.map((item, index) => (
+                    <div key={item.category} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-2.5 h-2.5 rounded-sm shrink-0"
+                          style={{ backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }}
+                        />
+                        <span className="text-white/70 truncate max-w-[120px]">{item.category}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-white/50">{item.quantity} pcs</span>
+                        <span className="text-cyan-400/70 font-medium">₹{item.value.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="h-[120px] flex items-center justify-center">
+                <p className="text-xs text-white/30">No stock data yet</p>
+              </div>
+            )}
+          </div>
         </motion.div>
       </div>
     </div>

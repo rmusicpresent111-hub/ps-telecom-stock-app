@@ -119,6 +119,49 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // Sale Overview: Last 7 days daily sales
+    const todayDate = new Date();
+    const saleOverview = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(todayDate);
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' });
+
+      const dayTxns = await db.transaction.findMany({
+        where: { userId, type: 'SELL', date: dateStr },
+        select: { totalAmount: true, quantity: true },
+      });
+
+      const totalSales = dayTxns.reduce((sum, t) => sum + t.totalAmount, 0);
+      const totalQty = dayTxns.reduce((sum, t) => sum + t.quantity, 0);
+
+      saleOverview.push({
+        date: dateStr,
+        label: dayLabel,
+        sales: totalSales,
+        quantity: totalQty,
+      });
+    }
+
+    // Stock Overview: Stock quantity by category
+    const stockOverview = [];
+    for (const cat of categories) {
+      const catProducts = await db.product.findMany({
+        where: { userId, categoryId: cat.id },
+        select: { quantity: true, purchasePrice: true, sellingPrice: true },
+      });
+      const totalQty = catProducts.reduce((sum, p) => sum + p.quantity, 0);
+      const totalValue = catProducts.reduce((sum, p) => sum + p.quantity * p.sellingPrice, 0);
+      if (totalQty > 0) {
+        stockOverview.push({
+          category: cat.name,
+          quantity: totalQty,
+          value: totalValue,
+        });
+      }
+    }
+
     return NextResponse.json({
       stats: {
         totalItems,
@@ -129,6 +172,8 @@ export async function GET(request: NextRequest) {
       lowStockProducts: lowStockFiltered,
       recentTransactions,
       categories,
+      saleOverview,
+      stockOverview,
     });
   } catch (error) {
     console.error('Dashboard stats error:', error);
