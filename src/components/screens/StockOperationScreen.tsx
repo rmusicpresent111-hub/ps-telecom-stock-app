@@ -1,40 +1,54 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Product } from '@/lib/types';
 import { motion } from 'framer-motion';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Search } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function StockOperationScreen() {
   const {
     user, language, goBack,
     selectedProductId, stockOperationType,
+    selectedCategoryId,
   } = useAppStore();
 
   const [product, setProduct] = useState<Product | null>(null);
+  const [productSearch, setProductSearch] = useState('');
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
 
-  const fetchProduct = useCallback(async () => {
-    if (!user?.id || !selectedProductId) return;
+  const fetchProducts = useCallback(async () => {
+    if (!user?.id) return;
     try {
       setFetching(true);
-      const res = await fetch(`/api/products?userId=${user.id}`);
+      const url = selectedCategoryId
+        ? `/api/products?userId=${user.id}&categoryId=${selectedCategoryId}`
+        : `/api/products?userId=${user.id}`;
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
-        const found = data.products?.find((p: Product) => p.id === selectedProductId);
-        if (found) {
-          setProduct(found);
-          // Pre-fill price based on operation type
-          if (stockOperationType === 'SELL') {
-            setPrice(String(found.sellingPrice));
-          } else if (stockOperationType === 'STOCK_IN') {
-            setPrice(String(found.purchasePrice));
+        const products = data.products || [];
+        setAllProducts(products);
+
+        // If a product was pre-selected, set it
+        if (selectedProductId) {
+          const found = products.find((p: Product) => p.id === selectedProductId);
+          if (found) {
+            setProduct(found);
+            setProductSearch(found.name);
+            if (stockOperationType === 'SELL') {
+              setPrice(String(found.sellingPrice));
+            } else if (stockOperationType === 'STOCK_IN') {
+              setPrice(String(found.purchasePrice));
+            }
           }
         }
       }
@@ -43,11 +57,40 @@ export default function StockOperationScreen() {
     } finally {
       setFetching(false);
     }
-  }, [user?.id, selectedProductId, language, stockOperationType]);
+  }, [user?.id, selectedCategoryId, selectedProductId, stockOperationType, language]);
 
   useEffect(() => {
-    fetchProduct();
-  }, [fetchProduct]);
+    fetchProducts();
+  }, [fetchProducts]);
+
+  // Close suggestions on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (suggestionsRef.current && !suggestionsRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredSuggestions = productSearch.trim()
+    ? allProducts.filter(p =>
+        p.name.toLowerCase().includes(productSearch.toLowerCase())
+      )
+    : allProducts;
+
+  const handleSelectProduct = (p: Product) => {
+    setProduct(p);
+    setProductSearch(p.name);
+    setShowSuggestions(false);
+    // Pre-fill price based on operation type
+    if (stockOperationType === 'SELL') {
+      setPrice(String(p.sellingPrice));
+    } else if (stockOperationType === 'STOCK_IN') {
+      setPrice(String(p.purchasePrice));
+    }
+  };
 
   const getTitle = () => {
     switch (stockOperationType) {
@@ -77,7 +120,7 @@ export default function StockOperationScreen() {
   };
 
   const handleConfirm = async () => {
-    if (!selectedProductId || !user?.id || !stockOperationType || !quantity) {
+    if (!product?.id || !user?.id || !stockOperationType || !quantity) {
       toast.error(t('error', language));
       return;
     }
@@ -98,7 +141,7 @@ export default function StockOperationScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: stockOperationType,
-          productId: selectedProductId,
+          productId: product.id,
           quantity: qty,
           unitPrice,
           totalAmount,
@@ -140,7 +183,7 @@ export default function StockOperationScreen() {
 
         {fetching ? (
           <div className="text-center py-12 text-white/40">{t('loading', language)}</div>
-        ) : !product ? (
+        ) : allProducts.length === 0 ? (
           <div className="text-center py-12 text-white/40">{t('noData', language)}</div>
         ) : (
           <>
@@ -151,23 +194,88 @@ export default function StockOperationScreen() {
               transition={{ delay: 0.1 }}
               className="glass-card-strong p-6 space-y-4"
             >
-              {/* Product name (display only) */}
-              <div>
+              {/* Product name with search/suggest */}
+              <div className="relative" ref={suggestionsRef}>
                 <label className="text-xs text-white/60 mb-1 block">{t('productName', language)}</label>
-                <div className="glass-input w-full px-4 py-3 text-sm opacity-70">
-                  {product.name}
+                <div className="relative">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+                  <input
+                    type="text"
+                    value={productSearch}
+                    onChange={(e) => {
+                      setProductSearch(e.target.value);
+                      setShowSuggestions(true);
+                      // Clear selected product if search text doesn't match
+                      if (product && e.target.value !== product.name) {
+                        setProduct(null);
+                      }
+                    }}
+                    onFocus={() => setShowSuggestions(true)}
+                    placeholder={t('searchProducts', language)}
+                    className="glass-input w-full pl-10 pr-4 py-3 text-sm"
+                    autoFocus
+                  />
                 </div>
+
+                {/* Suggestions dropdown */}
+                {showSuggestions && filteredSuggestions.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 top-full mt-1 glass-card-strong max-h-48 overflow-y-auto rounded-xl">
+                    {filteredSuggestions.map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => handleSelectProduct(p)}
+                        className="w-full px-4 py-3 text-left text-sm flex items-center justify-between hover:bg-white/10 transition-colors border-b border-white/5 last:border-b-0"
+                      >
+                        <div className="flex-1">
+                          <span className="text-white/90">{p.name}</span>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className={`text-[10px] ${p.quantity <= p.lowStockThreshold ? 'text-orange-400' : 'text-green-400'}`}>
+                              Qty: {p.quantity}
+                            </span>
+                            <span className="text-[10px] text-white/40">₹{p.sellingPrice}</span>
+                          </div>
+                        </div>
+                        {product?.id === p.id && (
+                          <span className="text-cyan-400 text-xs font-semibold">✓</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* No results message */}
+                {showSuggestions && productSearch.trim() && filteredSuggestions.length === 0 && (
+                  <div className="absolute z-50 left-0 right-0 top-full mt-1 glass-card-strong rounded-xl p-4 text-center">
+                    <span className="text-xs text-white/40">{t('noData', language)}</span>
+                  </div>
+                )}
               </div>
 
-              {/* Current quantity (display) */}
-              <div>
-                <label className="text-xs text-white/60 mb-1 block">{t('quantity', language)} (Current)</label>
-                <div className={`glass-input w-full px-4 py-3 text-sm font-semibold ${
-                  product.quantity <= product.lowStockThreshold ? 'text-orange-400' : 'text-green-400'
-                }`}>
-                  {product.quantity}
-                </div>
-              </div>
+              {/* Selected product info */}
+              {product && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="glass-card p-3 space-y-1"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-white/50">{t('quantity', language)} (Current)</span>
+                    <span className={`text-sm font-bold ${
+                      product.quantity <= product.lowStockThreshold ? 'text-orange-400' : 'text-green-400'
+                    }`}>
+                      {product.quantity}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-white/50">{t('purchasePrice', language)}</span>
+                    <span className="text-xs text-white/70">₹{product.purchasePrice}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-white/50">{t('sellingPrice', language)}</span>
+                    <span className="text-xs text-cyan-400">₹{product.sellingPrice}</span>
+                  </div>
+                </motion.div>
+              )}
 
               {/* Quantity input */}
               <div>
@@ -178,7 +286,7 @@ export default function StockOperationScreen() {
                   onChange={(e) => setQuantity(e.target.value)}
                   placeholder="0"
                   className="glass-input w-full px-4 py-3 text-sm"
-                  autoFocus
+                  disabled={!product}
                 />
               </div>
 
@@ -191,11 +299,12 @@ export default function StockOperationScreen() {
                   onChange={(e) => setPrice(e.target.value)}
                   placeholder="₹0"
                   className="glass-input w-full px-4 py-3 text-sm"
+                  disabled={!product}
                 />
               </div>
 
               {/* Total preview */}
-              {quantity && price && (
+              {product && quantity && price && (
                 <div className="pt-2 border-t border-white/10">
                   <div className="flex justify-between items-center">
                     <span className="text-xs text-white/60">Total Amount</span>
@@ -216,7 +325,7 @@ export default function StockOperationScreen() {
             >
               <button
                 onClick={handleConfirm}
-                disabled={loading || !quantity}
+                disabled={loading || !quantity || !product}
                 className="neon-btn-solid w-full py-3 font-semibold text-sm disabled:opacity-50"
                 style={accent !== '#00f0ff' ? {
                   background: `linear-gradient(135deg, ${accent}44, ${accent}88)`,
