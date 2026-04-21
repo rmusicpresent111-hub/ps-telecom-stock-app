@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { supabase, generateId, toCamelCase, toSnakeCase } from '@/lib/supabase';
 import { hashPassword, verifyPassword } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
@@ -14,16 +14,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const user = await db.user.findUnique({ where: { email } });
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .single();
 
-    if (!user) {
+    if (error || !data) {
       return NextResponse.json(
         { error: 'Invalid email or password' },
         { status: 401 }
       );
     }
 
-    if (!verifyPassword(password, user.password)) {
+    const user = toCamelCase(data);
+
+    if (!verifyPassword(password, user.password as string)) {
       return NextResponse.json(
         { error: 'Invalid email or password' },
         { status: 401 }
@@ -53,9 +59,13 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const existingUser = await db.user.findUnique({ where: { email } });
+    const { data: existingData, error: lookupError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .single();
 
-    if (existingUser) {
+    if (existingData) {
       return NextResponse.json(
         { error: 'Email already exists' },
         { status: 409 }
@@ -64,15 +74,32 @@ export async function PUT(request: NextRequest) {
 
     const hashedPassword = hashPassword(password);
 
-    const user = await db.user.create({
-      data: {
-        name,
-        email,
-        password: hashedPassword,
-        shopName: shopName || 'PS TELECOM',
-      },
+    const now = new Date().toISOString();
+    const snakeCaseData = toSnakeCase({
+      id: generateId(),
+      name,
+      email,
+      password: hashedPassword,
+      shopName: shopName || 'PS TELECOM',
+      createdAt: now,
+      updatedAt: now,
     });
 
+    const { data, error } = await supabase
+      .from('users')
+      .insert(snakeCaseData)
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('Supabase insert error:', error);
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
+    }
+
+    const user = toCamelCase(data);
     const { password: _, ...userWithoutPassword } = user;
     return NextResponse.json({ user: userWithoutPassword }, { status: 201 });
   } catch (error) {

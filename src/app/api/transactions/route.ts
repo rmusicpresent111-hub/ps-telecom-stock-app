@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
-import { Prisma } from '@prisma/client';
+import { supabase, generateId, toCamelCase, toSnakeCase } from '@/lib/supabase';
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,34 +18,49 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const where: Prisma.TransactionWhereInput = { userId };
+    let query = supabase
+      .from('transactions')
+      .select('*, product:products(*)')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
 
     if (type) {
-      where.type = type;
+      query = query.eq('type', type);
     }
 
     if (productId) {
-      where.productId = productId;
+      query = query.eq('product_id', productId);
     }
 
     if (date) {
-      where.date = date;
+      query = query.eq('date', date);
     }
 
-    if (from || to) {
-      where.date = {};
-      if (from) {
-        (where.date as Prisma.StringFilter)['gte'] = from;
-      }
-      if (to) {
-        (where.date as Prisma.StringFilter)['lte'] = to;
-      }
+    if (from) {
+      query = query.gte('date', from);
     }
 
-    const transactions = await db.transaction.findMany({
-      where,
-      include: { product: true },
-      orderBy: { createdAt: 'desc' },
+    if (to) {
+      query = query.lte('date', to);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Supabase query error:', error);
+      return NextResponse.json(
+        { error: 'Failed to fetch transactions' },
+        { status: 500 }
+      );
+    }
+
+    const transactions = data.map((row: Record<string, unknown>) => {
+      const { product, ...transactionFields } = row as Record<string, unknown>;
+      const camelTransaction = toCamelCase(transactionFields);
+      if (product && typeof product === 'object') {
+        camelTransaction.product = toCamelCase(product as Record<string, unknown>);
+      }
+      return camelTransaction;
     });
 
     return NextResponse.json({ transactions });
@@ -78,29 +92,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Use Prisma interactive transaction for atomicity
-    const result = await db.$transaction(async (tx) => {
-      const product = await tx.product.findUnique({ where: { id: productId } });
+    // Step 1: Fetch the product
+    const { data: product, error: productError } = await supabase
+      .from('products')
+      .select('*')
+      .eq('id', productId)
+      .single();
 
-      if (!product) {
-        throw new Error('Product not found');
-      }
+    if (productError || !product) {
+      return NextResponse.json(
+        { error: 'Product not found' },
+        { status: 400 }
+      );
+    }
 
-      // Check if enough stock for STOCK_OUT or SELL
-      if ((type === 'STOCK_OUT' || type === 'SELL') && product.quantity < quantity) {
-        throw new Error('Insufficient stock');
-      }
+    // Step 2: Check stock if STOCK_OUT or SELL
+    if ((type === 'STOCK_OUT' || type === 'SELL') && product.quantity < quantity) {
+      return NextResponse.json(
+        { error: 'Insufficient stock' },
+        { status: 400 }
+      );
+    }
 
-      // Update product quantity
-      const quantityChange = type === 'STOCK_IN' ? quantity : -quantity;
-      const updatedProduct = await tx.product.update({
-        where: { id: productId },
-        data: { quantity: product.quantity + quantityChange },
-      });
+    // Step 3: Insert the transaction
+    const transactionId = generateId();
+    const quantityChange = type === 'STOCK_IN' ? quantity : -quantity;
 
-      // Create transaction record
-      const transaction = await tx.transaction.create({
-        data: {
+    const { data: newTransaction, error: insertError } = await supabase
+      .from('transactions')
+      .insert(
+        toSnakeCase({
+          id: transactionId,
           type,
           productId,
           quantity,
@@ -108,14 +130,42 @@ export async function POST(request: NextRequest) {
           totalAmount: totalAmount ?? 0,
           date: date || new Date().toISOString().split('T')[0],
           userId,
-        },
-        include: { product: true },
-      });
+        })
+      )
+      .select('*, product:products(*)')
+      .single();
 
-      return { transaction, product: updatedProduct };
-    });
+    if (insertError) {
+      console.error('Insert transaction error:', insertError);
+      return NextResponse.json(
+        { error: 'Failed to create transaction' },
+        { status: 500 }
+      );
+    }
 
-    return NextResponse.json({ transaction: result.transaction }, { status: 201 });
+    // Step 4: Update the product quantity
+    const { error: updateError } = await supabase
+      .from('products')
+      .update({ quantity: product.quantity + quantityChange })
+      .eq('id', productId);
+
+    if (updateError) {
+      // Attempt to roll back the inserted transaction
+      console.error('Update product quantity error:', updateError);
+      await supabase.from('transactions').delete().eq('id', transactionId);
+      return NextResponse.json(
+        { error: 'Failed to update product stock' },
+        { status: 500 }
+      );
+    }
+
+    const camelTransaction = toCamelCase(newTransaction as Record<string, unknown>);
+    const { product: productData, ...transactionFields } = camelTransaction as Record<string, unknown>;
+    if (productData && typeof productData === 'object') {
+      transactionFields.product = toCamelCase(productData as Record<string, unknown>);
+    }
+
+    return NextResponse.json({ transaction: transactionFields }, { status: 201 });
   } catch (error: unknown) {
     console.error('Create transaction error:', error);
     const message = error instanceof Error ? error.message : 'Internal server error';
@@ -136,28 +186,54 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const existing = await db.transaction.findUnique({ where: { id } });
-    if (!existing) {
+    // Find the existing transaction
+    const { data: existing, error: findError } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (findError || !existing) {
       return NextResponse.json(
         { error: 'Transaction not found' },
         { status: 404 }
       );
     }
 
+    const camelExisting = toCamelCase(existing as Record<string, unknown>);
+
     // Reverse the stock change
-    await db.$transaction(async (tx) => {
-      const product = await tx.product.findUnique({ where: { id: existing.productId } });
+    const { data: product, error: productError } = await supabase
+      .from('products')
+      .select('*')
+      .eq('id', camelExisting.productId as string)
+      .single();
 
-      if (product) {
-        const quantityChange = existing.type === 'STOCK_IN' ? -existing.quantity : existing.quantity;
-        await tx.product.update({
-          where: { id: existing.productId },
-          data: { quantity: product.quantity + quantityChange },
-        });
-      }
+    if (!productError && product) {
+      const quantityChange =
+        (camelExisting.type as string) === 'STOCK_IN'
+          ? -(camelExisting.quantity as number)
+          : (camelExisting.quantity as number);
 
-      await tx.transaction.delete({ where: { id } });
-    });
+      await supabase
+        .from('products')
+        .update({ quantity: product.quantity + quantityChange })
+        .eq('id', camelExisting.productId as string);
+    }
+
+    // Delete the transaction
+    const { error: deleteError } = await supabase
+      .from('transactions')
+      .delete()
+      .eq('id', id);
+
+    if (deleteError) {
+      console.error('Delete transaction error:', deleteError);
+      return NextResponse.json(
+        { error: 'Failed to delete transaction' },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ message: 'Transaction deleted successfully' });
   } catch (error) {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { supabase, toCamelCase, toSnakeCase } from '@/lib/supabase';
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,24 +13,51 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const categories = await db.category.findMany({
-      where: { userId },
-    });
+    const { data: categories, error: catError } = await supabase
+      .from('categories')
+      .select('*')
+      .eq('user_id', userId);
 
-    const products = await db.product.findMany({
-      where: { userId },
-    });
+    if (catError) {
+      console.error('Export backup categories error:', catError);
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
+    }
 
-    const transactions = await db.transaction.findMany({
-      where: { userId },
-    });
+    const { data: products, error: prodError } = await supabase
+      .from('products')
+      .select('*')
+      .eq('user_id', userId);
+
+    if (prodError) {
+      console.error('Export backup products error:', prodError);
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
+    }
+
+    const { data: transactions, error: txError } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('user_id', userId);
+
+    if (txError) {
+      console.error('Export backup transactions error:', txError);
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
+    }
 
     const backup = {
       exportDate: new Date().toISOString(),
       userId,
-      categories,
-      products,
-      transactions,
+      categories: (categories || []).map(toCamelCase),
+      products: (products || []).map(toCamelCase),
+      transactions: (transactions || []).map(toCamelCase),
     };
 
     return NextResponse.json(backup);
@@ -55,87 +82,145 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const user = await db.user.findUnique({ where: { id: userId } });
-    if (!user) {
+    // Verify user exists
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('id', userId)
+      .single();
+
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'User not found' },
         { status: 404 }
       );
     }
 
-    // Import data using a transaction for atomicity
-    await db.$transaction(async (tx) => {
-      // Import categories
-      if (categories && Array.isArray(categories)) {
-        for (const cat of categories) {
-          await tx.category.upsert({
-            where: { id: cat.id },
-            update: { name: cat.name, image: cat.image ?? '' },
-            create: {
-              id: cat.id,
-              name: cat.name,
-              image: cat.image ?? '',
-              userId,
-            },
-          });
-        }
-      }
+    // Import categories
+    if (categories && Array.isArray(categories)) {
+      for (const cat of categories) {
+        const catData = toSnakeCase({
+          id: cat.id,
+          name: cat.name,
+          image: cat.image ?? '',
+          userId,
+        });
 
-      // Import products
-      if (products && Array.isArray(products)) {
-        for (const prod of products) {
-          await tx.product.upsert({
-            where: { id: prod.id },
-            update: {
-              name: prod.name,
-              categoryId: prod.categoryId,
-              quantity: prod.quantity ?? 0,
-              boxNumber: prod.boxNumber ?? '',
-              purchasePrice: prod.purchasePrice ?? 0,
-              sellingPrice: prod.sellingPrice ?? 0,
-              lowStockThreshold: prod.lowStockThreshold ?? 5,
-            },
-            create: {
-              id: prod.id,
-              name: prod.name,
-              categoryId: prod.categoryId,
-              quantity: prod.quantity ?? 0,
-              boxNumber: prod.boxNumber ?? '',
-              purchasePrice: prod.purchasePrice ?? 0,
-              sellingPrice: prod.sellingPrice ?? 0,
-              lowStockThreshold: prod.lowStockThreshold ?? 5,
-              userId,
-            },
-          });
-        }
-      }
+        // Try insert first
+        const { error: insertError } = await supabase
+          .from('categories')
+          .insert(catData)
+          .select('*')
+          .single();
 
-      // Import transactions
-      if (transactions && Array.isArray(transactions)) {
-        for (const tran of transactions) {
-          await tx.transaction.upsert({
-            where: { id: tran.id },
-            update: {
-              type: tran.type,
-              quantity: tran.quantity,
-              unitPrice: tran.unitPrice,
-              totalAmount: tran.totalAmount,
-              date: tran.date,
-            },
-            create: {
-              id: tran.id,
-              type: tran.type,
-              productId: tran.productId,
-              quantity: tran.quantity,
-              unitPrice: tran.unitPrice ?? 0,
-              totalAmount: tran.totalAmount ?? 0,
-              date: tran.date,
-              userId,
-            },
-          });
+        if (insertError) {
+          // If conflict (duplicate key), try update instead
+          const { error: updateError } = await supabase
+            .from('categories')
+            .update({ name: catData.name, image: catData.image })
+            .eq('id', catData.id)
+            .select('*')
+            .single();
+
+          if (updateError) {
+            console.error('Category import update error:', updateError);
+          }
         }
       }
-    });
+    }
+
+    // Import products
+    if (products && Array.isArray(products)) {
+      for (const prod of products) {
+        const prodData = toSnakeCase({
+          id: prod.id,
+          name: prod.name,
+          categoryId: prod.categoryId,
+          quantity: prod.quantity ?? 0,
+          boxNumber: prod.boxNumber ?? '',
+          purchasePrice: prod.purchasePrice ?? 0,
+          sellingPrice: prod.sellingPrice ?? 0,
+          lowStockThreshold: prod.lowStockThreshold ?? 5,
+          userId,
+        });
+
+        // Try insert first
+        const { error: insertError } = await supabase
+          .from('products')
+          .insert(prodData)
+          .select('*')
+          .single();
+
+        if (insertError) {
+          // If conflict, try update instead
+          const updateFields = toSnakeCase({
+            name: prod.name,
+            categoryId: prod.categoryId,
+            quantity: prod.quantity ?? 0,
+            boxNumber: prod.boxNumber ?? '',
+            purchasePrice: prod.purchasePrice ?? 0,
+            sellingPrice: prod.sellingPrice ?? 0,
+            lowStockThreshold: prod.lowStockThreshold ?? 5,
+          });
+
+          const { error: updateError } = await supabase
+            .from('products')
+            .update(updateFields)
+            .eq('id', prodData.id)
+            .select('*')
+            .single();
+
+          if (updateError) {
+            console.error('Product import update error:', updateError);
+          }
+        }
+      }
+    }
+
+    // Import transactions
+    if (transactions && Array.isArray(transactions)) {
+      for (const tran of transactions) {
+        const tranData = toSnakeCase({
+          id: tran.id,
+          type: tran.type,
+          productId: tran.productId,
+          quantity: tran.quantity,
+          unitPrice: tran.unitPrice ?? 0,
+          totalAmount: tran.totalAmount ?? 0,
+          date: tran.date,
+          userId,
+        });
+
+        // Try insert first
+        const { error: insertError } = await supabase
+          .from('transactions')
+          .insert(tranData)
+          .select('*')
+          .single();
+
+        if (insertError) {
+          // If conflict, try update instead
+          const updateFields = toSnakeCase({
+            type: tran.type,
+            quantity: tran.quantity,
+            unitPrice: tran.unitPrice ?? 0,
+            totalAmount: tran.totalAmount ?? 0,
+            date: tran.date,
+          });
+
+          const { error: updateError } = await supabase
+            .from('transactions')
+            .update(updateFields)
+            .eq('id', tranData.id)
+            .select('*')
+            .single();
+
+          if (updateError) {
+            console.error('Transaction import update error:', updateError);
+          }
+        }
+      }
+    }
 
     return NextResponse.json({
       message: 'Data imported successfully',
@@ -166,8 +251,14 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const user = await db.user.findUnique({ where: { id: userId } });
-    if (!user) {
+    // Verify user exists
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('id', userId)
+      .single();
+
+    if (userError || !user) {
       return NextResponse.json(
         { error: 'User not found' },
         { status: 404 }
@@ -175,11 +266,9 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Delete all user data in correct order (transactions first, then products, then categories)
-    await db.$transaction(async (tx) => {
-      await tx.transaction.deleteMany({ where: { userId } });
-      await tx.product.deleteMany({ where: { userId } });
-      await tx.category.deleteMany({ where: { userId } });
-    });
+    await supabase.from('transactions').delete().eq('user_id', userId);
+    await supabase.from('products').delete().eq('user_id', userId);
+    await supabase.from('categories').delete().eq('user_id', userId);
 
     return NextResponse.json({ message: 'All data reset successfully' });
   } catch (error) {

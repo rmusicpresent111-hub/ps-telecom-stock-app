@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { supabase, generateId, toCamelCase, toSnakeCase } from '@/lib/supabase';
 
 // GET /api/cash-entries?userId=xxx&date=xxx&period=today|week|month&from=xxx&to=xxx
 export async function GET(req: NextRequest) {
@@ -44,25 +44,35 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const entries = await db.cashEntry.findMany({
-      where: {
-        userId,
-        date: { gte: startDate, lte: endDate },
-      },
-      orderBy: { date: 'desc' },
-    });
+    const { data: entries, error } = await supabase
+      .from('cash_entries')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .order('date', { ascending: false });
 
-    // Calculate totals
-    const latestEntry = await db.cashEntry.findFirst({
-      where: { userId },
-      orderBy: { date: 'desc' },
-    });
+    if (error) {
+      console.error('Cash entries GET error:', error);
+      return NextResponse.json({ error: 'Failed to fetch cash entries' }, { status: 500 });
+    }
 
-    const totalHandCash = latestEntry?.handCash || 0;
-    const totalLiquidCash = latestEntry?.liquidCash || 0;
+    const camelEntries = (entries || []).map(toCamelCase);
+
+    // Get latest entry for totals
+    const { data: latestEntry } = await supabase
+      .from('cash_entries')
+      .select('*')
+      .eq('user_id', userId)
+      .order('date', { ascending: false })
+      .limit(1);
+
+    const latest = latestEntry && latestEntry.length > 0 ? toCamelCase(latestEntry[0]) : null;
+    const totalHandCash = (latest?.handCash as number) || 0;
+    const totalLiquidCash = (latest?.liquidCash as number) || 0;
 
     return NextResponse.json({
-      entries,
+      entries: camelEntries,
       summary: {
         totalHandCash,
         totalLiquidCash,
@@ -86,32 +96,58 @@ export async function POST(req: NextRequest) {
     }
 
     // Check if entry for this date already exists
-    const existing = await db.cashEntry.findFirst({
-      where: { userId, date },
-    });
+    const { data: existingRows } = await supabase
+      .from('cash_entries')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('date', date);
 
     let entry;
-    if (existing) {
+    if (existingRows && existingRows.length > 0) {
       // Update existing entry
-      entry = await db.cashEntry.update({
-        where: { id: existing.id },
-        data: {
-          handCash: handCash !== undefined ? handCash : existing.handCash,
-          liquidCash: liquidCash !== undefined ? liquidCash : existing.liquidCash,
-          note: note !== undefined ? note : existing.note,
-        },
-      });
+      const existing = toCamelCase(existingRows[0]);
+      const updates: Record<string, unknown> = {};
+      if (handCash !== undefined) updates.handCash = handCash;
+      else updates.handCash = existing.handCash;
+      if (liquidCash !== undefined) updates.liquidCash = liquidCash;
+      else updates.liquidCash = existing.liquidCash;
+      if (note !== undefined) updates.note = note;
+      else updates.note = existing.note;
+
+      const { data, error } = await supabase
+        .from('cash_entries')
+        .update(toSnakeCase(updates))
+        .eq('id', existing.id)
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Cash entry update error:', error);
+        return NextResponse.json({ error: 'Failed to update cash entry' }, { status: 500 });
+      }
+      entry = toCamelCase(data);
     } else {
       // Create new entry
-      entry = await db.cashEntry.create({
-        data: {
-          userId,
-          date,
-          handCash: handCash || 0,
-          liquidCash: liquidCash || 0,
-          note: note || '',
-        },
-      });
+      const newEntry = {
+        id: generateId(),
+        userId,
+        date,
+        handCash: handCash || 0,
+        liquidCash: liquidCash || 0,
+        note: note || '',
+      };
+
+      const { data, error } = await supabase
+        .from('cash_entries')
+        .insert(toSnakeCase(newEntry))
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Cash entry create error:', error);
+        return NextResponse.json({ error: 'Failed to create cash entry' }, { status: 500 });
+      }
+      entry = toCamelCase(data);
     }
 
     return NextResponse.json({ entry });
@@ -129,16 +165,24 @@ export async function PUT(req: NextRequest) {
 
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
 
-    const entry = await db.cashEntry.update({
-      where: { id },
-      data: {
-        ...(handCash !== undefined && { handCash }),
-        ...(liquidCash !== undefined && { liquidCash }),
-        ...(note !== undefined && { note }),
-      },
-    });
+    const updates: Record<string, unknown> = {};
+    if (handCash !== undefined) updates.handCash = handCash;
+    if (liquidCash !== undefined) updates.liquidCash = liquidCash;
+    if (note !== undefined) updates.note = note;
 
-    return NextResponse.json({ entry });
+    const { data, error } = await supabase
+      .from('cash_entries')
+      .update(toSnakeCase(updates))
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('Cash entry PUT error:', error);
+      return NextResponse.json({ error: 'Failed to update cash entry' }, { status: 500 });
+    }
+
+    return NextResponse.json({ entry: toCamelCase(data) });
   } catch (error) {
     console.error('Cash entry PUT error:', error);
     return NextResponse.json({ error: 'Failed to update cash entry' }, { status: 500 });
@@ -152,7 +196,16 @@ export async function DELETE(req: NextRequest) {
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
 
-    await db.cashEntry.delete({ where: { id } });
+    const { error } = await supabase
+      .from('cash_entries')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Cash entry DELETE error:', error);
+      return NextResponse.json({ error: 'Failed to delete cash entry' }, { status: 500 });
+    }
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Cash entry DELETE error:', error);

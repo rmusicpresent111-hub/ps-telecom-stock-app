@@ -27,6 +27,7 @@ import ReportsScreen from '@/components/screens/ReportsScreen';
 import DailyBookScreen from '@/components/screens/DailyBookScreen';
 import WelcomeScreen from '@/components/screens/WelcomeScreen';
 import TutorialScreen from '@/components/screens/TutorialScreen';
+import SetupScreen from '@/components/screens/SetupScreen';
 import BottomNav from '@/components/BottomNav';
 
 const screenComponents: Record<Screen, React.ComponentType> = {
@@ -53,6 +54,7 @@ const screenComponents: Record<Screen, React.ComponentType> = {
   invoice: DashboardScreen, // placeholder
   welcome: WelcomeScreen,
   tutorial: TutorialScreen,
+  setup: SetupScreen,
 };
 
 const showBottomNavScreens: Screen[] = [

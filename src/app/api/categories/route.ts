@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { supabase, generateId, toCamelCase, toSnakeCase } from '@/lib/supabase';
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,13 +13,45 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const categories = await db.category.findMany({
-      where: { userId },
-      include: { _count: { select: { products: true } } },
-      orderBy: { createdAt: 'desc' },
-    });
+    const { data: categories, error: categoriesError } = await supabase
+      .from('categories')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
 
-    return NextResponse.json({ categories });
+    if (categoriesError) {
+      console.error('Get categories error:', categoriesError);
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
+    }
+
+    const { data: productCounts, error: productCountsError } = await supabase
+      .from('products')
+      .select('category_id')
+      .eq('user_id', userId);
+
+    if (productCountsError) {
+      console.error('Get product counts error:', productCountsError);
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
+    }
+
+    const countMap: Record<string, number> = {};
+    for (const row of productCounts ?? []) {
+      const catId = row.category_id;
+      countMap[catId] = (countMap[catId] ?? 0) + 1;
+    }
+
+    const result = (categories ?? []).map((cat) => ({
+      ...toCamelCase(cat),
+      _count: { products: countMap[cat.id] ?? 0 },
+    }));
+
+    return NextResponse.json({ categories: result });
   } catch (error) {
     console.error('Get categories error:', error);
     return NextResponse.json(
@@ -41,14 +73,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const category = await db.category.create({
-      data: {
-        name,
-        image: image || '',
-        userId,
-      },
-      include: { _count: { select: { products: true } } },
-    });
+    const id = generateId();
+    const { data, error } = await supabase
+      .from('categories')
+      .insert(
+        toSnakeCase({
+          id,
+          name,
+          image: image || '',
+          userId,
+        })
+      )
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Create category error:', error);
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
+    }
+
+    const category = {
+      ...toCamelCase(data),
+      _count: { products: 0 },
+    };
 
     return NextResponse.json({ category }, { status: 201 });
   } catch (error) {
@@ -72,22 +122,52 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const existing = await db.category.findUnique({ where: { id } });
-    if (!existing) {
+    const { data: existing, error: findError } = await supabase
+      .from('categories')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (findError || !existing) {
       return NextResponse.json(
         { error: 'Category not found' },
         { status: 404 }
       );
     }
 
-    const category = await db.category.update({
-      where: { id },
-      data: {
-        ...(name !== undefined && { name }),
-        ...(image !== undefined && { image }),
-      },
-      include: { _count: { select: { products: true } } },
-    });
+    const updateData: Record<string, string> = {};
+    if (name !== undefined) updateData.name = name;
+    if (image !== undefined) updateData.image = image;
+
+    const { data, error } = await supabase
+      .from('categories')
+      .update(toSnakeCase(updateData))
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Update category error:', error);
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
+    }
+
+    // Fetch product count for this category
+    const { count, error: countError } = await supabase
+      .from('products')
+      .select('*', { count: 'exact', head: true })
+      .eq('category_id', id);
+
+    if (countError) {
+      console.error('Get product count error:', countError);
+    }
+
+    const category = {
+      ...toCamelCase(data),
+      _count: { products: count ?? 0 },
+    };
 
     return NextResponse.json({ category });
   } catch (error) {
@@ -111,15 +191,31 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const existing = await db.category.findUnique({ where: { id } });
-    if (!existing) {
+    const { data: existing, error: findError } = await supabase
+      .from('categories')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (findError || !existing) {
       return NextResponse.json(
         { error: 'Category not found' },
         { status: 404 }
       );
     }
 
-    await db.category.delete({ where: { id } });
+    const { error } = await supabase
+      .from('categories')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Delete category error:', error);
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ message: 'Category deleted successfully' });
   } catch (error) {

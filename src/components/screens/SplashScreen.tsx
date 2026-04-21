@@ -51,16 +51,34 @@ export default function SplashScreen() {
     }, duration);
 
     function navigateToApp(seenTutorial: boolean, authenticated: boolean) {
-      if (!seenTutorial) {
-        // First time user → Welcome + Tutorial + Login flow
-        navigateTo('welcome');
-      } else if (authenticated) {
-        // Returning user, logged in → Dashboard directly
-        navigateTo('dashboard');
-      } else {
-        // Returning user, not logged in → Login directly
-        navigateTo('login');
-      }
+      // First check if Supabase database is set up
+      fetch('/api/setup')
+        .then(res => res.json())
+        .then(data => {
+          if (data.status === 'needs_setup') {
+            // Database tables don't exist, go to setup screen
+            navigateTo('setup');
+          } else if (!seenTutorial) {
+            // First time user → Welcome + Tutorial + Login flow
+            navigateTo('welcome');
+          } else if (authenticated) {
+            // Returning user, logged in → Dashboard directly
+            navigateTo('dashboard');
+          } else {
+            // Returning user, not logged in → Login directly
+            navigateTo('login');
+          }
+        })
+        .catch(() => {
+          // If the setup check fails, still try to navigate normally
+          if (!seenTutorial) {
+            navigateTo('welcome');
+          } else if (authenticated) {
+            navigateTo('dashboard');
+          } else {
+            navigateTo('login');
+          }
+        });
     }
 
     return () => {

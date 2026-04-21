@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { supabase, toCamelCase, toSnakeCase } from '@/lib/supabase';
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,28 +13,20 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const user = await db.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        shopName: true,
-        role: true,
-        language: true,
-        theme: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, email, name, shop_name, role, language, theme, created_at, updated_at')
+      .eq('id', userId)
+      .single();
 
-    if (!user) {
+    if (error || !data) {
       return NextResponse.json(
         { error: 'User not found' },
         { status: 404 }
       );
     }
 
+    const user = toCamelCase(data);
     return NextResponse.json({ user });
   } catch (error) {
     console.error('Get profile error:', error);
@@ -57,35 +49,42 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const existing = await db.user.findUnique({ where: { id } });
-    if (!existing) {
+    // Check if user exists
+    const { data: existing, error: findError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('id', id)
+      .single();
+
+    if (findError || !existing) {
       return NextResponse.json(
         { error: 'User not found' },
         { status: 404 }
       );
     }
 
-    const user = await db.user.update({
-      where: { id },
-      data: {
-        ...(name !== undefined && { name }),
-        ...(shopName !== undefined && { shopName }),
-        ...(language !== undefined && { language }),
-        ...(theme !== undefined && { theme }),
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        shopName: true,
-        role: true,
-        language: true,
-        theme: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    const updates: Record<string, unknown> = {};
+    if (name !== undefined) updates.name = name;
+    if (shopName !== undefined) updates.shopName = shopName;
+    if (language !== undefined) updates.language = language;
+    if (theme !== undefined) updates.theme = theme;
 
+    const { data, error } = await supabase
+      .from('users')
+      .update(toSnakeCase(updates))
+      .eq('id', id)
+      .select('id, email, name, shop_name, role, language, theme, created_at, updated_at')
+      .single();
+
+    if (error) {
+      console.error('Update profile error:', error);
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
+    }
+
+    const user = toCamelCase(data);
     return NextResponse.json({ user });
   } catch (error) {
     console.error('Update profile error:', error);
@@ -108,16 +107,27 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const existing = await db.user.findUnique({ where: { id } });
-    if (!existing) {
+    // Check if user exists
+    const { data: existing, error: findError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('id', id)
+      .single();
+
+    if (findError || !existing) {
       return NextResponse.json(
         { error: 'User not found' },
         { status: 404 }
       );
     }
 
-    // Delete user - cascading will handle related records
-    await db.user.delete({ where: { id } });
+    // Delete related data first (in correct order), then delete user
+    await supabase.from('transactions').delete().eq('user_id', id);
+    await supabase.from('products').delete().eq('user_id', id);
+    await supabase.from('categories').delete().eq('user_id', id);
+    await supabase.from('cash_entries').delete().eq('user_id', id);
+    await supabase.from('expenses').delete().eq('user_id', id);
+    await supabase.from('users').delete().eq('id', id);
 
     return NextResponse.json({ message: 'User account deleted successfully' });
   } catch (error) {

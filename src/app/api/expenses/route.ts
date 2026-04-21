@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { supabase, generateId, toCamelCase, toSnakeCase } from '@/lib/supabase';
 
 // GET /api/expenses?userId=xxx&date=xxx&period=today|week|month&from=xxx&to=xxx&category=xxx
 export async function GET(req: NextRequest) {
@@ -45,24 +45,35 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const where: Record<string, unknown> = {
-      userId,
-      date: { gte: startDate, lte: endDate },
-    };
-    if (category) where.category = category;
+    let query = supabase
+      .from('expenses')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .order('date', { ascending: false });
 
-    const expenses = await db.expense.findMany({
-      where,
-      orderBy: { date: 'desc' },
-    });
+    if (category) {
+      query = query.eq('category', category);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Expenses GET error:', error);
+      return NextResponse.json({ error: 'Failed to fetch expenses' }, { status: 500 });
+    }
+
+    const expenses = (data || []).map(toCamelCase);
 
     // Calculate total
-    const totalExpense = expenses.reduce((sum, e) => sum + e.amount, 0);
+    const totalExpense = expenses.reduce((sum, e) => sum + ((e.amount as number) || 0), 0);
 
     // Group by category
     const byCategory = expenses.reduce((acc, e) => {
-      if (!acc[e.category]) acc[e.category] = 0;
-      acc[e.category] += e.amount;
+      const cat = (e.category as string) || 'other';
+      if (!acc[cat]) acc[cat] = 0;
+      acc[cat] += (e.amount as number) || 0;
       return acc;
     }, {} as Record<string, number>);
 
@@ -90,17 +101,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'userId, date and amount required' }, { status: 400 });
     }
 
-    const expense = await db.expense.create({
-      data: {
-        userId,
-        date,
-        amount: parseFloat(amount),
-        category: category || 'other',
-        description: description || '',
-      },
-    });
+    const newExpense = {
+      id: generateId(),
+      userId,
+      date,
+      amount: parseFloat(amount),
+      category: category || 'other',
+      description: description || '',
+    };
 
-    return NextResponse.json({ expense });
+    const { data, error } = await supabase
+      .from('expenses')
+      .insert(toSnakeCase(newExpense))
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('Expense POST error:', error);
+      return NextResponse.json({ error: 'Failed to create expense' }, { status: 500 });
+    }
+
+    return NextResponse.json({ expense: toCamelCase(data) });
   } catch (error) {
     console.error('Expense POST error:', error);
     return NextResponse.json({ error: 'Failed to create expense' }, { status: 500 });
@@ -115,16 +136,24 @@ export async function PUT(req: NextRequest) {
 
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
 
-    const expense = await db.expense.update({
-      where: { id },
-      data: {
-        ...(amount !== undefined && { amount: parseFloat(amount) }),
-        ...(category !== undefined && { category }),
-        ...(description !== undefined && { description }),
-      },
-    });
+    const updates: Record<string, unknown> = {};
+    if (amount !== undefined) updates.amount = parseFloat(amount);
+    if (category !== undefined) updates.category = category;
+    if (description !== undefined) updates.description = description;
 
-    return NextResponse.json({ expense });
+    const { data, error } = await supabase
+      .from('expenses')
+      .update(toSnakeCase(updates))
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('Expense PUT error:', error);
+      return NextResponse.json({ error: 'Failed to update expense' }, { status: 500 });
+    }
+
+    return NextResponse.json({ expense: toCamelCase(data) });
   } catch (error) {
     console.error('Expense PUT error:', error);
     return NextResponse.json({ error: 'Failed to update expense' }, { status: 500 });
@@ -138,7 +167,16 @@ export async function DELETE(req: NextRequest) {
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
 
-    await db.expense.delete({ where: { id } });
+    const { error } = await supabase
+      .from('expenses')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Expense DELETE error:', error);
+      return NextResponse.json({ error: 'Failed to delete expense' }, { status: 500 });
+    }
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Expense DELETE error:', error);

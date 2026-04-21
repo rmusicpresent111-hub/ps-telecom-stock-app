@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
-import { Prisma } from '@prisma/client';
+import { supabase, generateId, toCamelCase, toSnakeCase } from '@/lib/supabase';
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,20 +15,37 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const where: Prisma.ProductWhereInput = { userId };
+    let query = supabase
+      .from('products')
+      .select('*, category:categories(*)')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
 
     if (categoryId) {
-      where.categoryId = categoryId;
+      query = query.eq('category_id', categoryId);
     }
 
     if (search) {
-      where.name = { contains: search };
+      query = query.ilike('name', `%${search}%`);
     }
 
-    const products = await db.product.findMany({
-      where,
-      include: { category: true },
-      orderBy: { createdAt: 'desc' },
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Get products Supabase error:', error);
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
+    }
+
+    const products = (data || []).map((product: Record<string, unknown>) => {
+      const { category, ...productFields } = product as Record<string, unknown>;
+      const camelProduct = toCamelCase(productFields as Record<string, unknown>);
+      if (category && typeof category === 'object') {
+        camelProduct.category = toCamelCase(category as Record<string, unknown>);
+      }
+      return camelProduct;
     });
 
     return NextResponse.json({ products });
@@ -63,19 +79,42 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const product = await db.product.create({
-      data: {
-        name,
-        categoryId,
-        quantity: quantity ?? 0,
-        boxNumber: boxNumber ?? '',
-        purchasePrice: purchasePrice ?? 0,
-        sellingPrice: sellingPrice ?? 0,
-        lowStockThreshold: lowStockThreshold ?? 5,
-        userId,
-      },
-      include: { category: true },
+    const id = generateId();
+    const now = new Date().toISOString();
+
+    const snakeData = toSnakeCase({
+      id,
+      name,
+      categoryId,
+      quantity: quantity ?? 0,
+      boxNumber: boxNumber ?? '',
+      purchasePrice: purchasePrice ?? 0,
+      sellingPrice: sellingPrice ?? 0,
+      lowStockThreshold: lowStockThreshold ?? 5,
+      userId,
+      createdAt: now,
+      updatedAt: now,
     });
+
+    const { data, error } = await supabase
+      .from('products')
+      .insert(snakeData)
+      .select('*, category:categories(*)')
+      .single();
+
+    if (error) {
+      console.error('Create product Supabase error:', error);
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
+    }
+
+    const { category, ...productFields } = data as Record<string, unknown>;
+    const product = toCamelCase(productFields as Record<string, unknown>);
+    if (category && typeof category === 'object') {
+      product.category = toCamelCase(category as Record<string, unknown>);
+    }
 
     return NextResponse.json({ product }, { status: 201 });
   } catch (error) {
@@ -108,27 +147,52 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const existing = await db.product.findUnique({ where: { id } });
-    if (!existing) {
+    const { data: existing, error: findError } = await supabase
+      .from('products')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (findError || !existing) {
       return NextResponse.json(
         { error: 'Product not found' },
         { status: 404 }
       );
     }
 
-    const product = await db.product.update({
-      where: { id },
-      data: {
-        ...(name !== undefined && { name }),
-        ...(categoryId !== undefined && { categoryId }),
-        ...(quantity !== undefined && { quantity }),
-        ...(boxNumber !== undefined && { boxNumber }),
-        ...(purchasePrice !== undefined && { purchasePrice }),
-        ...(sellingPrice !== undefined && { sellingPrice }),
-        ...(lowStockThreshold !== undefined && { lowStockThreshold }),
-      },
-      include: { category: true },
-    });
+    const updateFields: Record<string, unknown> = {
+      updatedAt: new Date().toISOString(),
+    };
+    if (name !== undefined) updateFields.name = name;
+    if (categoryId !== undefined) updateFields.categoryId = categoryId;
+    if (quantity !== undefined) updateFields.quantity = quantity;
+    if (boxNumber !== undefined) updateFields.boxNumber = boxNumber;
+    if (purchasePrice !== undefined) updateFields.purchasePrice = purchasePrice;
+    if (sellingPrice !== undefined) updateFields.sellingPrice = sellingPrice;
+    if (lowStockThreshold !== undefined) updateFields.lowStockThreshold = lowStockThreshold;
+
+    const snakeUpdate = toSnakeCase(updateFields);
+
+    const { data, error } = await supabase
+      .from('products')
+      .update(snakeUpdate)
+      .eq('id', id)
+      .select('*, category:categories(*)')
+      .single();
+
+    if (error) {
+      console.error('Update product Supabase error:', error);
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
+    }
+
+    const { category, ...productFields } = data as Record<string, unknown>;
+    const product = toCamelCase(productFields as Record<string, unknown>);
+    if (category && typeof category === 'object') {
+      product.category = toCamelCase(category as Record<string, unknown>);
+    }
 
     return NextResponse.json({ product });
   } catch (error) {
@@ -152,15 +216,31 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const existing = await db.product.findUnique({ where: { id } });
-    if (!existing) {
+    const { data: existing, error: findError } = await supabase
+      .from('products')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (findError || !existing) {
       return NextResponse.json(
         { error: 'Product not found' },
         { status: 404 }
       );
     }
 
-    await db.product.delete({ where: { id } });
+    const { error } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Delete product Supabase error:', error);
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ message: 'Product deleted successfully' });
   } catch (error) {
