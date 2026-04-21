@@ -3,6 +3,10 @@ import { persist } from 'zustand/middleware';
 import { Screen, Language, ThemeMode, User, Category, Product, Transaction } from '@/lib/types';
 
 interface AppState {
+  // Hydration
+  _hasHydrated: boolean;
+  setHasHydrated: (val: boolean) => void;
+
   // Navigation
   currentScreen: Screen;
   previousScreens: Screen[];
@@ -23,11 +27,7 @@ interface AppState {
   shopName: string;
   setShopName: (name: string) => void;
 
-  // Onboarding
-  hasSeenOnboarding: boolean;
-  setHasSeenOnboarding: (val: boolean) => void;
-
-  // Tutorial (new welcome + tutorial flow)
+  // Tutorial (welcome + tutorial flow - first time only)
   hasSeenTutorial: boolean;
   setHasSeenTutorial: (val: boolean) => void;
 
@@ -59,6 +59,10 @@ interface AppState {
 export const useAppStore = create<AppState>()(
   persist(
     (set, _get) => ({
+      // Hydration tracking
+      _hasHydrated: false,
+      setHasHydrated: (val) => set({ _hasHydrated: val }),
+
       // Navigation
       currentScreen: 'splash',
       previousScreens: [],
@@ -91,11 +95,7 @@ export const useAppStore = create<AppState>()(
       shopName: 'PS TELECOM',
       setShopName: (name) => set({ shopName: name }),
 
-      // Onboarding
-      hasSeenOnboarding: false,
-      setHasSeenOnboarding: (val) => set({ hasSeenOnboarding: val }),
-
-      // Tutorial
+      // Tutorial - first time users see Welcome + Tutorial
       hasSeenTutorial: false,
       setHasSeenTutorial: (val) => set({ hasSeenTutorial: val }),
 
@@ -113,9 +113,9 @@ export const useAppStore = create<AppState>()(
       categories: [],
       setCategories: (cats) => set({ categories: cats }),
       products: [],
-      setProducts: (prods) => set({ products: prods }),
+      setProducts: (prods: Product[]) => set({ products: prods }),
       transactions: [],
-      setTransactions: (txns) => set({ transactions: txns }),
+      setTransactions: (txns: Transaction[]) => set({ transactions: txns }),
 
       // Search
       searchQuery: '',
@@ -126,12 +126,16 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         language: state.language,
         theme: state.theme,
-        hasSeenOnboarding: state.hasSeenOnboarding,
         hasSeenTutorial: state.hasSeenTutorial,
         user: state.user,
         isAuthenticated: state.isAuthenticated,
         shopName: state.shopName,
       }),
+      onRehydrateStorage: () => {
+        return (state) => {
+          state?.setHasHydrated(true);
+        };
+      },
     }
   )
 );

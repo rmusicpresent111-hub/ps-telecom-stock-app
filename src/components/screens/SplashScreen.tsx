@@ -16,7 +16,7 @@ const iconPositions = [
 ];
 
 export default function SplashScreen() {
-  const { navigateTo, hasSeenTutorial, isAuthenticated } = useAppStore();
+  const { navigateTo, hasSeenTutorial, isAuthenticated, _hasHydrated } = useAppStore();
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
@@ -34,21 +34,40 @@ export default function SplashScreen() {
       });
     }, interval);
 
+    // Wait for hydration + splash duration before navigating
     const navTimer = setTimeout(() => {
-      if (!hasSeenTutorial) {
+      // If store hasn't hydrated yet, wait a bit more
+      if (!_hasHydrated) {
+        const waitTimer = setInterval(() => {
+          const state = useAppStore.getState();
+          if (state._hasHydrated) {
+            clearInterval(waitTimer);
+            navigateToApp(state.hasSeenTutorial, state.isAuthenticated);
+          }
+        }, 100);
+        return;
+      }
+      navigateToApp(hasSeenTutorial, isAuthenticated);
+    }, duration);
+
+    function navigateToApp(seenTutorial: boolean, authenticated: boolean) {
+      if (!seenTutorial) {
+        // First time user → Welcome + Tutorial + Login flow
         navigateTo('welcome');
-      } else if (isAuthenticated) {
+      } else if (authenticated) {
+        // Returning user, logged in → Dashboard directly
         navigateTo('dashboard');
       } else {
-        navigateTo('language');
+        // Returning user, not logged in → Login directly
+        navigateTo('login');
       }
-    }, duration);
+    }
 
     return () => {
       clearInterval(timer);
       clearTimeout(navTimer);
     };
-  }, [navigateTo, hasSeenTutorial, isAuthenticated]);
+  }, [navigateTo, hasSeenTutorial, isAuthenticated, _hasHydrated]);
 
   return (
     <div className="animated-bg min-h-screen flex flex-col items-center justify-center relative overflow-hidden">

@@ -112,7 +112,7 @@ const contentVariants = {
 export default function TutorialScreen() {
   const [currentPage, setCurrentPage] = useState(0);
   const [direction, setDirection] = useState(0);
-  const { language, setHasSeenOnboarding, setHasSeenTutorial, navigateTo, isAuthenticated } = useAppStore();
+  const { language, setHasSeenTutorial, navigateTo, isAuthenticated } = useAppStore();
   const lang = language as Language;
 
   const isLastPage = currentPage === tutorialPages.length - 1;
@@ -120,14 +120,13 @@ export default function TutorialScreen() {
   const progress = ((currentPage + 1) / tutorialPages.length) * 100;
 
   const handleFinish = useCallback(() => {
-    setHasSeenOnboarding(true);
     setHasSeenTutorial(true);
     if (isAuthenticated) {
       navigateTo('dashboard');
     } else {
-      navigateTo('language');
+      navigateTo('login');
     }
-  }, [setHasSeenOnboarding, setHasSeenTutorial, navigateTo, isAuthenticated]);
+  }, [setHasSeenTutorial, navigateTo, isAuthenticated]);
 
   const goNext = useCallback(() => {
     if (isLastPage) {
