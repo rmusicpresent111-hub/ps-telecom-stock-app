@@ -8,8 +8,9 @@
  * 1. Temporarily moves the API folder (static export doesn't need server routes)
  * 2. Builds the Next.js static export to ./out
  * 3. Restores the API folder
- * 4. Syncs with Capacitor Android
- * 5. Opens Android Studio
+ * 4. Adds Android platform if missing
+ * 5. Syncs with Capacitor Android
+ * 6. Opens Android Studio
  */
 
 const fs = require('fs');
@@ -20,10 +21,10 @@ const ROOT = path.resolve(__dirname, '..');
 const API_DIR = path.join(ROOT, 'src', 'app', 'api');
 const TEMP_DIR = path.join(ROOT, '.api-routes-temp');
 const OUT_DIR = path.join(ROOT, 'out');
+const ANDROID_DIR = path.join(ROOT, 'android');
 
 // Detect package manager
 function detectRunner() {
-  // Try bunx first (user has bun installed), then npx
   try { execSync('bun --version', { stdio: 'pipe' }); return 'bunx'; } catch {}
   try { execSync('npx --version', { stdio: 'pipe' }); return 'npx'; } catch {}
   return null;
@@ -52,6 +53,30 @@ function moveDir(src, dest) {
     fs.renameSync(src, dest);
     console.log(`✓ Moved ${path.basename(src)} → ${path.basename(dest)}`);
   }
+}
+
+// Run capacitor command with fallbacks
+function capCmd(args) {
+  const runner = detectRunner();
+  let success = false;
+
+  // Method 1: Use detected runner (bunx or npx)
+  if (runner === 'bunx') {
+    success = tryRun(`bunx @capacitor/cli ${args}`);
+  } else if (runner === 'npx') {
+    success = tryRun(`npx @capacitor/cli ${args}`);
+  }
+
+  // Method 2: Use local capacitor binary
+  if (!success) {
+    const localCap = path.join(ROOT, 'node_modules', '@capacitor', 'cli', 'bin', 'capacitor');
+    if (exists(localCap)) {
+      console.log('\n  Trying local capacitor...');
+      success = tryRun(`node "${localCap}" ${args}`);
+    }
+  }
+
+  return success;
 }
 
 // Step 1: Move API folder out of the way
@@ -99,61 +124,48 @@ if (!exists(indexHtml)) {
 
 console.log('\n✅ Static build successful! ./out directory is ready.');
 
-// Step 5: Capacitor sync
-const runner = detectRunner();
-console.log(`\nStep 4: Syncing with Capacitor Android (using ${runner || 'manual'})...`);
-
-let syncSuccess = false;
-
-if (runner === 'bunx') {
-  syncSuccess = tryRun('bunx @capacitor/cli sync android');
-  if (!syncSuccess) {
-    console.log('\n  bunx failed, trying with local capacitor...');
-    syncSuccess = tryRun('node ./node_modules/@capacitor/cli/bin/capacitor sync android');
+// Step 5: Add Android platform if missing
+if (!exists(ANDROID_DIR)) {
+  console.log('\nStep 4: Android platform not found. Adding it...');
+  
+  // Make sure @capacitor/android is installed
+  if (!exists(path.join(ROOT, 'node_modules', '@capacitor', 'android'))) {
+    console.log('  Installing @capacitor/android...');
+    try {
+      run('bun add @capacitor/android');
+    } catch {
+      try { run('npm install @capacitor/android'); } catch {}
+    }
   }
-} else if (runner === 'npx') {
-  syncSuccess = tryRun('npx @capacitor/cli sync android');
-  if (!syncSuccess) {
-    console.log('\n  npx failed, trying with local capacitor...');
-    syncSuccess = tryRun('node ./node_modules/@capacitor/cli/bin/capacitor sync android');
+
+  const added = capCmd('add android');
+  if (!added) {
+    console.error('\n❌ Failed to add Android platform. Try manually:');
+    console.error('    bunx @capacitor/cli add android');
+    process.exit(1);
   }
+  console.log('✅ Android platform added!');
+} else {
+  console.log('\nStep 4: Android platform already exists, skipping add.');
 }
 
-// Last resort: try direct node execution
-if (!syncSuccess) {
-  const localCap = path.join(ROOT, 'node_modules', '@capacitor', 'cli', 'bin', 'capacitor');
-  if (exists(localCap)) {
-    console.log('\n  Trying direct node execution...');
-    syncSuccess = tryRun(`node "${localCap}" sync android`);
-  }
-}
+// Step 6: Capacitor sync
+console.log('\nStep 5: Syncing with Capacitor Android...');
+const syncSuccess = capCmd('sync android');
 
 if (!syncSuccess) {
   console.log('\n⚠️  Capacitor sync failed. Try running manually:');
   console.log('    bunx @capacitor/cli sync android');
-  console.log('    OR: npx @capacitor/cli sync android');
 }
 
-// Step 6: Open Android Studio
-console.log('\nStep 5: Opening Android Studio...');
-let opened = false;
-
-if (runner === 'bunx') {
-  opened = tryRun('bunx @capacitor/cli open android');
-} else if (runner === 'npx') {
-  opened = tryRun('npx @capacitor/cli open android');
-}
-
-if (!opened) {
-  const localCap = path.join(ROOT, 'node_modules', '@capacitor', 'cli', 'bin', 'capacitor');
-  if (exists(localCap)) {
-    opened = tryRun(`node "${localCap}" open android`);
-  }
-}
+// Step 7: Open Android Studio
+console.log('\nStep 6: Opening Android Studio...');
+const opened = capCmd('open android');
 
 if (!opened) {
   console.log('\n⚠️  Could not auto-open Android Studio.');
-  console.log('    Open Android Studio manually → File → Open → select the "android" folder');
+  console.log('    Open Android Studio manually → File → Open → select the "android" folder:');
+  console.log('    ' + ANDROID_DIR);
 }
 
 console.log('\n🎉 Done! Build your APK in Android Studio:');
