@@ -110,29 +110,24 @@ export default function DailyBookScreen() {
     if (!user?.id) return;
     setLoading(true);
     try {
-      const url = editingCashId ? '/api/cash-entries' : '/api/cash-entries';
-      const method = editingCashId ? 'PUT' : 'POST';
-      const body: Record<string, unknown> = {
-        userId: user.id,
-        date: cashDate,
-        handCash: parseFloat(handCashInput) || 0,
-        liquidCash: parseFloat(liquidCashInput) || 0,
-        note: cashNote,
-      };
-      if (editingCashId) body.id = editingCashId;
-
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (res.ok) {
-        toast.success(isBn ? 'সংরক্ষিত হয়েছে' : isHi ? 'संरक्षित' : 'Saved successfully');
-        resetCashForm();
-        fetchCashEntries();
+      if (editingCashId) {
+        await updateCashEntry(editingCashId, {
+          handCash: parseFloat(handCashInput) || 0,
+          liquidCash: parseFloat(liquidCashInput) || 0,
+          note: cashNote,
+        });
       } else {
-        toast.error(isBn ? 'ত্রুটি' : isHi ? 'त्रुटि' : 'Error');
+        await upsertCashEntry({
+          userId: user.id,
+          date: cashDate,
+          handCash: parseFloat(handCashInput) || 0,
+          liquidCash: parseFloat(liquidCashInput) || 0,
+          note: cashNote,
+        });
       }
+      toast.success(isBn ? 'সংরক্ষিত হয়েছে' : isHi ? 'संरक्षित' : 'Saved successfully');
+      resetCashForm();
+      fetchCashEntries();
     } catch {
       toast.error(isBn ? 'ত্রুটি' : isHi ? 'त्रुटि' : 'Error');
     } finally {
