@@ -52,3 +52,26 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# Database files
+*.db
+*.db-journal
+db/
+
+# Supabase
+.supabase/
+
+# Agent context
+/agent-ctx/
+
+# Scripts (local use only)
+/scripts/
+
+# Download folder
+/download/
+
+# Examples
+/examples/
+
+# Mini services
+/mini-services/
