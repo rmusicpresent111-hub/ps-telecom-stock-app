@@ -1,0 +1,18 @@
+{
+  "appId": "com.pstelecom.stockapp",
+  "appName": "PS TELECOM",
+  "webDir": "out",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": false,
+      "backgroundColor": "#0a0a1e",
+      "showSpinner": false
+    }
+  }
+}

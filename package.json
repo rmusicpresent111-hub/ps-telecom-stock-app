@@ -4,14 +4,17 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
-    "build": "mv src/app/api .api-routes-temp && next build && mv .api-routes-temp src/app/api",
-    "build:apk": "mv src/app/api .api-routes-temp && next build && mv .api-routes-temp src/app/api && npx cap sync android",
+    "build": "node scripts/build-apk.js",
+    "build:apk": "node scripts/build-apk.js",
+    "build:web": "next build",
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:reset": "prisma migrate reset"
+    "db:reset": "prisma migrate reset",
+    "cap:sync": "npx cap sync android",
+    "cap:open": "npx cap open android"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.1",

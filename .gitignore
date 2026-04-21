@@ -64,8 +64,8 @@ db/
 # Agent context
 /agent-ctx/
 
-# Scripts (local use only)
-/scripts/
+# Scripts (local use only, but keep build-apk.js)
+/scripts/setup-supabase.js
 
 # Download folder
 /download/
