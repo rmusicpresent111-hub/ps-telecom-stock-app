@@ -55,8 +55,25 @@ export default function SplashScreen() {
         // First time user → Welcome + Tutorial + Login flow
         navigateTo('welcome');
       } else if (authenticated) {
-        // Returning user, logged in → Dashboard directly
-        navigateTo('dashboard');
+        // Returning user - verify user still exists in Supabase
+        const currentUser = useAppStore.getState().user;
+        if (currentUser?.id) {
+          fetch(`/api/profile?userId=${currentUser.id}`)
+            .then(res => {
+              if (res.ok) {
+                navigateTo('dashboard');
+              } else {
+                // User not found in Supabase - logout and go to login
+                useAppStore.getState().logout();
+                navigateTo('login');
+              }
+            })
+            .catch(() => {
+              navigateTo('dashboard');
+            });
+        } else {
+          navigateTo('login');
+        }
       } else {
         // Returning user, not logged in → Login directly
         navigateTo('login');
