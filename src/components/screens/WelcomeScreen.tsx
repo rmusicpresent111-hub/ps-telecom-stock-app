@@ -1,11 +1,21 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAppStore } from '@/store/appStore';
 import { ChevronRight, Sparkles, Zap, Shield, Smartphone } from 'lucide-react';
 
 const floatingIcons = ['📱', '🎧', '⌚', '🔌', '💰', '📊'];
+
+// Pre-computed deterministic positions to avoid hydration mismatch
+const iconPositions = [
+  { ix: -30, iy: -80, ax: [-30, 20], ay: [-80, 100], left: '5%', top: '10%' },
+  { ix: 45, iy: -120, ax: [45, -25], ay: [-120, 60], left: '22%', top: '38%' },
+  { ix: -60, iy: 40, ax: [-60, 30], ay: [40, -90], left: '39%', top: '66%' },
+  { ix: 80, iy: -60, ax: [80, -40], ay: [-60, 130], left: '56%', top: '10%' },
+  { ix: -20, iy: 100, ax: [-20, 50], ay: [100, -70], left: '73%', top: '38%' },
+  { ix: 55, iy: -30, ax: [55, -35], ay: [-30, 80], left: '90%', top: '66%' },
+];
 
 const features = [
   { icon: '📦', label: 'Stock Track' },
@@ -16,8 +26,7 @@ const features = [
 
 export default function WelcomeScreen() {
   const { navigateTo } = useAppStore();
-  const [imageUrl, setImageUrl] = useState('/ps-telecom-shop.png');
-  const [imgLoaded, setImgLoaded] = useState(false);
+  const [imageUrl] = useState('/ps-telecom-shop.png');
 
   const handleGetStarted = () => {
     navigateTo('tutorial');
@@ -31,12 +40,12 @@ export default function WelcomeScreen() {
           key={i}
           className="absolute text-3xl sm:text-4xl opacity-[0.07] select-none pointer-events-none"
           initial={{
-            x: Math.random() * 300 - 150,
-            y: Math.random() * 500 - 250,
+            x: iconPositions[i].ix,
+            y: iconPositions[i].iy,
           }}
           animate={{
-            y: [Math.random() * 400 - 200, Math.random() * 400 - 200],
-            x: [Math.random() * 100 - 50, Math.random() * 100 - 50],
+            y: iconPositions[i].ay,
+            x: iconPositions[i].ax,
           }}
           transition={{
             duration: 5 + i,
@@ -45,8 +54,8 @@ export default function WelcomeScreen() {
             ease: 'easeInOut',
           }}
           style={{
-            left: `${5 + i * 17}%`,
-            top: `${10 + (i % 3) * 28}%`,
+            left: iconPositions[i].left,
+            top: iconPositions[i].top,
           }}
         >
           <span className="inline-block float-animation">{icon}</span>
@@ -120,8 +129,6 @@ export default function WelcomeScreen() {
               style={{
                 filter: 'brightness(1.05) saturate(1.15)',
               }}
-              onLoad={() => setImgLoaded(true)}
-              onError={() => setImageUrl('/ps-telecom-logo.png')}
             />
           </motion.div>
         </motion.div>

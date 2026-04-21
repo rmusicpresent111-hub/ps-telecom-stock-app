@@ -6,6 +6,15 @@ import { useAppStore } from '@/store/appStore';
 
 const floatingIcons = ['📱', '🎧', '🔌', '⌚', '📺'];
 
+// Pre-computed deterministic positions to avoid hydration mismatch
+const iconPositions = [
+  { ix: -45, iy: -77, ay: [-77, 150], left: '10%', top: '15%' },
+  { ix: 108, iy: -115, ay: [-115, 80], left: '30%', top: '40%' },
+  { ix: 77, iy: -47, ay: [-47, 180], left: '50%', top: '65%' },
+  { ix: 38, iy: -240, ay: [-240, -60], left: '70%', top: '15%' },
+  { ix: 131, iy: -14, ay: [-14, 120], left: '90%', top: '40%' },
+];
+
 export default function SplashScreen() {
   const { navigateTo, hasSeenOnboarding } = useAppStore();
   const [progress, setProgress] = useState(0);
@@ -43,12 +52,12 @@ export default function SplashScreen() {
           key={i}
           className="absolute text-4xl sm:text-5xl opacity-10 select-none"
           initial={{
-            x: Math.random() * 300 - 150,
-            y: Math.random() * 500 - 250,
+            x: iconPositions[i].ix,
+            y: iconPositions[i].iy,
             scale: 1,
           }}
           animate={{
-            y: [Math.random() * 500 - 250, Math.random() * 500 - 250],
+            y: iconPositions[i].ay,
             scale: [1, 1.1],
           }}
           transition={{
@@ -58,8 +67,8 @@ export default function SplashScreen() {
             ease: 'easeInOut',
           }}
           style={{
-            left: `${10 + i * 20}%`,
-            top: `${15 + (i % 3) * 25}%`,
+            left: iconPositions[i].left,
+            top: iconPositions[i].top,
           }}
         >
           <span className="slow-zoom inline-block float-animation">{icon}</span>
