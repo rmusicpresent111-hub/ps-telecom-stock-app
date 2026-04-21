@@ -4,38 +4,9 @@ import { useEffect, useState, useCallback } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Category, Product } from '@/lib/types';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Plus, Search, Package, AlertTriangle, ArrowLeftRight, IndianRupee, X, TrendingUp, TrendingDown, ShoppingBag } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { ArrowLeft, Plus, Search, Package, AlertTriangle, ArrowLeftRight, IndianRupee } from 'lucide-react';
 import { toast } from 'sonner';
-
-type StockOpType = 'STOCK_IN' | 'STOCK_OUT' | 'SELL' | null;
-
-const stockOpConfig: Record<string, { title: string; icon: React.ElementType; color: string; bgColor: string; borderColor: string; desc: string }> = {
-  STOCK_IN: {
-    title: 'Stock In',
-    icon: TrendingUp,
-    color: '#39ff14',
-    bgColor: 'rgba(57, 255, 20, 0.15)',
-    borderColor: 'rgba(57, 255, 20, 0.4)',
-    desc: 'Add stock to products in this category',
-  },
-  STOCK_OUT: {
-    title: 'Stock Out',
-    icon: TrendingDown,
-    color: '#ff6b00',
-    bgColor: 'rgba(255, 107, 0, 0.15)',
-    borderColor: 'rgba(255, 107, 0, 0.4)',
-    desc: 'Remove stock from products in this category',
-  },
-  SELL: {
-    title: 'Instant Sell',
-    icon: ShoppingBag,
-    color: '#b44aff',
-    bgColor: 'rgba(180, 74, 255, 0.15)',
-    borderColor: 'rgba(180, 74, 255, 0.4)',
-    desc: 'Sell a product from this category',
-  },
-};
 
 export default function CategoryDetailScreen() {
   const {
@@ -47,7 +18,6 @@ export default function CategoryDetailScreen() {
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
-  const [pendingStockOp, setPendingStockOp] = useState<StockOpType>(null);
 
   const category = categories.find((c) => c.id === selectedCategoryId);
 
@@ -85,28 +55,17 @@ export default function CategoryDetailScreen() {
     navigateTo('product-detail');
   };
 
-  const handleStockOperationClick = (type: 'STOCK_IN' | 'STOCK_OUT' | 'SELL') => {
+  const handleStockOperation = (type: 'STOCK_IN' | 'STOCK_OUT' | 'SELL') => {
     if (products.length === 0) {
       toast.error(t('noData', language));
       return;
     }
-    // Show confirmation dialog
-    setPendingStockOp(type);
-  };
-
-  const handleStockOperationConfirm = () => {
-    if (!pendingStockOp) return;
     if (!useAppStore.getState().selectedProductId) {
       setSelectedProductId(products[0].id);
     }
-    setStockOperationType(pendingStockOp);
+    setStockOperationType(type);
     const screenMap = { STOCK_IN: 'stock-in', STOCK_OUT: 'stock-out', SELL: 'instant-sell' } as const;
-    navigateTo(screenMap[pendingStockOp]);
-    setPendingStockOp(null);
-  };
-
-  const handleStockOperationCancel = () => {
-    setPendingStockOp(null);
+    navigateTo(screenMap[type]);
   };
 
   // Map for category images
@@ -136,9 +95,6 @@ export default function CategoryDetailScreen() {
   const categoryImage = category?.image?.startsWith('/categories/')
     ? category.image
     : (category ? categoryImageMap[category.name] : '');
-
-  const pendingConfig = pendingStockOp ? stockOpConfig[pendingStockOp] : null;
-  const PendingIcon = pendingConfig?.icon;
 
   return (
     <div className="animated-bg min-h-screen pb-24">
@@ -228,21 +184,21 @@ export default function CategoryDetailScreen() {
           className="flex gap-3 mb-6"
         >
           <button
-            onClick={() => handleStockOperationClick('STOCK_IN')}
+            onClick={() => handleStockOperation('STOCK_IN')}
             className="flex-1 neon-btn py-3 text-sm font-semibold text-center"
             style={{ borderColor: 'rgba(57, 255, 20, 0.4)', color: '#39ff14', background: 'linear-gradient(135deg, rgba(57, 255, 20, 0.15), rgba(57, 200, 120, 0.1))' }}
           >
             {t('stockIn', language)}
           </button>
           <button
-            onClick={() => handleStockOperationClick('STOCK_OUT')}
+            onClick={() => handleStockOperation('STOCK_OUT')}
             className="flex-1 neon-btn py-3 text-sm font-semibold text-center"
             style={{ borderColor: 'rgba(255, 107, 0, 0.4)', color: '#ff6b00', background: 'linear-gradient(135deg, rgba(255, 107, 0, 0.15), rgba(255, 180, 0, 0.1))' }}
           >
             {t('stockOut', language)}
           </button>
           <button
-            onClick={() => handleStockOperationClick('SELL')}
+            onClick={() => handleStockOperation('SELL')}
             className="flex-1 neon-btn py-3 text-sm font-semibold text-center"
             style={{ borderColor: 'rgba(180, 74, 255, 0.4)', color: '#b44aff', background: 'linear-gradient(135deg, rgba(180, 74, 255, 0.15), rgba(140, 50, 220, 0.1))' }}
           >
@@ -312,83 +268,6 @@ export default function CategoryDetailScreen() {
           )}
         </motion.div>
       </div>
-
-      {/* Stock Operation Confirmation Dialog */}
-      <AnimatePresence>
-        {pendingStockOp && pendingConfig && PendingIcon && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-6"
-            onClick={handleStockOperationCancel}
-          >
-            {/* Backdrop */}
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-
-            {/* Dialog */}
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              onClick={(e) => e.stopPropagation()}
-              className="glass-card-strong p-6 w-full max-w-sm relative z-10"
-            >
-              {/* Close button */}
-              <button
-                onClick={handleStockOperationCancel}
-                className="absolute top-3 right-3 p-1.5 rounded-full hover:bg-white/10 transition-colors"
-              >
-                <X size={16} className="text-white/40" />
-              </button>
-
-              {/* Icon */}
-              <div
-                className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4"
-                style={{ backgroundColor: pendingConfig.bgColor, border: `1px solid ${pendingConfig.borderColor}` }}
-              >
-                <PendingIcon size={24} style={{ color: pendingConfig.color }} />
-              </div>
-
-              {/* Title */}
-              <h3 className="text-lg font-bold text-center mb-1" style={{ color: pendingConfig.color }}>
-                {pendingConfig.title}?
-              </h3>
-
-              {/* Category name */}
-              <p className="text-sm text-white/50 text-center mb-1">
-                {category?.name || 'Category'}
-              </p>
-
-              {/* Description */}
-              <p className="text-xs text-white/40 text-center mb-6">
-                {pendingConfig.desc}
-              </p>
-
-              {/* Buttons */}
-              <div className="flex gap-3">
-                <button
-                  onClick={handleStockOperationCancel}
-                  className="flex-1 glass-card py-3 text-sm font-semibold text-white/70 rounded-xl hover:bg-white/10 transition-colors"
-                >
-                  {t('cancel', language)}
-                </button>
-                <button
-                  onClick={handleStockOperationConfirm}
-                  className="flex-1 py-3 text-sm font-semibold rounded-xl text-white transition-all"
-                  style={{
-                    background: `linear-gradient(135deg, ${pendingConfig.color}, ${pendingConfig.color}88)`,
-                    border: `1px solid ${pendingConfig.borderColor}`,
-                  }}
-                >
-                  {t('confirm', language)}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

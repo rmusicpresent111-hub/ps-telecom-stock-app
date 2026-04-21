@@ -4,9 +4,15 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Product } from '@/lib/types';
-import { motion } from 'framer-motion';
-import { ArrowLeft, Search } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowLeft, Search, X, TrendingUp, TrendingDown, ShoppingBag } from 'lucide-react';
 import { toast } from 'sonner';
+
+const stockOpMeta: Record<string, { icon: React.ElementType; confirmLabel: string }> = {
+  STOCK_IN: { icon: TrendingUp, confirmLabel: 'Stock In' },
+  STOCK_OUT: { icon: TrendingDown, confirmLabel: 'Stock Out' },
+  SELL: { icon: ShoppingBag, confirmLabel: 'Sell' },
+};
 
 export default function StockOperationScreen() {
   const {
@@ -25,6 +31,7 @@ export default function StockOperationScreen() {
   const [price, setPrice] = useState('');
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
   const fetchProducts = useCallback(async () => {
@@ -39,8 +46,6 @@ export default function StockOperationScreen() {
         const data = await res.json();
         const products = data.products || [];
         setAllProducts(products);
-
-        // Product name field stays blank always - user must type/search
         setProductName('');
       }
     } catch {
@@ -67,7 +72,7 @@ export default function StockOperationScreen() {
 
   // For non-SELL: auto-match product by exact name
   useEffect(() => {
-    if (isSell) return; // SELL uses suggestion tap
+    if (isSell) return;
     if (!productName.trim()) {
       setProduct(null);
       return;
@@ -94,7 +99,7 @@ export default function StockOperationScreen() {
 
   const handleSelectSuggestion = (p: Product) => {
     setProduct(p);
-    setProductName(''); // Clear search bar for next typing
+    setProductName('');
     setShowSuggestions(false);
     setPrice(String(p.sellingPrice));
     setQuantity('');
@@ -104,7 +109,6 @@ export default function StockOperationScreen() {
     setProductName(val);
     if (isSell) {
       setShowSuggestions(true);
-      // If editing, deselect current product
       if (product) {
         setProduct(null);
         setPrice('');
@@ -140,20 +144,27 @@ export default function StockOperationScreen() {
     }
   };
 
-  const handleConfirm = async () => {
+  const handleConfirmClick = () => {
     if (!product?.id || !user?.id || !stockOperationType || !quantity) {
       toast.error(t('error', language));
       return;
     }
-
     const qty = parseInt(quantity);
-    const unitPrice = parseFloat(price) || 0;
-    const totalAmount = qty * unitPrice;
-
     if (qty <= 0) {
       toast.error(t('enterQuantity', language));
       return;
     }
+    // Show confirmation dialog
+    setShowConfirmDialog(true);
+  };
+
+  const handleConfirmYes = async () => {
+    setShowConfirmDialog(false);
+    if (!product?.id || !user?.id || !stockOperationType) return;
+
+    const qty = parseInt(quantity);
+    const unitPrice = parseFloat(price) || 0;
+    const totalAmount = qty * unitPrice;
 
     setLoading(true);
     try {
@@ -184,7 +195,15 @@ export default function StockOperationScreen() {
     }
   };
 
+  const handleConfirmCancel = () => {
+    setShowConfirmDialog(false);
+  };
+
   const accent = getAccentColor();
+  const meta = stockOperationType ? stockOpMeta[stockOperationType] : null;
+  const ConfirmIcon = meta?.icon;
+
+  const totalAmount = quantity && price ? (parseInt(quantity) * parseFloat(price)) : 0;
 
   return (
     <div className="animated-bg min-h-screen pb-24">
@@ -322,7 +341,7 @@ export default function StockOperationScreen() {
                       <div className="flex justify-between items-center">
                         <span className="text-xs text-white/60">Total Amount</span>
                         <span className="text-lg font-bold" style={{ color: accent }}>
-                          ₹{(parseInt(quantity) * parseFloat(price)).toLocaleString()}
+                          ₹{totalAmount.toLocaleString()}
                         </span>
                       </div>
                     </div>
@@ -339,7 +358,7 @@ export default function StockOperationScreen() {
               className="mt-6"
             >
               <button
-                onClick={handleConfirm}
+                onClick={handleConfirmClick}
                 disabled={loading || !quantity || !product}
                 className="neon-btn-solid w-full py-3 font-semibold text-sm disabled:opacity-50"
                 style={{
@@ -416,7 +435,7 @@ export default function StockOperationScreen() {
                       <div className="flex justify-between items-center">
                         <span className="text-xs text-white/60">Total Amount</span>
                         <span className="text-lg font-bold" style={{ color: accent }}>
-                          ₹{(parseInt(quantity) * parseFloat(price)).toLocaleString()}
+                          ₹{totalAmount.toLocaleString()}
                         </span>
                       </div>
                     </div>
@@ -433,7 +452,7 @@ export default function StockOperationScreen() {
               className="mt-6"
             >
               <button
-                onClick={handleConfirm}
+                onClick={handleConfirmClick}
                 disabled={loading || !quantity || !product}
                 className="neon-btn-solid w-full py-3 font-semibold text-sm disabled:opacity-50"
                 style={accent !== '#00f0ff' ? {
@@ -447,6 +466,96 @@ export default function StockOperationScreen() {
           </>
         )}
       </div>
+
+      {/* Confirmation Dialog */}
+      <AnimatePresence>
+        {showConfirmDialog && product && meta && ConfirmIcon && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-6"
+            onClick={handleConfirmCancel}
+          >
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+
+            {/* Dialog */}
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              onClick={(e) => e.stopPropagation()}
+              className="glass-card-strong p-6 w-full max-w-sm relative z-10"
+            >
+              {/* Close button */}
+              <button
+                onClick={handleConfirmCancel}
+                className="absolute top-3 right-3 p-1.5 rounded-full hover:bg-white/10 transition-colors"
+              >
+                <X size={16} className="text-white/40" />
+              </button>
+
+              {/* Icon */}
+              <div
+                className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4"
+                style={{ backgroundColor: `${accent}20`, border: `1px solid ${accent}66` }}
+              >
+                <ConfirmIcon size={24} style={{ color: accent }} />
+              </div>
+
+              {/* Title */}
+              <h3 className="text-lg font-bold text-center mb-3" style={{ color: accent }}>
+                {meta.confirmLabel}?
+              </h3>
+
+              {/* Operation details */}
+              <div className="space-y-2 mb-5">
+                <div className="flex justify-between items-center py-2 px-3 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                  <span className="text-xs text-white/50">Product</span>
+                  <span className="text-sm font-medium text-white/90">{product.name}</span>
+                </div>
+                <div className="flex justify-between items-center py-2 px-3 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                  <span className="text-xs text-white/50">{t('quantity', language)}</span>
+                  <span className="text-sm font-medium text-white/90">{quantity} pcs</span>
+                </div>
+                <div className="flex justify-between items-center py-2 px-3 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                  <span className="text-xs text-white/50">{getPriceLabel()}</span>
+                  <span className="text-sm font-medium text-white/90">₹{parseFloat(price || '0').toLocaleString()}</span>
+                </div>
+                {totalAmount > 0 && (
+                  <div className="flex justify-between items-center py-2 px-3 rounded-lg" style={{ background: `${accent}10`, border: `1px solid ${accent}30` }}>
+                    <span className="text-xs text-white/50">Total</span>
+                    <span className="text-sm font-bold" style={{ color: accent }}>₹{totalAmount.toLocaleString()}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={handleConfirmCancel}
+                  className="flex-1 glass-card py-3 text-sm font-semibold text-white/70 rounded-xl hover:bg-white/10 transition-colors"
+                >
+                  {t('cancel', language)}
+                </button>
+                <button
+                  onClick={handleConfirmYes}
+                  disabled={loading}
+                  className="flex-1 py-3 text-sm font-semibold rounded-xl text-white transition-all disabled:opacity-50"
+                  style={{
+                    background: `linear-gradient(135deg, ${accent}, ${accent}aa)`,
+                    border: `1px solid ${accent}88`,
+                  }}
+                >
+                  {loading ? t('loading', language) : t('confirm', language)}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
