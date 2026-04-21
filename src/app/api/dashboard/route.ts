@@ -87,7 +87,8 @@ export async function GET(request: NextRequest) {
         { name: 'Mobile', image: '/categories/mobile.png' },
         { name: 'Display/Combo', image: '/categories/display.png' },
         { name: 'Tempered Glass', image: '/categories/tempered-glass.png' },
-        { name: 'Flip Cover/Back Cover', image: '/categories/flip-cover.png' },
+        { name: 'Flip Cover', image: '/categories/flip-cover.png' },
+        { name: 'Back Cover', image: '/categories/back-cover.png' },
         { name: 'UV Glass', image: '/categories/uv-glass.png' },
         { name: 'Smart Watch', image: '/categories/smart-watch.png' },
         { name: 'Battery', image: '/categories/battery.png' },
@@ -113,6 +114,28 @@ export async function GET(request: NextRequest) {
         })),
       });
 
+      categories = await db.category.findMany({
+        where: { userId },
+        include: { _count: { select: { products: true } } },
+      });
+    }
+
+    // Migration: Split "Flip Cover/Back Cover" into two separate categories
+    const oldCombined = categories.find(c => c.name === 'Flip Cover/Back Cover');
+    if (oldCombined) {
+      // Rename existing to "Flip Cover"
+      await db.category.update({
+        where: { id: oldCombined.id },
+        data: { name: 'Flip Cover' },
+      });
+      // Create new "Back Cover" category
+      await db.category.create({
+        data: {
+          name: 'Back Cover',
+          image: '/categories/back-cover.png',
+          userId,
+        },
+      });
       categories = await db.category.findMany({
         where: { userId },
         include: { _count: { select: { products: true } } },
