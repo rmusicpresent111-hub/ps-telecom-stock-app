@@ -21,8 +21,7 @@ export type Screen =
   | 'instant-sell'
   | 'add-category'
   | 'invoice'
-  | 'daily-book'
-  | 'setup';
+  | 'daily-book';
 
 export type Language = 'bn' | 'en' | 'hi';
 
