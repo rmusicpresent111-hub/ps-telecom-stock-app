@@ -7,6 +7,7 @@ import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Language, User as UserType } from '@/lib/types';
 import { toast } from 'sonner';
+import { signup } from '@/lib/supabase-service';
 
 export default function SignupScreen() {
   const { language, setUser, navigateTo } = useAppStore();
@@ -44,24 +45,12 @@ export default function SignupScreen() {
 
     setIsLoading(true);
     try {
-      const res = await fetch('/api/auth', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password, shopName }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        toast.error(t('error', lang), { description: data.error || 'Signup failed' });
-        return;
-      }
-
+      const data = await signup(name, email, password, shopName);
       setUser(data.user as UserType);
       navigateTo('dashboard');
       toast.success(t('success', lang));
-    } catch {
-      toast.error(t('error', lang), { description: 'Network error. Please try again.' });
+    } catch (error) {
+      toast.error(t('error', lang), { description: error instanceof Error ? error.message : 'Signup failed' });
     } finally {
       setIsLoading(false);
     }

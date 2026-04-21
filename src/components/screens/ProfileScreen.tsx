@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
+import { getProfile, updateProfile, exportBackup, importBackup, resetData } from '@/lib/supabase-service';
 import { motion } from 'framer-motion';
 import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, LogOut, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
@@ -22,12 +23,9 @@ export default function ProfileScreen() {
   const fetchProfile = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const res = await fetch(`/api/profile?userId=${user.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.user) {
-          setUser(data.user);
-        }
+      const data = await getProfile(user.id);
+      if (data.user) {
+        setUser(data.user);
       }
     } catch {
       // Silently fail
@@ -42,16 +40,9 @@ export default function ProfileScreen() {
     if (!user?.id || !editName.trim()) return;
     setLoading(true);
     try {
-      const res = await fetch('/api/profile', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: user.id, name: editName.trim() }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data.user);
-        toast.success(t('updated', language));
-      }
+      const data = await updateProfile(user.id, { name: editName.trim() });
+      setUser(data.user);
+      toast.success(t('updated', language));
     } catch {
       toast.error(t('error', language));
     } finally {
@@ -66,11 +57,7 @@ export default function ProfileScreen() {
     // Update on server
     if (user?.id) {
       try {
-        await fetch('/api/profile', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: user.id, theme: newTheme }),
-        });
+        await updateProfile(user.id, { theme: newTheme });
       } catch {
         // Silently fail
       }
@@ -84,18 +71,15 @@ export default function ProfileScreen() {
   const handleBackup = async () => {
     if (!user?.id) return;
     try {
-      const res = await fetch(`/api/backup?userId=${user.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `ps-telecom-backup-${new Date().toISOString().split('T')[0]}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-        toast.success(t('backup', language) + ' ✓');
-      }
+      const data = await exportBackup(user.id);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ps-telecom-backup-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(t('backup', language) + ' ✓');
     } catch {
       toast.error(t('error', language));
     }
@@ -110,25 +94,15 @@ export default function ProfileScreen() {
     if (!file || !user?.id) return;
     try {
       const text = await file.text();
-      const data = JSON.parse(text);
-      const res = await fetch('/api/backup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          categories: data.categories || [],
-          products: data.products || [],
-          transactions: data.transactions || [],
-        }),
+      const backupData = JSON.parse(text);
+      await importBackup(user.id, {
+        categories: backupData.categories || [],
+        products: backupData.products || [],
+        transactions: backupData.transactions || [],
       });
-      if (res.ok) {
-        toast.success(t('restore', language) + ' ✓');
-      } else {
-        const err = await res.json();
-        toast.error(err.error || t('error', language));
-      }
-    } catch {
-      toast.error(t('error', language));
+      toast.success(t('restore', language) + ' ✓');
+    } catch (error) {
+      toast.error((error as Error).message || t('error', language));
     }
     // Reset file input
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -138,19 +112,10 @@ export default function ProfileScreen() {
     if (!user?.id) return;
     setLoading(true);
     try {
-      const res = await fetch('/api/backup', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id }),
-      });
-      if (res.ok) {
-        toast.success(t('deleted', language));
-      } else {
-        const err = await res.json();
-        toast.error(err.error || t('error', language));
-      }
-    } catch {
-      toast.error(t('error', language));
+      await resetData(user.id);
+      toast.success(t('deleted', language));
+    } catch (error) {
+      toast.error((error as Error).message || t('error', language));
     } finally {
       setLoading(false);
       setShowResetDialog(false);

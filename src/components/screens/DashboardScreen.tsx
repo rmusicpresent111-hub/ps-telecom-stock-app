@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
+import { getDashboard } from '@/lib/supabase-service';
 import { DashboardStats, Category, Product } from '@/lib/types';
 import { motion } from 'framer-motion';
 import { Search, Plus, Package, AlertTriangle, ArrowLeftRight, IndianRupee, User, ChevronRight, TrendingUp, BarChart3 } from 'lucide-react';
@@ -87,16 +88,13 @@ export default function DashboardScreen() {
     if (!user?.id) return;
     try {
       setLoading(true);
-      const res = await fetch(`/api/dashboard?userId=${user.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        setStats(data.stats);
-        setLowStockProducts(data.lowStockProducts || []);
-        setSaleOverview(data.saleOverview || []);
-        setStockOverview(data.stockOverview || []);
-        if (data.categories?.length > 0) {
-          setCategories(data.categories);
-        }
+      const data = await getDashboard(user.id);
+      setStats(data.stats);
+      setLowStockProducts(data.lowStockProducts || []);
+      setSaleOverview(data.saleOverview || []);
+      setStockOverview(data.stockOverview || []);
+      if (data.categories?.length > 0) {
+        setCategories(data.categories);
       }
     } catch {
       toast.error(t('error', language));

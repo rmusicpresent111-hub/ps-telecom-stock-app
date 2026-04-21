@@ -7,6 +7,7 @@ import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Language, User } from '@/lib/types';
 import { toast } from 'sonner';
+import { login } from '@/lib/supabase-service';
 
 export default function LoginScreen() {
   const { language, setUser, navigateTo } = useAppStore();
@@ -29,24 +30,12 @@ export default function LoginScreen() {
 
     setIsLoading(true);
     try {
-      const res = await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        toast.error(t('error', lang), { description: data.error || 'Login failed' });
-        return;
-      }
-
+      const data = await login(email, password);
       setUser(data.user as User);
       navigateTo('dashboard');
       toast.success(t('success', lang));
-    } catch {
-      toast.error(t('error', lang), { description: 'Network error. Please try again.' });
+    } catch (error) {
+      toast.error(t('error', lang), { description: error instanceof Error ? error.message : 'Login failed' });
     } finally {
       setIsLoading(false);
     }

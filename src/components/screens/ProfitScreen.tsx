@@ -7,6 +7,7 @@ import { motion } from 'framer-motion';
 import { TrendingUp, IndianRupee, BarChart3, Wallet } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { toast } from 'sonner';
+import { getReports } from '@/lib/supabase-service';
 
 interface DailyData {
   date: string;
@@ -33,18 +34,12 @@ export default function ProfitScreen() {
     if (!user?.id) return;
     try {
       setLoading(true);
-      const [dailyRes, monthlyRes] = await Promise.all([
-        fetch(`/api/reports?userId=${user.id}&type=daily`),
-        fetch(`/api/reports?userId=${user.id}&type=monthly`),
+      const [dailyReport, monthlyReport] = await Promise.all([
+        getReports(user.id, 'daily'),
+        getReports(user.id, 'monthly'),
       ]);
-      if (dailyRes.ok) {
-        const data = await dailyRes.json();
-        setDailyData(data.data || []);
-      }
-      if (monthlyRes.ok) {
-        const data = await monthlyRes.json();
-        setMonthlyData(data.data || []);
-      }
+      setDailyData((dailyReport.data || []) as DailyData[]);
+      setMonthlyData((monthlyReport.data || []) as MonthlyData[]);
     } catch {
       toast.error(t('error', language));
     } finally {

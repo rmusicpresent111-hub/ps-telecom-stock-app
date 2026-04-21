@@ -7,6 +7,7 @@ import { Product } from '@/lib/types';
 import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
+import { getProducts, createProduct, updateProduct } from '@/lib/supabase-service';
 
 export default function AddProductScreen() {
   const {
@@ -29,8 +30,7 @@ export default function AddProductScreen() {
 
   useEffect(() => {
     if (selectedProductId && user?.id) {
-      fetch(`/api/products?userId=${user.id}`)
-        .then((res) => res.json())
+      getProducts(user.id)
         .then((data) => {
           const product = data.products?.find((p: Product) => p.id === selectedProductId);
           if (product) {
@@ -56,53 +56,45 @@ export default function AddProductScreen() {
 
     setLoading(true);
     try {
-      const body = {
-        name: name.trim(),
-        categoryId,
-        quantity: parseInt(quantity) || 0,
-        boxNumber: boxNumber.trim(),
-        purchasePrice: parseFloat(purchasePrice) || 0,
-        sellingPrice: parseFloat(sellingPrice) || 0,
-        lowStockThreshold: parseInt(lowStockThreshold) || 5,
-        userId: user.id,
-      };
-
-      let res;
       if (isEditing && selectedProductId) {
-        res = await fetch('/api/products', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...body, id: selectedProductId }),
+        await updateProduct(selectedProductId, {
+          name: name.trim(),
+          categoryId,
+          quantity: parseInt(quantity) || 0,
+          boxNumber: boxNumber.trim(),
+          purchasePrice: parseFloat(purchasePrice) || 0,
+          sellingPrice: parseFloat(sellingPrice) || 0,
+          lowStockThreshold: parseInt(lowStockThreshold) || 5,
         });
       } else {
-        res = await fetch('/api/products', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+        await createProduct({
+          name: name.trim(),
+          categoryId,
+          quantity: parseInt(quantity) || 0,
+          boxNumber: boxNumber.trim(),
+          purchasePrice: parseFloat(purchasePrice) || 0,
+          sellingPrice: parseFloat(sellingPrice) || 0,
+          lowStockThreshold: parseInt(lowStockThreshold) || 5,
+          userId: user.id,
         });
       }
 
-      if (res?.ok) {
-        toast.success(isEditing ? t('updated', language) : t('added', language));
-        if (isEditing) {
-          setSelectedProductId(null);
-          goBack();
-        } else {
-          // Clear all fields but keep the selected category
-          setName('');
-          setQuantity('');
-          setBoxNumber('');
-          setPurchasePrice('');
-          setSellingPrice('');
-          setLowStockThreshold('5');
-          // categoryId stays the same - auto selected for next product
-        }
+      toast.success(isEditing ? t('updated', language) : t('added', language));
+      if (isEditing) {
+        setSelectedProductId(null);
+        goBack();
       } else {
-        const err = await res?.json();
-        toast.error(err?.error || t('error', language));
+        // Clear all fields but keep the selected category
+        setName('');
+        setQuantity('');
+        setBoxNumber('');
+        setPurchasePrice('');
+        setSellingPrice('');
+        setLowStockThreshold('5');
+        // categoryId stays the same - auto selected for next product
       }
-    } catch {
-      toast.error(t('error', language));
+    } catch (error) {
+      toast.error((error as Error).message || t('error', language));
     } finally {
       setLoading(false);
     }

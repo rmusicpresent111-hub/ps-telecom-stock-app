@@ -75,3 +75,8 @@ db/
 
 # Mini services
 /mini-services/
+
+# Android build
+/android/
+.api-routes-temp
+.api-routes-backup

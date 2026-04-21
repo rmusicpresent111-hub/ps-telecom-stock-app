@@ -7,6 +7,7 @@ import { Product, Transaction } from '@/lib/types';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Edit, Trash2, Package, Archive, IndianRupee, Tag } from 'lucide-react';
 import { toast } from 'sonner';
+import { getProducts, getTransactions, deleteProduct } from '@/lib/supabase-service';
 
 export default function ProductDetailScreen() {
   const {
@@ -25,21 +26,14 @@ export default function ProductDetailScreen() {
     if (!user?.id || !selectedProductId) return;
     try {
       setLoading(true);
-      const [prodRes, txnRes] = await Promise.all([
-        fetch(`/api/products?userId=${user.id}`),
-        fetch(`/api/transactions?userId=${user.id}&productId=${selectedProductId}`),
+      const [prodData, txnData] = await Promise.all([
+        getProducts(user.id),
+        getTransactions(user.id, { productId: selectedProductId }),
       ]);
 
-      if (prodRes.ok) {
-        const prodData = await prodRes.json();
-        const found = prodData.products?.find((p: Product) => p.id === selectedProductId);
-        if (found) setProduct(found);
-      }
-
-      if (txnRes.ok) {
-        const txnData = await txnRes.json();
-        setTransactions(txnData.transactions || []);
-      }
+      const found = prodData.products?.find((p: Product) => p.id === selectedProductId);
+      if (found) setProduct(found);
+      setTransactions(txnData.transactions || []);
     } catch {
       toast.error(t('error', language));
     } finally {
@@ -56,23 +50,14 @@ export default function ProductDetailScreen() {
   };
 
   const handleDelete = async () => {
-    if (!selectedProductId || !user?.id) return;
+    if (!selectedProductId) return;
     try {
-      const res = await fetch('/api/products', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: selectedProductId }),
-      });
-      if (res.ok) {
-        toast.success(t('deleted', language));
-        setSelectedProductId(null);
-        goBack();
-      } else {
-        const err = await res.json();
-        toast.error(err.error || t('error', language));
-      }
-    } catch {
-      toast.error(t('error', language));
+      await deleteProduct(selectedProductId);
+      toast.success(t('deleted', language));
+      setSelectedProductId(null);
+      goBack();
+    } catch (error) {
+      toast.error((error as Error).message || t('error', language));
     }
     setShowDeleteDialog(false);
   };

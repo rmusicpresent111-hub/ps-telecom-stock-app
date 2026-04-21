@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAppStore } from '@/store/appStore';
+import { getProfile } from '@/lib/supabase-service';
 
 const floatingIcons = ['📱', '🎧', '🔌', '⌚', '📺'];
 
@@ -58,18 +59,14 @@ export default function SplashScreen() {
         // Returning user - verify user still exists in Supabase
         const currentUser = useAppStore.getState().user;
         if (currentUser?.id) {
-          fetch(`/api/profile?userId=${currentUser.id}`)
-            .then(res => {
-              if (res.ok) {
-                navigateTo('dashboard');
-              } else {
-                // User not found in Supabase - logout and go to login
-                useAppStore.getState().logout();
-                navigateTo('login');
-              }
+          getProfile(currentUser.id)
+            .then(() => {
+              navigateTo('dashboard');
             })
             .catch(() => {
-              navigateTo('dashboard');
+              // User not found in Supabase - logout and go to login
+              useAppStore.getState().logout();
+              navigateTo('login');
             });
         } else {
           navigateTo('login');

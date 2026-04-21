@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Transaction } from '@/lib/types';
+import { getTransactions } from '@/lib/supabase-service';
 import { motion } from 'framer-motion';
 import { Clock } from 'lucide-react';
 import { toast } from 'sonner';
@@ -21,12 +22,10 @@ export default function HistoryScreen() {
     if (!user?.id) return;
     try {
       setLoading(true);
-      const typeParam = filter !== 'ALL' ? `&type=${filter}` : '';
-      const res = await fetch(`/api/transactions?userId=${user.id}${typeParam}`);
-      if (res.ok) {
-        const data = await res.json();
-        setTransactions(data.transactions || []);
-      }
+      const data = filter !== 'ALL'
+        ? await getTransactions(user.id, { type: filter })
+        : await getTransactions(user.id);
+      setTransactions(data.transactions || []);
     } catch {
       toast.error(t('error', language));
     } finally {

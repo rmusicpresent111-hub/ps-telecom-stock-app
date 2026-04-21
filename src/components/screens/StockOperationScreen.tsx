@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Product } from '@/lib/types';
+import { getProducts, createTransaction } from '@/lib/supabase-service';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Search, X, TrendingUp, TrendingDown, ShoppingBag } from 'lucide-react';
 import { toast } from 'sonner';
@@ -38,16 +39,12 @@ export default function StockOperationScreen() {
     if (!user?.id) return;
     try {
       setFetching(true);
-      const url = selectedCategoryId
-        ? `/api/products?userId=${user.id}&categoryId=${selectedCategoryId}`
-        : `/api/products?userId=${user.id}`;
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        const products = data.products || [];
-        setAllProducts(products);
-        setProductName('');
-      }
+      const data = selectedCategoryId
+        ? await getProducts(user.id, { categoryId: selectedCategoryId })
+        : await getProducts(user.id);
+      const products = data.products || [];
+      setAllProducts(products);
+      setProductName('');
     } catch {
       toast.error(t('error', language));
     } finally {
@@ -168,28 +165,18 @@ export default function StockOperationScreen() {
 
     setLoading(true);
     try {
-      const res = await fetch('/api/transactions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: stockOperationType,
-          productId: product.id,
-          quantity: qty,
-          unitPrice,
-          totalAmount,
-          userId: user.id,
-        }),
+      await createTransaction({
+        type: stockOperationType,
+        productId: product.id,
+        quantity: qty,
+        unitPrice,
+        totalAmount,
+        userId: user.id,
       });
-
-      if (res.ok) {
-        toast.success(t('success', language));
-        goBack();
-      } else {
-        const err = await res.json();
-        toast.error(err.error || t('error', language));
-      }
-    } catch {
-      toast.error(t('error', language));
+      toast.success(t('success', language));
+      goBack();
+    } catch (error) {
+      toast.error((error as Error).message || t('error', language));
     } finally {
       setLoading(false);
     }

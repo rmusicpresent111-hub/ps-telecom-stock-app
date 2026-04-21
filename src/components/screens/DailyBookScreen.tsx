@@ -9,6 +9,7 @@ import {
   Receipt, ShoppingBag, Zap, Home, Car, UtensilsCrossed, MoreHorizontal, X
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { getCashEntries, upsertCashEntry, updateCashEntry, deleteCashEntry as deleteCashEntrySvc, getExpenses, createExpense, updateExpense, deleteExpense as deleteExpenseSvc } from '@/lib/supabase-service';
 
 interface CashEntry {
   id: string;
@@ -80,12 +81,9 @@ export default function DailyBookScreen() {
   const fetchCashEntries = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const res = await fetch(`/api/cash-entries?userId=${user.id}&period=${period}`);
-      if (res.ok) {
-        const data = await res.json();
-        setCashEntries(data.entries || []);
-        setSummary(data.summary || { totalHandCash: 0, totalLiquidCash: 0, totalCash: 0 });
-      }
+      const data = await getCashEntries(user.id, { period });
+      setCashEntries((data.entries || []) as CashEntry[]);
+      setSummary(data.summary || { totalHandCash: 0, totalLiquidCash: 0, totalCash: 0 });
     } catch {
       // silent
     }
@@ -94,12 +92,9 @@ export default function DailyBookScreen() {
   const fetchExpenses = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const res = await fetch(`/api/expenses?userId=${user.id}&period=${period}`);
-      if (res.ok) {
-        const data = await res.json();
-        setExpenses(data.expenses || []);
-        setExpenseSummary(data.summary || { totalExpense: 0, byCategory: {}, count: 0 });
-      }
+      const data = await getExpenses(user.id, { period });
+      setExpenses((data.expenses || []) as Expense[]);
+      setExpenseSummary(data.summary || { totalExpense: 0, byCategory: {}, count: 0 });
     } catch {
       // silent
     }
@@ -165,44 +160,36 @@ export default function DailyBookScreen() {
 
   const handleDeleteCash = async (id: string) => {
     try {
-      const res = await fetch(`/api/cash-entries?id=${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        toast.success(isBn ? 'মুছে ফেলা হয়েছে' : isHi ? 'मिटाया गया' : 'Deleted');
-        fetchCashEntries();
-      }
+      await deleteCashEntrySvc(id);
+      toast.success(isBn ? 'মুছে ফেলা হয়েছে' : isHi ? 'मिटाया गया' : 'Deleted');
+      fetchCashEntries();
     } catch {
       toast.error(isBn ? 'ত্রুটি' : isHi ? 'त्रुटि' : 'Error');
     }
   };
 
-  // Expense form handlers
   const handleSaveExpense = async () => {
     if (!user?.id || !expenseAmount) return;
     setLoading(true);
     try {
-      const url = editingExpenseId ? '/api/expenses' : '/api/expenses';
-      const method = editingExpenseId ? 'PUT' : 'POST';
-      const body: Record<string, unknown> = {
-        userId: user.id,
-        date: expenseDate,
-        amount: parseFloat(expenseAmount),
-        category: expenseCategory,
-        description: expenseDesc,
-      };
-      if (editingExpenseId) body.id = editingExpenseId;
-
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (res.ok) {
-        toast.success(isBn ? 'সংরক্ষিত হয়েছে' : isHi ? 'संरक्षित' : 'Saved successfully');
-        resetExpenseForm();
-        fetchExpenses();
+      if (editingExpenseId) {
+        await updateExpense(editingExpenseId, {
+          amount: parseFloat(expenseAmount),
+          category: expenseCategory,
+          description: expenseDesc,
+        });
       } else {
-        toast.error(isBn ? 'ত্রুটি' : isHi ? 'त्रुटि' : 'Error');
+        await createExpense({
+          userId: user.id,
+          date: expenseDate,
+          amount: parseFloat(expenseAmount),
+          category: expenseCategory,
+          description: expenseDesc,
+        });
       }
+      toast.success(isBn ? 'সংরক্ষিত হয়েছে' : isHi ? 'संरक्षित' : 'Saved successfully');
+      resetExpenseForm();
+      fetchExpenses();
     } catch {
       toast.error(isBn ? 'ত্রুটি' : isHi ? 'त्रुटि' : 'Error');
     } finally {
@@ -230,11 +217,9 @@ export default function DailyBookScreen() {
 
   const handleDeleteExpense = async (id: string) => {
     try {
-      const res = await fetch(`/api/expenses?id=${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        toast.success(isBn ? 'মুছে ফেলা হয়েছে' : isHi ? 'मिटाया गया' : 'Deleted');
-        fetchExpenses();
-      }
+      await deleteExpenseSvc(id);
+      toast.success(isBn ? 'মুছে ফেলা হয়েছে' : isHi ? 'मिटाया गया' : 'Deleted');
+      fetchExpenses();
     } catch {
       toast.error(isBn ? 'ত্রুটি' : isHi ? 'त्रुटि' : 'Error');
     }

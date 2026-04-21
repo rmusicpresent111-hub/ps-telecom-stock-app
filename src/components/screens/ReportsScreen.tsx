@@ -6,6 +6,7 @@ import { t } from '@/lib/i18n';
 import { motion } from 'framer-motion';
 import { ArrowLeft, FileText, Download, ChevronDown, ChevronUp, Package, IndianRupee, TrendingUp, AlertTriangle, BarChart3 } from 'lucide-react';
 import { toast } from 'sonner';
+import { getReports } from '@/lib/supabase-service';
 import { Bar, BarChart, XAxis, YAxis, CartesianGrid, Cell } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 
@@ -102,29 +103,17 @@ export default function ReportsScreen() {
     if (!user?.id) return;
     try {
       setLoading(true);
-      const [svRes, catRes, dailyRes, monthlyRes] = await Promise.all([
-        fetch(`/api/reports?userId=${user.id}&type=stock-value`),
-        fetch(`/api/reports?userId=${user.id}&type=category`),
-        fetch(`/api/reports?userId=${user.id}&type=daily`),
-        fetch(`/api/reports?userId=${user.id}&type=monthly`),
+      const [svReport, catReport, dailyReport, monthlyReport] = await Promise.all([
+        getReports(user.id, 'stock-value'),
+        getReports(user.id, 'category'),
+        getReports(user.id, 'daily'),
+        getReports(user.id, 'monthly'),
       ]);
-      if (svRes.ok) {
-        const data = await svRes.json();
-        setStockValueData(data.data || []);
-        setGrandTotal(data.grandTotal || null);
-      }
-      if (catRes.ok) {
-        const data = await catRes.json();
-        setCategoryData(data.data || []);
-      }
-      if (dailyRes.ok) {
-        const data = await dailyRes.json();
-        setDailyData(data.data || []);
-      }
-      if (monthlyRes.ok) {
-        const data = await monthlyRes.json();
-        setMonthlyData(data.data || []);
-      }
+      setStockValueData((svReport.data || []) as StockValueCategory[]);
+      setGrandTotal(svReport.grandTotal || null);
+      setCategoryData((catReport.data || []) as CategoryReport[]);
+      setDailyData((dailyReport.data || []) as DailyReport[]);
+      setMonthlyData((monthlyReport.data || []) as MonthlyReport[]);
     } catch {
       toast.error(t('error', language));
     } finally {

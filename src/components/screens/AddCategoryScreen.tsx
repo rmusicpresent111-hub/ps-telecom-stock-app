@@ -6,6 +6,7 @@ import { t } from '@/lib/i18n';
 import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
+import { createCategory } from '@/lib/supabase-service';
 
 const presetCategories = [
   { name: 'Mobile', image: '/categories/mobile.png', emoji: '📱' },
@@ -56,25 +57,11 @@ export default function AddCategoryScreen() {
     setLoading(true);
     try {
       const imageData = iconMode === 'image' ? selectedImage : selectedEmoji;
-      const res = await fetch('/api/categories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          image: imageData,
-          userId: user.id,
-        }),
-      });
-
-      if (res.ok) {
-        toast.success(t('added', language));
-        goBack();
-      } else {
-        const err = await res.json();
-        toast.error(err.error || t('error', language));
-      }
-    } catch {
-      toast.error(t('error', language));
+      await createCategory(name.trim(), imageData, user.id);
+      toast.success(t('added', language));
+      goBack();
+    } catch (error) {
+      toast.error((error as Error).message || t('error', language));
     } finally {
       setLoading(false);
     }

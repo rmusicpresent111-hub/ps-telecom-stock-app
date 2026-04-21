@@ -7,6 +7,7 @@ import { Category, Product } from '@/lib/types';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Plus, Search, Package, AlertTriangle, ArrowLeftRight, IndianRupee } from 'lucide-react';
 import { toast } from 'sonner';
+import { getProducts } from '@/lib/supabase-service';
 
 export default function CategoryDetailScreen() {
   const {
@@ -25,11 +26,8 @@ export default function CategoryDetailScreen() {
     if (!user?.id || !selectedCategoryId) return;
     try {
       setLoading(true);
-      const res = await fetch(`/api/products?userId=${user.id}&categoryId=${selectedCategoryId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setProducts(data.products || []);
-      }
+      const data = await getProducts(user.id, { categoryId: selectedCategoryId });
+      setProducts(data.products || []);
     } catch {
       toast.error(t('error', language));
     } finally {

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Product } from '@/lib/types';
+import { getProducts } from '@/lib/supabase-service';
 import { motion } from 'framer-motion';
 import { Plus, Search } from 'lucide-react';
 import { toast } from 'sonner';
@@ -19,12 +20,10 @@ export default function ProductListScreen() {
     if (!user?.id) return;
     try {
       setLoading(true);
-      const searchParam = localSearch ? `&search=${encodeURIComponent(localSearch)}` : '';
-      const res = await fetch(`/api/products?userId=${user.id}${searchParam}`);
-      if (res.ok) {
-        const data = await res.json();
-        setProducts(data.products || []);
-      }
+      const data = localSearch
+        ? await getProducts(user.id, { search: localSearch })
+        : await getProducts(user.id);
+      setProducts(data.products || []);
     } catch {
       toast.error(t('error', language));
     } finally {
