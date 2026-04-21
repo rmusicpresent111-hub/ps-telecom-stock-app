@@ -6,25 +6,29 @@ Agent: Main Agent
 Task: Add Daily Book feature to Profile section for cash management
 
 Work Log:
-- Read current project structure (types, store, profile screen, i18n, page.tsx)
 - Designed and added CashEntry and Expense models to Prisma schema
-- Added User relations for cashEntries and expenses
-- Pushed schema to database with `bun run db:push`
-- Created `/api/cash-entries` route with GET, POST, PUT, DELETE handlers (supports period filtering: today/week/month)
-- Created `/api/expenses` route with GET, POST, PUT, DELETE handlers (supports category grouping)
-- Built DailyBookScreen component with 4 tabs: Overview, Cash, Expenses, History
-- Added Daily Book navigation button in ProfileScreen with Receipt icon
+- Created /api/cash-entries route (GET, POST, PUT, DELETE) with period filtering
+- Created /api/expenses route (GET, POST, PUT, DELETE) with category grouping
+- Built DailyBookScreen component with 4 tabs (Overview, Cash, Expenses, History)
+- Added Daily Book navigation button in ProfileScreen
 - Updated Screen type and page.tsx routing
-- Verified with lint check (no errors) and dev server (running correctly)
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix Daily Book entries not saving - PrismaClient cache issue
+
+Work Log:
+- Identified root cause: globalThis cached an OLD PrismaClient without cashEntry/expense models
+- When Next.js hot-reloads, globalForPrisma.prisma retains stale PrismaClient
+- db.cashEntry was undefined because the cached client predated the new models
+- Fixed db.ts to check 'cashEntry' and 'expense' in cached client before reusing
+- If models are missing, creates fresh PrismaClient instead of using stale cache
+- Verified all API endpoints work correctly (GET 200, POST creates entries)
+- Server is now stable and entries are being saved successfully
 
 Stage Summary:
-- Daily Book feature is fully functional with:
-  - Total Hand Cash & Liquid Cash display (big cards)
-  - Net Cash calculation (Total Cash - Total Expense)
-  - Daily cash entry form (hand cash, liquid cash, note)
-  - Extra expense entry with 6 categories (Rent, Transport, Food, Electricity, Shopping, Other)
-  - Period filter (Today, Week, Month)
-  - History view grouped by date with expandable sections
-  - Edit & delete for both cash entries and expenses
-  - Full Bengali, English, Hindi language support
-  - Expense breakdown by category with progress bars
+- Root cause: Stale PrismaClient in globalThis cache missing new models
+- Fix: Added model existence check in db.ts before reusing cached client
+- All APIs verified working: GET, POST, PUT, DELETE for cash-entries and expenses
+- Daily Book feature now fully functional
