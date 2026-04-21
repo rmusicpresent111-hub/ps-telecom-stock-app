@@ -9,15 +9,25 @@ import { Search, Plus, Package, AlertTriangle, ArrowLeftRight, IndianRupee, User
 import { toast } from 'sonner';
 
 const defaultCategories = [
-  { name: 'Mobile', image: '📱' },
-  { name: 'Display', image: '🖥️' },
-  { name: 'Tempered Glass', image: '🛡️' },
-  { name: 'Covers', image: '📱' },
-  { name: 'Smart Watch', image: '⌚' },
-  { name: 'Battery', image: '🔋' },
-  { name: 'Charger', image: '🔌' },
-  { name: 'Earbuds', image: '🎧' },
-  { name: 'Accessories', image: '🔧' },
+  { name: 'Mobile', image: '/categories/mobile.png', emoji: '📱' },
+  { name: 'Display/Combo', image: '/categories/display.png', emoji: '🖥️' },
+  { name: 'Tempered Glass', image: '/categories/tempered-glass.png', emoji: '🛡️' },
+  { name: 'Flip Cover/Back Cover', image: '/categories/flip-cover.png', emoji: '📱' },
+  { name: 'UV Glass', image: '/categories/uv-glass.png', emoji: '✨' },
+  { name: 'Smart Watch', image: '/categories/smart-watch.png', emoji: '⌚' },
+  { name: 'Battery', image: '/categories/battery.png', emoji: '🔋' },
+  { name: 'Charger', image: '/categories/charger.png', emoji: '🔌' },
+  { name: 'Neck Band', image: '/categories/neckband.png', emoji: '🎵' },
+  { name: 'Ear Pods', image: '/categories/earpods.png', emoji: '🎧' },
+  { name: 'Selfie Stick', image: '/categories/selfie-stick.png', emoji: '📸' },
+  { name: 'Ring Light', image: '/categories/ring-light.png', emoji: '💡' },
+  { name: 'Mobile Stand', image: '/categories/mobile-stand.png', emoji: '📐' },
+  { name: 'Watch Strap', image: '/categories/watch-strap.png', emoji: '⌚' },
+  { name: 'Earphone', image: '/categories/earphone.png', emoji: '🎧' },
+  { name: 'Memory Card', image: '/categories/memory-card.png', emoji: '💾' },
+  { name: 'Data Cable', image: '/categories/data-cable.png', emoji: '🔌' },
+  { name: 'Home Theater', image: '/categories/home-theater.png', emoji: '🔊' },
+  { name: 'Refrigerator', image: '/categories/refrigerator.png', emoji: '❄️' },
 ];
 
 export default function DashboardScreen() {
@@ -204,24 +214,37 @@ export default function DashboardScreen() {
 
           {displayCategories.length > 0 ? (
             <div className="grid grid-cols-3 gap-3">
-              {displayCategories.map((cat, idx) => (
-                <motion.button
-                  key={cat.id}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.05 * idx }}
-                  onClick={() => handleCategoryTap(cat)}
-                  className="glass-card glass-shine category-card p-4 flex flex-col items-center gap-2"
-                >
-                  <span className="text-2xl">{cat.image || '📦'}</span>
-                  <span className="text-xs font-medium text-white/90 truncate w-full text-center">
-                    {cat.name}
-                  </span>
-                  <span className="text-[10px] text-white/50">
-                    {cat._count?.products ?? 0} items
-                  </span>
-                </motion.button>
-              ))}
+              {displayCategories.map((cat, idx) => {
+                const defaultCat = defaultCategories.find(dc => dc.name === cat.name);
+                const imgSrc = cat.image?.startsWith('/categories/') ? cat.image : (defaultCat?.image || '');
+                return (
+                  <motion.button
+                    key={cat.id}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: Math.min(0.03 * idx, 0.5) }}
+                    onClick={() => handleCategoryTap(cat)}
+                    className="glass-card glass-shine category-card p-3 flex flex-col items-center gap-2"
+                  >
+                    <div className="category-img-wrapper w-14 h-14 bg-white/5 flex items-center justify-center">
+                      {imgSrc ? (
+                        <>
+                          <img src={imgSrc} alt={cat.name} className="w-full h-full object-cover" />
+                          <div className="category-img-overlay" />
+                        </>
+                      ) : (
+                        <span className="text-2xl">{cat.image || '📦'}</span>
+                      )}
+                    </div>
+                    <span className="text-[11px] font-medium text-white/90 truncate w-full text-center leading-tight">
+                      {cat.name}
+                    </span>
+                    <span className="text-[10px] text-cyan-400/70 font-medium">
+                      {cat._count?.products ?? 0} items
+                    </span>
+                  </motion.button>
+                );
+              })}
             </div>
           ) : (
             <div className="grid grid-cols-3 gap-3">
@@ -230,12 +253,26 @@ export default function DashboardScreen() {
                   key={cat.name}
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.05 * idx }}
-                  className="glass-card p-4 flex flex-col items-center gap-2 opacity-60"
+                  transition={{ delay: Math.min(0.03 * idx, 0.5) }}
+                  onClick={() => {
+                    navigateTo('add-category');
+                  }}
+                  className="glass-card glass-shine category-card p-3 flex flex-col items-center gap-2 cursor-pointer"
                 >
-                  <span className="text-2xl">{cat.image}</span>
-                  <span className="text-xs font-medium text-white/60">{cat.name}</span>
-                  <span className="text-[10px] text-white/40">0 items</span>
+                  <div className="category-img-wrapper w-14 h-14 bg-white/5 flex items-center justify-center">
+                    {cat.image ? (
+                      <>
+                        <img src={cat.image} alt={cat.name} className="w-full h-full object-cover" />
+                        <div className="category-img-overlay" />
+                      </>
+                    ) : (
+                      <span className="text-2xl">{cat.emoji}</span>
+                    )}
+                  </div>
+                  <span className="text-[11px] font-medium text-white/90 truncate w-full text-center leading-tight">
+                    {cat.name}
+                  </span>
+                  <span className="text-[10px] text-cyan-400/70 font-medium">0 items</span>
                 </motion.div>
               ))}
             </div>

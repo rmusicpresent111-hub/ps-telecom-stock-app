@@ -391,6 +391,36 @@
   animation: categoryGlow 2s ease-in-out infinite;
 }
 
+.category-card:active {
+  transform: scale(0.97);
+}
+
+/* Category image card */
+.category-img-wrapper {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.category-img-wrapper img {
+  transition: transform 0.3s ease;
+}
+
+.category-card:hover .category-img-wrapper img {
+  transform: scale(1.08);
+}
+
+.category-img-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.light-theme .category-img-overlay {
+  background: linear-gradient(to top, rgba(255,255,255,0.3) 0%, transparent 60%);
+}
+
 /* Page transitions */
 .page-enter {
   animation: pageEnter 0.3s ease-out forwards;

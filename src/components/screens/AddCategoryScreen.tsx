@@ -7,14 +7,44 @@ import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 
-const emojiOptions = ['📱', '🖥️', '🛡️', '⌚', '🔋', '🔌', '🎧', '🔧', '💾', '🎮', '📷', '🔊', '📡', '💡', '📦', '🏷️', '🖲️', '🖥️'];
+const presetCategories = [
+  { name: 'Mobile', image: '/categories/mobile.png', emoji: '📱' },
+  { name: 'Display/Combo', image: '/categories/display.png', emoji: '🖥️' },
+  { name: 'Tempered Glass', image: '/categories/tempered-glass.png', emoji: '🛡️' },
+  { name: 'Flip Cover/Back Cover', image: '/categories/flip-cover.png', emoji: '📱' },
+  { name: 'UV Glass', image: '/categories/uv-glass.png', emoji: '✨' },
+  { name: 'Smart Watch', image: '/categories/smart-watch.png', emoji: '⌚' },
+  { name: 'Battery', image: '/categories/battery.png', emoji: '🔋' },
+  { name: 'Charger', image: '/categories/charger.png', emoji: '🔌' },
+  { name: 'Neck Band', image: '/categories/neckband.png', emoji: '🎵' },
+  { name: 'Ear Pods', image: '/categories/earpods.png', emoji: '🎧' },
+  { name: 'Selfie Stick', image: '/categories/selfie-stick.png', emoji: '📸' },
+  { name: 'Ring Light', image: '/categories/ring-light.png', emoji: '💡' },
+  { name: 'Mobile Stand', image: '/categories/mobile-stand.png', emoji: '📐' },
+  { name: 'Watch Strap', image: '/categories/watch-strap.png', emoji: '⌚' },
+  { name: 'Earphone', image: '/categories/earphone.png', emoji: '🎧' },
+  { name: 'Memory Card', image: '/categories/memory-card.png', emoji: '💾' },
+  { name: 'Data Cable', image: '/categories/data-cable.png', emoji: '🔌' },
+  { name: 'Home Theater', image: '/categories/home-theater.png', emoji: '🔊' },
+  { name: 'Refrigerator', image: '/categories/refrigerator.png', emoji: '❄️' },
+];
+
+const emojiOptions = ['📱', '🖥️', '🛡️', '⌚', '🔋', '🔌', '🎧', '🔧', '💾', '🎮', '📷', '🔊', '📡', '💡', '📦', '🏷️', '🖲️', '❄️'];
 
 export default function AddCategoryScreen() {
   const { user, language, goBack } = useAppStore();
 
   const [name, setName] = useState('');
-  const [emoji, setEmoji] = useState('📦');
+  const [selectedImage, setSelectedImage] = useState('');
+  const [selectedEmoji, setSelectedEmoji] = useState('📦');
+  const [iconMode, setIconMode] = useState<'image' | 'emoji'>('image');
   const [loading, setLoading] = useState(false);
+
+  const handlePresetSelect = (preset: typeof presetCategories[0]) => {
+    setName(preset.name);
+    setSelectedImage(preset.image);
+    setIconMode('image');
+  };
 
   const handleSave = async () => {
     if (!name.trim() || !user?.id) {
@@ -24,12 +54,13 @@ export default function AddCategoryScreen() {
 
     setLoading(true);
     try {
+      const imageData = iconMode === 'image' ? selectedImage : selectedEmoji;
       const res = await fetch('/api/categories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim(),
-          image: emoji,
+          image: imageData,
           userId: user.id,
         }),
       });
@@ -88,30 +119,83 @@ export default function AddCategoryScreen() {
             />
           </div>
 
-          {/* Emoji Picker */}
+          {/* Icon Mode Toggle */}
           <div>
-            <label className="text-xs text-white/60 mb-2 block">Icon</label>
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={() => setIconMode('image')}
+                className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${
+                  iconMode === 'image'
+                    ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-400'
+                    : 'glass-card text-white/60'
+                }`}
+              >
+                🖼️ Photo Icon
+              </button>
+              <button
+                onClick={() => setIconMode('emoji')}
+                className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${
+                  iconMode === 'emoji'
+                    ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-400'
+                    : 'glass-card text-white/60'
+                }`}
+              >
+                😀 Emoji Icon
+              </button>
+            </div>
+
+            {/* Selected preview */}
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-14 h-14 glass-card flex items-center justify-center text-3xl">
-                {emoji}
+              <div className="w-14 h-14 glass-card flex items-center justify-center overflow-hidden rounded-xl">
+                {iconMode === 'image' && selectedImage ? (
+                  <img src={selectedImage} alt="Selected" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-3xl">{selectedEmoji}</span>
+                )}
               </div>
               <span className="text-sm text-white/60">Selected Icon</span>
             </div>
-            <div className="grid grid-cols-9 gap-2">
-              {emojiOptions.map((em) => (
-                <button
-                  key={em}
-                  onClick={() => setEmoji(em)}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg transition-all ${
-                    emoji === em
-                      ? 'bg-cyan-500/20 border border-cyan-500/40 scale-110'
-                      : 'glass-card hover:scale-105'
-                  }`}
-                >
-                  {em}
-                </button>
-              ))}
-            </div>
+
+            {/* Image picker */}
+            {iconMode === 'image' && (
+              <div className="grid grid-cols-4 gap-2 max-h-64 overflow-y-auto pr-1">
+                {presetCategories.map((preset) => (
+                  <button
+                    key={preset.name}
+                    onClick={() => handlePresetSelect(preset)}
+                    className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-all ${
+                      selectedImage === preset.image
+                        ? 'bg-cyan-500/20 border border-cyan-500/40 scale-105'
+                        : 'glass-card hover:scale-105'
+                    }`}
+                  >
+                    <div className="w-10 h-10 rounded-lg overflow-hidden">
+                      <img src={preset.image} alt={preset.name} className="w-full h-full object-cover" />
+                    </div>
+                    <span className="text-[9px] text-white/70 truncate w-full text-center leading-tight">{preset.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Emoji picker */}
+            {iconMode === 'emoji' && (
+              <div className="grid grid-cols-9 gap-2">
+                {emojiOptions.map((em) => (
+                  <button
+                    key={em}
+                    onClick={() => setSelectedEmoji(em)}
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg transition-all ${
+                      selectedEmoji === em
+                        ? 'bg-cyan-500/20 border border-cyan-500/40 scale-110'
+                        : 'glass-card hover:scale-105'
+                    }`}
+                  >
+                    {em}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </motion.div>
 

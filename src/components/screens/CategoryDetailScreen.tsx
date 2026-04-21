@@ -69,6 +69,33 @@ export default function CategoryDetailScreen() {
     navigateTo(screenMap[type]);
   };
 
+  // Map for category images
+  const categoryImageMap: Record<string, string> = {
+    'Mobile': '/categories/mobile.png',
+    'Display/Combo': '/categories/display.png',
+    'Tempered Glass': '/categories/tempered-glass.png',
+    'Flip Cover/Back Cover': '/categories/flip-cover.png',
+    'UV Glass': '/categories/uv-glass.png',
+    'Smart Watch': '/categories/smart-watch.png',
+    'Battery': '/categories/battery.png',
+    'Charger': '/categories/charger.png',
+    'Neck Band': '/categories/neckband.png',
+    'Ear Pods': '/categories/earpods.png',
+    'Selfie Stick': '/categories/selfie-stick.png',
+    'Ring Light': '/categories/ring-light.png',
+    'Mobile Stand': '/categories/mobile-stand.png',
+    'Watch Strap': '/categories/watch-strap.png',
+    'Earphone': '/categories/earphone.png',
+    'Memory Card': '/categories/memory-card.png',
+    'Data Cable': '/categories/data-cable.png',
+    'Home Theater': '/categories/home-theater.png',
+    'Refrigerator': '/categories/refrigerator.png',
+  };
+
+  const categoryImage = category?.image?.startsWith('/categories/')
+    ? category.image
+    : (category ? categoryImageMap[category.name] : '');
+
   return (
     <div className="animated-bg min-h-screen pb-24">
       <div className="max-w-md mx-auto px-4 pt-4">
@@ -76,7 +103,7 @@ export default function CategoryDetailScreen() {
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between mb-6"
+          className="flex items-center justify-between mb-4"
         >
           <button onClick={goBack} className="p-2 rounded-full glass-card" aria-label="Back">
             <ArrowLeft size={20} className="text-cyan-400" />
@@ -90,6 +117,27 @@ export default function CategoryDetailScreen() {
             <Plus size={20} className="text-cyan-400" />
           </button>
         </motion.div>
+
+        {/* Category Image Banner */}
+        {categoryImage && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.05 }}
+            className="relative mb-5 rounded-2xl overflow-hidden h-32"
+          >
+            <img
+              src={categoryImage}
+              alt={category?.name || 'Category'}
+              className="w-full h-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+            <div className="absolute bottom-3 left-4">
+              <h2 className="text-white font-bold text-lg drop-shadow-lg">{category?.name}</h2>
+              <p className="text-white/70 text-xs">{products.length} products in this category</p>
+            </div>
+          </motion.div>
+        )}
 
         {/* Stats section */}
         <motion.div

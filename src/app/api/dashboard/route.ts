@@ -76,10 +76,48 @@ export async function GET(request: NextRequest) {
     });
 
     // Category distribution
-    const categories = await db.category.findMany({
+    let categories = await db.category.findMany({
       where: { userId },
       include: { _count: { select: { products: true } } },
     });
+
+    // Auto-seed default categories if user has none
+    if (categories.length === 0) {
+      const defaultCategories = [
+        { name: 'Mobile', image: '/categories/mobile.png' },
+        { name: 'Display/Combo', image: '/categories/display.png' },
+        { name: 'Tempered Glass', image: '/categories/tempered-glass.png' },
+        { name: 'Flip Cover/Back Cover', image: '/categories/flip-cover.png' },
+        { name: 'UV Glass', image: '/categories/uv-glass.png' },
+        { name: 'Smart Watch', image: '/categories/smart-watch.png' },
+        { name: 'Battery', image: '/categories/battery.png' },
+        { name: 'Charger', image: '/categories/charger.png' },
+        { name: 'Neck Band', image: '/categories/neckband.png' },
+        { name: 'Ear Pods', image: '/categories/earpods.png' },
+        { name: 'Selfie Stick', image: '/categories/selfie-stick.png' },
+        { name: 'Ring Light', image: '/categories/ring-light.png' },
+        { name: 'Mobile Stand', image: '/categories/mobile-stand.png' },
+        { name: 'Watch Strap', image: '/categories/watch-strap.png' },
+        { name: 'Earphone', image: '/categories/earphone.png' },
+        { name: 'Memory Card', image: '/categories/memory-card.png' },
+        { name: 'Data Cable', image: '/categories/data-cable.png' },
+        { name: 'Home Theater', image: '/categories/home-theater.png' },
+        { name: 'Refrigerator', image: '/categories/refrigerator.png' },
+      ];
+
+      await db.category.createMany({
+        data: defaultCategories.map(cat => ({
+          name: cat.name,
+          image: cat.image,
+          userId,
+        })),
+      });
+
+      categories = await db.category.findMany({
+        where: { userId },
+        include: { _count: { select: { products: true } } },
+      });
+    }
 
     return NextResponse.json({
       stats: {
