@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { motion } from 'framer-motion';
-import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, LogOut } from 'lucide-react';
+import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, LogOut, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function ProfileScreen() {
@@ -234,6 +234,20 @@ export default function ProfileScreen() {
               <span className="text-sm">{t('languageChange', language)}</span>
             </div>
             <span className="text-xs text-white/40 uppercase">{language}</span>
+          </button>
+
+          {/* Daily Book */}
+          <button
+            onClick={() => navigateTo('daily-book')}
+            className="glass-card w-full p-4 flex items-center justify-between"
+          >
+            <div className="flex items-center gap-3">
+              <Receipt size={18} className="text-amber-400" />
+              <span className="text-sm">
+                {language === 'bn' ? 'দৈনিক বই' : language === 'hi' ? 'दैनिक बही' : 'Daily Book'}
+              </span>
+            </div>
+            <span className="text-xs text-white/40">₹</span>
           </button>
 
           {/* Report Download */}

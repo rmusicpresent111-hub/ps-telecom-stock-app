@@ -18,7 +18,8 @@ export type Screen =
   | 'stock-out'
   | 'instant-sell'
   | 'add-category'
-  | 'invoice';
+  | 'invoice'
+  | 'daily-book';
 
 export type Language = 'bn' | 'en' | 'hi';
 
@@ -82,4 +83,26 @@ export interface DashboardStats {
 export interface ProfitData {
   daily: { date: string; profit: number; revenue: number; cost: number }[];
   monthly: { month: string; profit: number; revenue: number; cost: number }[];
+}
+
+export interface CashEntry {
+  id: string;
+  userId: string;
+  date: string;
+  handCash: number;
+  liquidCash: number;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Expense {
+  id: string;
+  userId: string;
+  date: string;
+  amount: number;
+  category: string;
+  description: string;
+  createdAt: string;
+  updatedAt: string;
 }

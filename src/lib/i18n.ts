@@ -146,6 +146,36 @@ type TranslationKeys = {
   allCategories: string;
   filterBy: string;
   sortBy: string;
+  // Daily Book
+  dailyBook: string;
+  handCash: string;
+  liquidCash: string;
+  totalCash: string;
+  addCashEntry: string;
+  addExpense: string;
+  expenseCategory: string;
+  expenseAmount: string;
+  expenseDesc: string;
+  todayCash: string;
+  weeklyCash: string;
+  monthlyCash: string;
+  cashHistory: string;
+  expenseHistory: string;
+  noEntries: string;
+  noExpenses: string;
+  rent: string;
+  electricity: string;
+  salary: string;
+  transport: string;
+  food: string;
+  maintenance: string;
+  other: string;
+  dailyBookNote: string;
+  deleteEntry: string;
+  totalExpenses: string;
+  netCash: string;
+  cashIn: string;
+  cashOut: string;
 };
 
 const translations: Record<Language, TranslationKeys> = {
@@ -278,6 +308,35 @@ const translations: Record<Language, TranslationKeys> = {
     allCategories: 'সব ক্যাটেগরি',
     filterBy: 'ফিল্টার',
     sortBy: 'সাজান',
+    dailyBook: 'ডেইলি বুক',
+    handCash: 'হ্যান্ড ক্যাশ',
+    liquidCash: 'লিকুইড ক্যাশ',
+    totalCash: 'মোট ক্যাশ',
+    addCashEntry: 'ক্যাশ এন্ট্রি যোগ',
+    addExpense: 'খরচ যোগ',
+    expenseCategory: 'খরচের ধরন',
+    expenseAmount: 'খরচের পরিমাণ',
+    expenseDesc: 'খরচের বিবরণ',
+    todayCash: 'আজকের ক্যাশ',
+    weeklyCash: 'সাপ্তাহিক ক্যাশ',
+    monthlyCash: 'মাসিক ক্যাশ',
+    cashHistory: 'ক্যাশ ইতিহাস',
+    expenseHistory: 'খরচের ইতিহাস',
+    noEntries: 'কোনো এন্ট্রি নেই',
+    noExpenses: 'কোনো খরচ নেই',
+    rent: 'ভাড়া',
+    electricity: 'বিদ্যুৎ',
+    salary: 'বেতন',
+    transport: 'যাতায়াত',
+    food: 'খাবার',
+    maintenance: 'মেরামত',
+    other: 'অন্যান্য',
+    dailyBookNote: 'নোট',
+    deleteEntry: 'এন্ট্রি মুছুন',
+    totalExpenses: 'মোট খরচ',
+    netCash: 'নেট ক্যাশ',
+    cashIn: 'ক্যাশ ইন',
+    cashOut: 'ক্যাশ আউট',
   },
   en: {
     appName: 'PS TELECOM',
@@ -408,6 +467,35 @@ const translations: Record<Language, TranslationKeys> = {
     allCategories: 'All Categories',
     filterBy: 'Filter By',
     sortBy: 'Sort By',
+    dailyBook: 'Daily Book',
+    handCash: 'Hand Cash',
+    liquidCash: 'Liquid Cash',
+    totalCash: 'Total Cash',
+    addCashEntry: 'Add Cash Entry',
+    addExpense: 'Add Expense',
+    expenseCategory: 'Expense Category',
+    expenseAmount: 'Expense Amount',
+    expenseDesc: 'Expense Description',
+    todayCash: "Today's Cash",
+    weeklyCash: 'Weekly Cash',
+    monthlyCash: 'Monthly Cash',
+    cashHistory: 'Cash History',
+    expenseHistory: 'Expense History',
+    noEntries: 'No entries found',
+    noExpenses: 'No expenses found',
+    rent: 'Rent',
+    electricity: 'Electricity',
+    salary: 'Salary',
+    transport: 'Transport',
+    food: 'Food',
+    maintenance: 'Maintenance',
+    other: 'Other',
+    dailyBookNote: 'Note',
+    deleteEntry: 'Delete Entry',
+    totalExpenses: 'Total Expenses',
+    netCash: 'Net Cash',
+    cashIn: 'Cash In',
+    cashOut: 'Cash Out',
   },
   hi: {
     appName: 'PS TELECOM',
@@ -538,6 +626,35 @@ const translations: Record<Language, TranslationKeys> = {
     allCategories: 'सभी कैटेगरी',
     filterBy: 'फिल्टर',
     sortBy: 'क्रमबद्ध',
+    dailyBook: 'डेली बुक',
+    handCash: 'हैंड कैश',
+    liquidCash: 'लिक्विड कैश',
+    totalCash: 'कुल कैश',
+    addCashEntry: 'कैश एंट्री जोड़ें',
+    addExpense: 'खर्चा जोड़ें',
+    expenseCategory: 'खर्चे की श्रेणी',
+    expenseAmount: 'खर्चे की राशि',
+    expenseDesc: 'खर्चे का विवरण',
+    todayCash: 'आज का कैश',
+    weeklyCash: 'साप्ताहिक कैश',
+    monthlyCash: 'मासिक कैश',
+    cashHistory: 'कैश इतिहास',
+    expenseHistory: 'खर्चे का इतिहास',
+    noEntries: 'कोई एंट्री नहीं',
+    noExpenses: 'कोई खर्चा नहीं',
+    rent: 'किराया',
+    electricity: 'बिजली',
+    salary: 'वेतन',
+    transport: 'यातायात',
+    food: 'खाना',
+    maintenance: 'मरम्मत',
+    other: 'अन्य',
+    dailyBookNote: 'नोट',
+    deleteEntry: 'एंट्री हटाएं',
+    totalExpenses: 'कुल खर्चे',
+    netCash: 'नेट कैश',
+    cashIn: 'कैश इन',
+    cashOut: 'कैश आउट',
   },
 };
 
