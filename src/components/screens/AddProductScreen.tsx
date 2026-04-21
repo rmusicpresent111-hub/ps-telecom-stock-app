@@ -150,7 +150,7 @@ export default function AddProductScreen() {
               <option value="" className="bg-gray-900">Select Category</option>
               {categories.map((cat) => (
                 <option key={cat.id} value={cat.id} className="bg-gray-900">
-                  {cat.image} {cat.name}
+                  {cat.name}
                 </option>
               ))}
             </select>
