@@ -7,8 +7,7 @@ import { Product } from '@/lib/types';
 import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
-import { createProduct, updateProduct } from '@/lib/supabase-service';
-import { getProductsOffline } from '@/lib/offline-service';
+import { createProductOffline, updateProductOffline, getProductsOffline } from '@/lib/offline-service';
 
 export default function AddProductScreen() {
   const {
@@ -58,7 +57,7 @@ export default function AddProductScreen() {
     setLoading(true);
     try {
       if (isEditing && selectedProductId) {
-        await updateProduct(selectedProductId, {
+        await updateProductOffline(selectedProductId, {
           name: name.trim(),
           categoryId,
           quantity: parseInt(quantity) || 0,
@@ -66,9 +65,10 @@ export default function AddProductScreen() {
           purchasePrice: parseFloat(purchasePrice) || 0,
           sellingPrice: parseFloat(sellingPrice) || 0,
           lowStockThreshold: parseInt(lowStockThreshold) || 5,
+          userId: user.id,
         });
       } else {
-        await createProduct({
+        await createProductOffline({
           name: name.trim(),
           categoryId,
           quantity: parseInt(quantity) || 0,

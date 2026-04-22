@@ -6,8 +6,7 @@ import { t } from '@/lib/i18n';
 import { Product, Transaction } from '@/lib/types';
 import { ArrowLeft, Edit, Trash2, Package, Archive, IndianRupee, Tag } from 'lucide-react';
 import { toast } from 'sonner';
-import { deleteProduct } from '@/lib/supabase-service';
-import { getProductsOffline, getTransactionsOffline } from '@/lib/offline-service';
+import { deleteProductOffline, getProductsOffline, getTransactionsOffline } from '@/lib/offline-service';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function ProductDetailScreen() {
@@ -64,7 +63,7 @@ export default function ProductDetailScreen() {
   const handleDelete = useCallback(async () => {
     if (!selectedProductId) return;
     try {
-      await deleteProduct(selectedProductId);
+      await deleteProductOffline(selectedProductId, user?.id || '');
       toast.success(t('deleted', language));
       setSelectedProductId(null);
       goBack();

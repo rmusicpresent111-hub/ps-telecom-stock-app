@@ -15,6 +15,7 @@ import {
   offlineExpenses,
   offlineCashEntries,
   offlineMeta,
+  offlinePendingDeletes,
   clearOfflineData,
 } from './offline-db';
 import { invalidateCache } from './cache';
@@ -162,6 +163,44 @@ export async function syncFromSupabase(userId: string): Promise<void> {
     invalidateCache();
   } catch (error) {
     console.error('Sync from Supabase failed:', error);
+  }
+}
+
+// ============ PROCESS PENDING DELETES (Local Deletes → Supabase) ============
+
+const STORE_TO_TABLE: Record<string, string> = {
+  categories: 'categories',
+  products: 'products',
+  transactions: 'transactions',
+  expenses: 'expenses',
+  cashEntries: 'cash_entries',
+};
+
+async function processPendingDeletes(userId: string): Promise<void> {
+  if (!userId || !isOnline()) return;
+
+  const pendingDeletes = await offlinePendingDeletes.getAll(userId);
+  
+  for (const item of pendingDeletes) {
+    try {
+      const tableName = STORE_TO_TABLE[item.storeName];
+      if (!tableName) {
+        await offlinePendingDeletes.remove(item.id);
+        continue;
+      }
+      
+      const { error } = await supabase
+        .from(tableName)
+        .delete()
+        .eq('id', item.itemId);
+      
+      if (!error) {
+        await offlinePendingDeletes.remove(item.id);
+      }
+      // If error, keep in queue for next sync attempt
+    } catch (e) {
+      console.error('Failed to process pending delete:', item.id, e);
+    }
   }
 }
 
@@ -331,7 +370,8 @@ export async function syncAll(): Promise<void> {
   const userId = useAppStore.getState().user?.id;
   if (!userId || !isOnline()) return;
 
-  // First upload local changes, then download fresh data
+  // First process pending deletes, then upload local changes, then download fresh data
+  await processPendingDeletes(userId);
   await syncToSupabase(userId);
   await syncFromSupabase(userId);
 }

@@ -6,7 +6,7 @@ import { t } from '@/lib/i18n';
 import { motion } from 'framer-motion';
 import { ArrowLeft, FileText, Download, ChevronDown, ChevronUp, Package, IndianRupee, TrendingUp, AlertTriangle, BarChart3 } from 'lucide-react';
 import { toast } from 'sonner';
-import { getReports } from '@/lib/supabase-service';
+import { getReportsOffline } from '@/lib/offline-service';
 import { Bar, BarChart, XAxis, YAxis, CartesianGrid, Cell } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 
@@ -104,10 +104,10 @@ export default function ReportsScreen() {
     try {
       setLoading(true);
       const [svReport, catReport, dailyReport, monthlyReport] = await Promise.all([
-        getReports(user.id, 'stock-value'),
-        getReports(user.id, 'category'),
-        getReports(user.id, 'daily'),
-        getReports(user.id, 'monthly'),
+        getReportsOffline(user.id, 'stock-value'),
+        getReportsOffline(user.id, 'category'),
+        getReportsOffline(user.id, 'daily'),
+        getReportsOffline(user.id, 'monthly'),
       ]);
       setStockValueData((svReport.data || []) as StockValueCategory[]);
       setGrandTotal(svReport.grandTotal || null);

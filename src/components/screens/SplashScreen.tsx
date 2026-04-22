@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAppStore } from '@/store/appStore';
-import { getProfile } from '@/lib/supabase-service';
+import { getProfileOffline } from '@/lib/offline-service';
 import { initialSyncForUser } from '@/lib/sync-engine';
 
 const floatingIcons = ['📱', '🎧', '🔌', '⌚', '📺'];
@@ -60,16 +60,23 @@ export default function SplashScreen() {
         // Returning user - verify user still exists in Supabase
         const currentUser = useAppStore.getState().user;
         if (currentUser?.id) {
-          getProfile(currentUser.id)
-            .then(() => {
+          getProfileOffline(currentUser.id)
+            .then((data) => {
+              // If offline, data will be null - still allow dashboard access
+              if (data === null) {
+                // Offline mode - proceed with cached user
+                resetNavigation('dashboard');
+                initialSyncForUser(currentUser.id).catch(() => {});
+                return;
+              }
               resetNavigation('dashboard');
               // Start background offline sync
               initialSyncForUser(currentUser.id).catch(() => {});
             })
             .catch(() => {
-              // User not found in Supabase - logout and go to login
-              useAppStore.getState().logout();
-              resetNavigation('login');
+              // Even on error, allow offline access if we have cached user
+              resetNavigation('dashboard');
+              initialSyncForUser(currentUser.id).catch(() => {});
             });
         } else {
           resetNavigation('login');

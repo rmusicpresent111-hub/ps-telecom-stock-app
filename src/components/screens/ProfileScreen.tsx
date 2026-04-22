@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
-import { getProfile, updateProfile, exportBackup, importBackup, resetData } from '@/lib/supabase-service';
+import { getProfileOffline, updateProfileOffline, exportBackupOffline, importBackupOffline, resetDataOffline } from '@/lib/offline-service';
 import { motion } from 'framer-motion';
 import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, LogOut, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
@@ -23,8 +23,8 @@ export default function ProfileScreen() {
   const fetchProfile = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const data = await getProfile(user.id);
-      if (data.user) {
+      const data = await getProfileOffline(user.id);
+      if (data?.user) {
         setUser(data.user);
       }
     } catch {
@@ -40,8 +40,10 @@ export default function ProfileScreen() {
     if (!user?.id || !editName.trim()) return;
     setLoading(true);
     try {
-      const data = await updateProfile(user.id, { name: editName.trim() });
-      setUser(data.user);
+      const data = await updateProfileOffline(user.id, { name: editName.trim() });
+      if (data?.user) {
+        setUser(data.user);
+      }
       toast.success(t('updated', language));
     } catch {
       toast.error(t('error', language));
@@ -57,7 +59,7 @@ export default function ProfileScreen() {
     // Update on server
     if (user?.id) {
       try {
-        await updateProfile(user.id, { theme: newTheme });
+        await updateProfileOffline(user.id, { theme: newTheme });
       } catch {
         // Silently fail
       }
@@ -71,7 +73,7 @@ export default function ProfileScreen() {
   const handleBackup = async () => {
     if (!user?.id) return;
     try {
-      const data = await exportBackup(user.id);
+      const data = await exportBackupOffline(user.id);
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -95,7 +97,7 @@ export default function ProfileScreen() {
     try {
       const text = await file.text();
       const backupData = JSON.parse(text);
-      await importBackup(user.id, {
+      await importBackupOffline(user.id, {
         categories: backupData.categories || [],
         products: backupData.products || [],
         transactions: backupData.transactions || [],
@@ -112,7 +114,7 @@ export default function ProfileScreen() {
     if (!user?.id) return;
     setLoading(true);
     try {
-      await resetData(user.id);
+      await resetDataOffline(user.id);
       toast.success(t('deleted', language));
     } catch (error) {
       toast.error((error as Error).message || t('error', language));

@@ -26,3 +26,48 @@ Stage Summary:
 - Added server-side caching for dashboard responses
 - Added CSS containment and will-change hints for better rendering performance
 - Fixed critical bug (missing resetData function)
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Complete offline-first architecture - All Supabase data auto-saved to device for offline use
+
+Work Log:
+- Added `pendingDeletes` store to IndexedDB (offline-db.ts) for tracking local deletions that need to be synced to Supabase
+  - Bumped DB_VERSION from 3 to 4
+  - Added `offlinePendingDeletes` helper with add/getAll/getByStore/remove/removeByItemId/clearForUser methods
+- Added ALL missing offline-first functions to offline-service.ts:
+  - `deleteProductOffline` - deletes from IndexedDB + adds to pendingDeletes queue
+  - `createExpenseOffline` - saves locally first, uploads to Supabase if online
+  - `updateExpenseOffline` - updates locally + marks dirty, syncs to Supabase if online
+  - `deleteExpenseOffline` - deletes locally + adds to pendingDeletes queue
+  - `upsertCashEntryOffline` - creates or updates cash entry locally first
+  - `updateCashEntryOffline` - updates locally + marks dirty
+  - `deleteCashEntryOffline` - deletes locally + adds to pendingDeletes queue
+  - `getReportsOffline` - computes reports from local IndexedDB data (stock-value, daily, monthly, category)
+  - `getProfileOffline` - tries Supabase online, returns null for offline (uses zustand cache)
+  - `updateProfileOffline` - tries Supabase if online, saves locally otherwise
+  - `exportBackupOffline` - exports from local IndexedDB data (always works offline!)
+  - `importBackupOffline` - imports to local IndexedDB first, syncs to Supabase later
+- Updated sync-engine.ts to handle pending deletes:
+  - Added `processPendingDeletes` function that processes the delete queue before uploading dirty items
+  - Integrated into `syncAll()` flow: processPendingDeletes → syncToSupabase → syncFromSupabase
+- Migrated ALL screens from supabase-service to offline-service:
+  - AddProductScreen: createProduct → createProductOffline, updateProduct → updateProductOffline
+  - ProductDetailScreen: deleteProduct → deleteProductOffline
+  - DailyBookScreen: all expense/cash CRUD operations migrated to offline versions
+  - ProfileScreen: getProfile, updateProfile, exportBackup, importBackup, resetData all migrated
+  - ReportsScreen: getReports → getReportsOffline
+  - ProfitScreen: getReports → getReportsOffline
+  - SplashScreen: getProfile → getProfileOffline with offline fallback (allows dashboard access even when offline)
+- Only LoginScreen and SignupScreen still use supabase-service directly (auth requires online access)
+- Fixed `getDashboard` export alias for backward compatibility with DashboardScreen import
+- All changes pass lint and the app runs correctly (HTTP 200)
+
+Stage Summary:
+- Complete offline-first architecture now covers ALL data operations (CRUD for categories, products, transactions, expenses, cash entries)
+- Reports can be computed entirely from local IndexedDB data
+- Backup/restore works offline using local data
+- Delete operations tracked in pendingDeletes queue and synced to Supabase when back online
+- Auto-sync runs every 30 seconds when online + triggers on online event
+- App fully functional in offline mode with instant local data access

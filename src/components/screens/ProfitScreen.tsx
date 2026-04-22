@@ -5,7 +5,7 @@ import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { TrendingUp, IndianRupee, BarChart3, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
-import { getReports } from '@/lib/supabase-service';
+import { getReportsOffline } from '@/lib/offline-service';
 import dynamic from 'next/dynamic';
 
 // Lazy load recharts - heavy library (~200KB)
@@ -74,8 +74,8 @@ export default function ProfitScreen() {
     try {
       setLoading(true);
       const [dailyReport, monthlyReport] = await Promise.all([
-        getReports(user.id, 'daily'),
-        getReports(user.id, 'monthly'),
+        getReportsOffline(user.id, 'daily'),
+        getReportsOffline(user.id, 'monthly'),
       ]);
       setDailyData((dailyReport.data || []) as DailyData[]);
       setMonthlyData((monthlyReport.data || []) as MonthlyData[]);

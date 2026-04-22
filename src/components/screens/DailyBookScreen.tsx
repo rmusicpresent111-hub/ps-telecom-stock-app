@@ -9,8 +9,16 @@ import {
   Receipt, ShoppingBag, Zap, Home, Car, UtensilsCrossed, MoreHorizontal, X
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { upsertCashEntry, updateCashEntry, deleteCashEntry as deleteCashEntrySvc, createExpense, updateExpense, deleteExpense as deleteExpenseSvc } from '@/lib/supabase-service';
-import { getCashEntriesOffline, getExpensesOffline } from '@/lib/offline-service';
+import { 
+  getCashEntriesOffline, 
+  getExpensesOffline, 
+  upsertCashEntryOffline, 
+  updateCashEntryOffline, 
+  deleteCashEntryOffline,
+  createExpenseOffline, 
+  updateExpenseOffline, 
+  deleteExpenseOffline 
+} from '@/lib/offline-service';
 
 interface CashEntry {
   id: string;
@@ -112,13 +120,13 @@ export default function DailyBookScreen() {
     setLoading(true);
     try {
       if (editingCashId) {
-        await updateCashEntry(editingCashId, {
+        await updateCashEntryOffline(editingCashId, {
           handCash: parseFloat(handCashInput) || 0,
           liquidCash: parseFloat(liquidCashInput) || 0,
           note: cashNote,
-        });
+        }, user.id);
       } else {
-        await upsertCashEntry({
+        await upsertCashEntryOffline({
           userId: user.id,
           date: cashDate,
           handCash: parseFloat(handCashInput) || 0,
@@ -156,7 +164,7 @@ export default function DailyBookScreen() {
 
   const handleDeleteCash = async (id: string) => {
     try {
-      await deleteCashEntrySvc(id);
+      await deleteCashEntryOffline(id, user?.id || '');
       toast.success(isBn ? 'মুছে ফেলা হয়েছে' : isHi ? 'मिटाया गया' : 'Deleted');
       fetchCashEntries();
     } catch {
@@ -169,13 +177,13 @@ export default function DailyBookScreen() {
     setLoading(true);
     try {
       if (editingExpenseId) {
-        await updateExpense(editingExpenseId, {
+        await updateExpenseOffline(editingExpenseId, {
           amount: parseFloat(expenseAmount),
           category: expenseCategory,
           description: expenseDesc,
-        });
+        }, user.id);
       } else {
-        await createExpense({
+        await createExpenseOffline({
           userId: user.id,
           date: expenseDate,
           amount: parseFloat(expenseAmount),
@@ -213,7 +221,7 @@ export default function DailyBookScreen() {
 
   const handleDeleteExpense = async (id: string) => {
     try {
-      await deleteExpenseSvc(id);
+      await deleteExpenseOffline(id, user?.id || '');
       toast.success(isBn ? 'মুছে ফেলা হয়েছে' : isHi ? 'मिटाया गया' : 'Deleted');
       fetchExpenses();
     } catch {

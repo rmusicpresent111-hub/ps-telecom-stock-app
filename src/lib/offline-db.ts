@@ -6,7 +6,7 @@
 import { openDB, type IDBPDatabase } from 'idb';
 
 const DB_NAME = 'ps-telecom-offline';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 interface OfflineDBSchema {
   categories: {
@@ -104,6 +104,17 @@ interface OfflineDBSchema {
     };
     indexes: { 'by-userId': string };
   };
+  pendingDeletes: {
+    key: string;
+    value: {
+      id: string; // composite: storeName:itemId
+      storeName: string;
+      itemId: string;
+      userId: string;
+      deletedAt: number;
+    };
+    indexes: { 'by-userId': string; 'by-storeName': string };
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<OfflineDBSchema>> | null = null;
@@ -143,6 +154,11 @@ function getDB(): Promise<IDBPDatabase<OfflineDBSchema>> {
         if (!db.objectStoreNames.contains('syncMeta')) {
           const metaStore = db.createObjectStore('syncMeta', { keyPath: 'key' });
           metaStore.createIndex('by-userId', 'userId');
+        }
+        if (!db.objectStoreNames.contains('pendingDeletes')) {
+          const delStore = db.createObjectStore('pendingDeletes', { keyPath: 'id' });
+          delStore.createIndex('by-userId', 'userId');
+          delStore.createIndex('by-storeName', 'storeName');
         }
       },
     });
@@ -294,17 +310,62 @@ export const offlineMeta = {
   },
 };
 
+// ============ PENDING DELETES ============
+
+export const offlinePendingDeletes = {
+  add: async (storeName: string, itemId: string, userId: string) => {
+    const db = await getDB();
+    await db.put('pendingDeletes', {
+      id: `${storeName}:${itemId}`,
+      storeName,
+      itemId,
+      userId,
+      deletedAt: Date.now(),
+    });
+  },
+  getAll: async (userId: string) => {
+    const db = await getDB();
+    return db.getAllFromIndex('pendingDeletes', 'by-userId', userId);
+  },
+  getByStore: async (storeName: string) => {
+    const db = await getDB();
+    return db.getAllFromIndex('pendingDeletes', 'by-storeName', storeName);
+  },
+  remove: async (id: string) => {
+    const db = await getDB();
+    await db.delete('pendingDeletes', id);
+  },
+  removeByItemId: async (storeName: string, itemId: string) => {
+    const db = await getDB();
+    await db.delete('pendingDeletes', `${storeName}:${itemId}`);
+  },
+  clearForUser: async (userId: string) => {
+    const db = await getDB();
+    const items = await db.getAllFromIndex('pendingDeletes', 'by-userId', userId);
+    const tx = db.transaction('pendingDeletes', 'readwrite');
+    for (const item of items) {
+      await tx.store.delete(item.id);
+    }
+    await tx.done;
+  },
+};
+
 // ============ CLEAR ALL ============
 
 export async function clearOfflineData(userId: string): Promise<void> {
   const db = await getDB();
-  const stores: (keyof OfflineDBSchema)[] = ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'syncMeta'];
+  const stores: (keyof OfflineDBSchema)[] = ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'syncMeta', 'pendingDeletes'];
   for (const store of stores) {
-    const all = await db.getAllFromIndex(store, 'by-userId', userId);
-    const tx = db.transaction(store, 'readwrite');
-    for (const item of all) {
-      await tx.store.delete((item as { id: string }).id);
+    if (!db.objectStoreNames.contains(store)) continue;
+    try {
+      const all = await db.getAllFromIndex(store, 'by-userId', userId);
+      const tx = db.transaction(store, 'readwrite');
+      for (const item of all) {
+        await tx.store.delete((item as { id: string }).id);
+      }
+      await tx.done;
+    } catch {
+      // Store might not have by-userId index
     }
-    await tx.done;
   }
 }
