@@ -11,6 +11,8 @@ interface AppState {
   currentScreen: Screen;
   previousScreens: Screen[];
   navigateTo: (screen: Screen) => void;
+  navigateToTab: (screen: Screen) => void;
+  resetNavigation: (screen: Screen) => void;
   goBack: () => void;
 
   // User & Auth
@@ -71,6 +73,18 @@ export const useAppStore = create<AppState>()(
           previousScreens: [...state.previousScreens, state.currentScreen],
           currentScreen: screen,
         })),
+      // Navigate to a main tab screen (BottomNav) - clears history so back always goes to dashboard
+      navigateToTab: (screen) =>
+        set({
+          previousScreens: [],
+          currentScreen: screen,
+        }),
+      // Reset navigation without pushing to history (for splash/auth redirects)
+      resetNavigation: (screen) =>
+        set({
+          previousScreens: [],
+          currentScreen: screen,
+        }),
       goBack: () =>
         set((state) => {
           const prev = [...state.previousScreens];

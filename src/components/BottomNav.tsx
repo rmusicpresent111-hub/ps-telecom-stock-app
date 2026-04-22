@@ -14,7 +14,7 @@ const navItems: { icon: React.ElementType; screen: Screen; labelKey: 'dashboard'
 ];
 
 export default function BottomNav() {
-  const { currentScreen, navigateTo, language } = useAppStore();
+  const { currentScreen, navigateToTab, language } = useAppStore();
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 glass-card-strong border-t border-white/10 border-b-0 rounded-b-none">
@@ -25,7 +25,7 @@ export default function BottomNav() {
           return (
             <button
               key={item.screen}
-              onClick={() => navigateTo(item.screen)}
+              onClick={() => navigateToTab(item.screen)}
               className={`bottom-nav-item ${isActive ? 'active' : ''}`}
               aria-label={t(item.labelKey, language)}
             >

@@ -86,3 +86,26 @@ Stage Summary:
 - Setup flow: Splash → Setup (if DB not ready) → Welcome/Tutorial → Login → Dashboard
 - Two setup methods: (1) Run SQL in Supabase Dashboard SQL Editor, (2) Use CLI script with database URL
 - Supabase project: iwigztspqhrujaskpobn.supabase.co
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Implement proper back navigation and exit confirmation on home page
+
+Work Log:
+- Analyzed the full navigation system in the app (Zustand store with previousScreens[] stack)
+- Identified issue: BottomNav was using navigateTo() which pushes every tab switch to history, creating wrong back navigation
+- Added navigateToTab() function to Zustand store - clears history stack so back always goes to dashboard from any tab
+- Added resetNavigation() function to Zustand store - navigates without pushing to history (for splash/auth redirects)
+- Updated BottomNav.tsx to use navigateToTab instead of navigateTo
+- Updated SplashScreen.tsx to use resetNavigation instead of navigateTo (splash shouldn't be in history)
+- Updated page.tsx auth redirect to use resetNavigation instead of navigateTo
+- Updated exit dialog with multi-language support (BN/EN/HI)
+- Fixed popstate handler to properly route: dashboard → exit dialog, deep pages → previous page, no history → dashboard
+- Verified lint passes and dev server runs correctly
+
+Stage Summary:
+- Back navigation now works properly: deep pages go to previous page, then eventually to dashboard
+- Bottom nav tabs no longer accumulate in history stack
+- Exit confirmation dialog shows on dashboard with i18n support
+- SplashScreen and auth redirects no longer pollute navigation history

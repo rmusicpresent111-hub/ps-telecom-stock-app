@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Screen } from '@/lib/types';
+import { t } from '@/lib/i18n';
 import { LogOut, X } from 'lucide-react';
 
 // Screens
@@ -64,7 +65,7 @@ const showBottomNavScreens: Screen[] = [
 ];
 
 export default function Home() {
-  const { currentScreen, theme, isAuthenticated, goBack, previousScreens } = useAppStore();
+  const { currentScreen, theme, isAuthenticated, language, goBack, previousScreens } = useAppStore();
   const [showExitDialog, setShowExitDialog] = useState(false);
 
   // Apply theme class to document
@@ -79,11 +80,11 @@ export default function Home() {
     }
   }, [theme]);
 
-  // Auto-redirect if authenticated but on auth screens
+  // Auto-redirect if authenticated but on auth screens - use resetNavigation to clear history
   useEffect(() => {
     const authScreens: Screen[] = ['login', 'signup', 'forgot-password'];
     if (isAuthenticated && authScreens.includes(currentScreen)) {
-      useAppStore.getState().navigateTo('dashboard');
+      useAppStore.getState().resetNavigation('dashboard');
     }
   }, [isAuthenticated, currentScreen]);
 
@@ -94,7 +95,7 @@ export default function Home() {
 
     const handlePopState = () => {
       const state = useAppStore.getState();
-      // If on dashboard, show exit confirmation instead of navigating away
+      // If on dashboard (home page), show exit confirmation
       if (state.currentScreen === 'dashboard') {
         // Push state back so we stay on the page
         window.history.pushState({ appState: true }, '');
@@ -105,8 +106,8 @@ export default function Home() {
         // Push state back so we can intercept again
         window.history.pushState({ appState: true }, '');
       } else {
-        // No previous screen, go to dashboard
-        state.navigateTo('dashboard');
+        // No previous screen in stack, go to dashboard (home)
+        state.resetNavigation('dashboard');
         window.history.pushState({ appState: true }, '');
       }
     };
@@ -125,13 +126,16 @@ export default function Home() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
-  // Custom back handler that shows exit dialog on dashboard
+  // Custom back handler - shows exit dialog on dashboard, goes back otherwise
   const handleAppBack = useCallback(() => {
     const state = useAppStore.getState();
     if (state.currentScreen === 'dashboard') {
       setShowExitDialog(true);
-    } else {
+    } else if (state.previousScreens.length > 0) {
       state.goBack();
+    } else {
+      // No previous screen, go to dashboard
+      state.resetNavigation('dashboard');
     }
   }, []);
 
@@ -154,6 +158,12 @@ export default function Home() {
 
   const CurrentScreenComponent = screenComponents[currentScreen] || SplashScreen;
   const showBottomNav = showBottomNavScreens.includes(currentScreen);
+
+  // i18n for exit dialog
+  const exitTitle = language === 'bn' ? 'অ্যাপ থেকে বের হবেন?' : language === 'hi' ? 'ऐप से बाहर जाएं?' : 'Exit App?';
+  const exitDesc = language === 'bn' ? 'আপনি কি নিশ্চিত PS TELECOM থেকে বের হতে চান?' : language === 'hi' ? 'क्या आप PS TELECOM से बाहर जाना चाहते हैं?' : 'Are you sure you want to exit PS TELECOM?';
+  const exitBtn = language === 'bn' ? 'বের হন' : language === 'hi' ? 'बाहर जाएं' : 'Exit';
+  const cancelBtn = t('cancel', language);
 
   return (
     <div className={`min-h-screen ${theme === 'light' ? 'light-theme' : ''}`}>
@@ -217,11 +227,11 @@ export default function Home() {
               </div>
 
               {/* Title */}
-              <h3 className="text-lg font-bold text-center mb-2">Exit App?</h3>
+              <h3 className="text-lg font-bold text-center mb-2">{exitTitle}</h3>
 
               {/* Description */}
               <p className="text-sm text-white/50 text-center mb-6">
-                Are you sure you want to exit PS TELECOM?
+                {exitDesc}
               </p>
 
               {/* Buttons */}
@@ -230,7 +240,7 @@ export default function Home() {
                   onClick={handleExitCancel}
                   className="flex-1 glass-card py-3 text-sm font-semibold text-white/70 rounded-xl hover:bg-white/10 transition-colors"
                 >
-                  Cancel
+                  {cancelBtn}
                 </button>
                 <button
                   onClick={handleExitConfirm}
@@ -240,7 +250,7 @@ export default function Home() {
                     border: '1px solid rgba(220,38,38,0.5)',
                   }}
                 >
-                  Exit
+                  {exitBtn}
                 </button>
               </div>
             </motion.div>

@@ -17,7 +17,7 @@ const iconPositions = [
 ];
 
 export default function SplashScreen() {
-  const { navigateTo, hasSeenTutorial, isAuthenticated, _hasHydrated } = useAppStore();
+  const { resetNavigation, hasSeenTutorial, isAuthenticated, _hasHydrated } = useAppStore();
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
@@ -54,26 +54,26 @@ export default function SplashScreen() {
     function navigateToApp(seenTutorial: boolean, authenticated: boolean) {
       if (!seenTutorial) {
         // First time user → Welcome + Tutorial + Login flow
-        navigateTo('welcome');
+        resetNavigation('welcome');
       } else if (authenticated) {
         // Returning user - verify user still exists in Supabase
         const currentUser = useAppStore.getState().user;
         if (currentUser?.id) {
           getProfile(currentUser.id)
             .then(() => {
-              navigateTo('dashboard');
+              resetNavigation('dashboard');
             })
             .catch(() => {
               // User not found in Supabase - logout and go to login
               useAppStore.getState().logout();
-              navigateTo('login');
+              resetNavigation('login');
             });
         } else {
-          navigateTo('login');
+          resetNavigation('login');
         }
       } else {
         // Returning user, not logged in → Login directly
-        navigateTo('login');
+        resetNavigation('login');
       }
     }
 
@@ -81,7 +81,7 @@ export default function SplashScreen() {
       clearInterval(timer);
       clearTimeout(navTimer);
     };
-  }, [navigateTo, hasSeenTutorial, isAuthenticated, _hasHydrated]);
+  }, [resetNavigation, hasSeenTutorial, isAuthenticated, _hasHydrated]);
 
   return (
     <div className="animated-bg min-h-screen flex flex-col items-center justify-center relative overflow-hidden">
