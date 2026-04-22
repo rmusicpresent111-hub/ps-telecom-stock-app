@@ -100,3 +100,36 @@ Stage Summary:
 - Fixed 4 critical bugs in StockOperationScreen that would have caused runtime errors
 - AddProductScreen already had goBack() on success — confirmed working
 - Lint passes clean, dev server running with 200 status
+---
+Task ID: 2
+Agent: main
+Task: Add light animations to all category displays in the app
+
+Work Log:
+- Added Framer Motion staggered entry animation to DashboardScreen category grid:
+  - `categoryContainerVariants` with staggerChildren: 0.06, delayChildren: 0.1
+  - `categoryItemVariants` with opacity, y, scale spring animation
+  - CategoryCard now wrapped with `motion.div` with whileHover (scale 1.06, y -2) and whileTap (scale 0.95)
+  - Both user categories grid and default categories grid use motion containers
+- Enhanced CSS for category cards:
+  - `.category-card` now has cubic-bezier spring transition + box-shadow on hover (golden glow)
+  - `.category-img-zoom` class: image zooms to 1.12x on card hover
+  - `.category-emoji-bounce` class: emoji scales up 1.2x and lifts on hover
+  - `.category-img-overlay` fades on hover for more image visibility
+  - `@keyframes categoryGlow` defined for potential use
+- Added animation to CategoryDetailScreen:
+  - Category banner image now has spring scale-in animation
+  - Product list items now have staggered slide-in (delay: idx * 0.04)
+  - Product items have whileHover (scale 1.01, x 3) and whileTap (scale 0.98)
+- Added stagger animation to AddCategoryScreen:
+  - Preset image picker grid: stagger 0.04s, spring scale-in
+  - Emoji picker grid: same stagger pattern
+  - Both have whileHover (scale 1.08/1.15) and whileTap effects
+
+Stage Summary:
+- All category displays now have smooth, premium-quality animations
+- Dashboard: staggered fade+scale+slide entry with hover lift & image zoom
+- Category Detail: banner spring-in + product list staggered slide
+- Add Category: preset grid stagger pop-in with hover bounce
+- CSS enhancements: golden glow hover, image zoom, emoji float
+- Lint passes, dev server running 200

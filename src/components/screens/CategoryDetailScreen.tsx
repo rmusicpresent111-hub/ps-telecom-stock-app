@@ -8,6 +8,7 @@ import { getProductsOffline } from '@/lib/offline-service';
 import { ArrowLeft, Plus, Search, Package, AlertTriangle, ArrowLeftRight, IndianRupee } from 'lucide-react';
 import { toast } from 'sonner';
 import { useDebounce } from '@/hooks/useDebounce';
+import { motion } from 'framer-motion';
 
 // Map for category images - defined outside component
 const categoryImageMap: Record<string, string> = {
@@ -122,7 +123,12 @@ export default function CategoryDetailScreen() {
 
         {/* Category Image Banner */}
         {categoryImage && (
-          <div className="relative mb-5 rounded-2xl overflow-hidden h-32">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 25 }}
+            className="relative mb-5 rounded-2xl overflow-hidden h-32"
+          >
             <img
               src={categoryImage}
               alt={category?.name || 'Category'}
@@ -134,7 +140,7 @@ export default function CategoryDetailScreen() {
               <h2 className="text-white font-bold text-lg drop-shadow-lg">{category?.name}</h2>
               <p className="text-white/70 text-xs">{products.length} products in this category</p>
             </div>
-          </div>
+          </motion.div>
         )}
 
         {/* Stats section */}
@@ -213,9 +219,14 @@ export default function CategoryDetailScreen() {
           ) : filteredProducts.length === 0 ? (
             <div className="text-center py-8 text-white/40">{t('noData', language)}</div>
           ) : (
-            filteredProducts.map((product) => (
-              <button
+            filteredProducts.map((product, idx) => (
+              <motion.button
                 key={product.id}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: idx * 0.04, type: 'spring', stiffness: 260, damping: 22 }}
+                whileHover={{ scale: 1.01, x: 3 }}
+                whileTap={{ scale: 0.98 }}
                 onClick={() => handleProductTap(product)}
                 className="glass-card w-full p-4 flex items-center justify-between"
               >
@@ -238,7 +249,7 @@ export default function CategoryDetailScreen() {
                     {product.quantity <= product.lowStockThreshold ? 'Low' : 'In Stock'}
                   </span>
                 </div>
-              </button>
+              </motion.button>
             ))
           )}
         </div>

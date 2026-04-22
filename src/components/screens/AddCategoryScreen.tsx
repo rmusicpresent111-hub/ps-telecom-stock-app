@@ -33,6 +33,24 @@ const presetCategories = [
 
 const emojiOptions = ['📱', '🖥️', '🛡️', '⌚', '🔋', '🔌', '🎧', '🔧', '💾', '🎮', '📷', '🔊', '📡', '💡', '📦', '🏷️', '🖲️', '❄️'];
 
+// Stagger animation for preset grid
+const presetContainerVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: { staggerChildren: 0.04, delayChildren: 0.15 },
+  },
+};
+
+const presetItemVariants = {
+  hidden: { opacity: 0, scale: 0.85 },
+  show: {
+    opacity: 1,
+    scale: 1,
+    transition: { type: 'spring', stiffness: 300, damping: 22 },
+  },
+};
+
 export default function AddCategoryScreen() {
   const { user, language, goBack } = useAppStore();
 
@@ -146,43 +164,59 @@ export default function AddCategoryScreen() {
 
             {/* Image picker */}
             {iconMode === 'image' && (
-              <div className="grid grid-cols-4 gap-2 max-h-64 overflow-y-auto pr-1">
+              <motion.div
+                className="grid grid-cols-4 gap-2 max-h-64 overflow-y-auto pr-1"
+                variants={presetContainerVariants}
+                initial="hidden"
+                animate="show"
+              >
                 {presetCategories.map((preset) => (
-                  <button
+                  <motion.button
                     key={preset.name}
+                    variants={presetItemVariants}
+                    whileHover={{ scale: 1.08 }}
+                    whileTap={{ scale: 0.93 }}
                     onClick={() => handlePresetSelect(preset)}
                     className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-all ${
                       selectedImage === preset.image
-                        ? 'bg-emerald-500/20 border border-emerald-500/40 scale-105'
-                        : 'glass-card hover:scale-105'
+                        ? 'bg-emerald-500/20 border border-emerald-500/40'
+                        : 'glass-card'
                     }`}
                   >
                     <div className="w-10 h-10 rounded-lg overflow-hidden">
                       <img src={preset.image} alt={preset.name} className="w-full h-full object-cover" />
                     </div>
                     <span className="text-[9px] text-white/70 truncate w-full text-center leading-tight">{preset.name}</span>
-                  </button>
+                  </motion.button>
                 ))}
-              </div>
+              </motion.div>
             )}
 
             {/* Emoji picker */}
             {iconMode === 'emoji' && (
-              <div className="grid grid-cols-9 gap-2">
+              <motion.div
+                className="grid grid-cols-9 gap-2"
+                variants={presetContainerVariants}
+                initial="hidden"
+                animate="show"
+              >
                 {emojiOptions.map((em) => (
-                  <button
+                  <motion.button
                     key={em}
+                    variants={presetItemVariants}
+                    whileHover={{ scale: 1.15 }}
+                    whileTap={{ scale: 0.9 }}
                     onClick={() => setSelectedEmoji(em)}
                     className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg transition-all ${
                       selectedEmoji === em
-                        ? 'bg-emerald-500/20 border border-emerald-500/40 scale-110'
-                        : 'glass-card hover:scale-105'
+                        ? 'bg-emerald-500/20 border border-emerald-500/40'
+                        : 'glass-card'
                     }`}
                   >
                     {em}
-                  </button>
+                  </motion.button>
                 ))}
-              </div>
+              </motion.div>
             )}
           </div>
         </motion.div>

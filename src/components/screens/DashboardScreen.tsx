@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo, memo, useRef } from 'react';
+import { motion } from 'framer-motion';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { getDashboard } from '@/lib/offline-service';
@@ -116,31 +117,57 @@ interface StockOverviewItem {
   value: number;
 }
 
+// Stagger animation variants for category grid
+const categoryContainerVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: { staggerChildren: 0.06, delayChildren: 0.1 },
+  },
+};
+
+const categoryItemVariants = {
+  hidden: { opacity: 0, y: 16, scale: 0.92 },
+  show: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: { type: 'spring', stiffness: 260, damping: 20 },
+  },
+};
+
 // Memoized category card component
-const CategoryCard = memo(function CategoryCard({ cat, defaultCat, onTap }: { cat: Category; defaultCat: typeof defaultCategories[0] | undefined; onTap: () => void }) {
+const CategoryCard = memo(function CategoryCard({ cat, defaultCat, onTap, index }: { cat: Category; defaultCat: typeof defaultCategories[0] | undefined; onTap: () => void; index: number }) {
   const imgSrc = cat.image?.startsWith('/categories/') ? cat.image : (defaultCat?.image || '');
   return (
-    <button
-      onClick={onTap}
-      className="glass-card category-card p-3 flex flex-col items-center gap-2"
+    <motion.div
+      variants={categoryItemVariants}
+      whileHover={{ scale: 1.06, y: -2 }}
+      whileTap={{ scale: 0.95 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
     >
-      <div className="category-img-wrapper w-14 h-14 bg-white/5 flex items-center justify-center">
-        {imgSrc ? (
-          <>
-            <img src={imgSrc} alt={cat.name} className="w-full h-full object-cover" loading="lazy" />
-            <div className="category-img-overlay" />
-          </>
-        ) : (
-          <span className="text-2xl">{cat.image || '📦'}</span>
-        )}
-      </div>
-      <span className="text-[11px] font-medium text-white/90 truncate w-full text-center leading-tight">
-        {cat.name}
-      </span>
-      <span className="text-[10px] text-emerald-400/70 font-medium">
-        {cat._count?.products ?? 0} items
-      </span>
-    </button>
+      <button
+        onClick={onTap}
+        className="glass-card category-card p-3 flex flex-col items-center gap-2 w-full"
+      >
+        <div className="category-img-wrapper w-14 h-14 bg-white/5 flex items-center justify-center">
+          {imgSrc ? (
+            <>
+              <img src={imgSrc} alt={cat.name} className="w-full h-full object-cover category-img-zoom" loading="lazy" />
+              <div className="category-img-overlay" />
+            </>
+          ) : (
+            <span className="text-2xl category-emoji-bounce">{cat.image || '📦'}</span>
+          )}
+        </div>
+        <span className="text-[11px] font-medium text-white/90 truncate w-full text-center leading-tight">
+          {cat.name}
+        </span>
+        <span className="text-[10px] text-emerald-400/70 font-medium">
+          {cat._count?.products ?? 0} items
+        </span>
+      </button>
+    </motion.div>
   );
 });
 
@@ -388,41 +415,59 @@ export default function DashboardScreen() {
           </div>
 
           {categories.length > 0 ? (
-            <div className="grid grid-cols-3 gap-3">
-              {categories.map((cat) => (
+            <motion.div
+              className="grid grid-cols-3 gap-3"
+              variants={categoryContainerVariants}
+              initial="hidden"
+              animate="show"
+            >
+              {categories.map((cat, idx) => (
                 <CategoryCard
                   key={cat.id}
                   cat={cat}
                   defaultCat={defaultCatMap.get(cat.name)}
                   onTap={() => handleCategoryTap(cat)}
+                  index={idx}
                 />
               ))}
-            </div>
+            </motion.div>
           ) : (
-            <div className="grid grid-cols-3 gap-3">
-              {defaultCategories.map((cat) => (
-                <div
+            <motion.div
+              className="grid grid-cols-3 gap-3"
+              variants={categoryContainerVariants}
+              initial="hidden"
+              animate="show"
+            >
+              {defaultCategories.map((cat, idx) => (
+                <motion.div
                   key={cat.name}
-                  onClick={() => navigateTo('add-category')}
-                  className="glass-card category-card p-3 flex flex-col items-center gap-2 cursor-pointer"
+                  variants={categoryItemVariants}
+                  whileHover={{ scale: 1.06, y: -2 }}
+                  whileTap={{ scale: 0.95 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                 >
-                  <div className="category-img-wrapper w-14 h-14 bg-white/5 flex items-center justify-center">
-                    {cat.image ? (
-                      <>
-                        <img src={cat.image} alt={cat.name} className="w-full h-full object-cover" loading="lazy" />
-                        <div className="category-img-overlay" />
-                      </>
-                    ) : (
-                      <span className="text-2xl">{cat.emoji}</span>
-                    )}
+                  <div
+                    onClick={() => navigateTo('add-category')}
+                    className="glass-card category-card p-3 flex flex-col items-center gap-2 cursor-pointer"
+                  >
+                    <div className="category-img-wrapper w-14 h-14 bg-white/5 flex items-center justify-center">
+                      {cat.image ? (
+                        <>
+                          <img src={cat.image} alt={cat.name} className="w-full h-full object-cover category-img-zoom" loading="lazy" />
+                          <div className="category-img-overlay" />
+                        </>
+                      ) : (
+                        <span className="text-2xl category-emoji-bounce">{cat.emoji}</span>
+                      )}
+                    </div>
+                    <span className="text-[11px] font-medium text-white/90 truncate w-full text-center leading-tight">
+                      {cat.name}
+                    </span>
+                    <span className="text-[10px] text-emerald-400/70 font-medium">0 items</span>
                   </div>
-                  <span className="text-[11px] font-medium text-white/90 truncate w-full text-center leading-tight">
-                    {cat.name}
-                  </span>
-                  <span className="text-[10px] text-emerald-400/70 font-medium">0 items</span>
-                </div>
+                </motion.div>
               ))}
-            </div>
+            </motion.div>
           )}
         </div>
 
