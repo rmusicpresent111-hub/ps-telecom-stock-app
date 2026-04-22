@@ -6,7 +6,8 @@ import { t } from '@/lib/i18n';
 import { Product, Transaction } from '@/lib/types';
 import { ArrowLeft, Edit, Trash2, Package, Archive, IndianRupee, Tag } from 'lucide-react';
 import { toast } from 'sonner';
-import { getProducts, getTransactions, deleteProduct } from '@/lib/supabase-service';
+import { deleteProduct } from '@/lib/supabase-service';
+import { getProductsOffline, getTransactionsOffline } from '@/lib/offline-service';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function ProductDetailScreen() {
@@ -38,13 +39,13 @@ export default function ProductDetailScreen() {
     try {
       setLoading(true);
       const [prodData, txnData] = await Promise.all([
-        getProducts(user.id),
-        getTransactions(user.id, { productId: selectedProductId }),
+        getProductsOffline(user.id),
+        getTransactionsOffline(user.id),
       ]);
 
-      const found = prodData.products?.find((p: Product) => p.id === selectedProductId);
+      const found = prodData?.find((p: Product) => p.id === selectedProductId);
       if (found) setProduct(found);
-      setTransactions(txnData.transactions || []);
+      setTransactions(txnData?.filter((t: Transaction) => t.productId === selectedProductId) || []);
     } catch {
       toast.error(t('error', language));
     } finally {

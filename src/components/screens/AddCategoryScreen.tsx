@@ -6,7 +6,7 @@ import { t } from '@/lib/i18n';
 import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
-import { createCategory } from '@/lib/supabase-service';
+import { createCategoryOffline } from '@/lib/offline-service';
 
 const presetCategories = [
   { name: 'Mobile', image: '/categories/mobile.png', emoji: '📱' },
@@ -57,7 +57,7 @@ export default function AddCategoryScreen() {
     setLoading(true);
     try {
       const imageData = iconMode === 'image' ? selectedImage : selectedEmoji;
-      await createCategory(name.trim(), imageData, user.id);
+      await createCategoryOffline(name.trim(), imageData, user.id);
       toast.success(t('added', language));
       goBack();
     } catch (error) {

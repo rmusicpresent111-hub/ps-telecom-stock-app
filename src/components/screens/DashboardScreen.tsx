@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback, useMemo, memo, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
-import { getDashboard } from '@/lib/supabase-service';
+import { getDashboard } from '@/lib/offline-service';
+import { isOnline as checkOnline } from '@/lib/sync-engine';
 import { invalidateCache, cacheKeys } from '@/lib/cache';
 import { DashboardStats, Category, Product } from '@/lib/types';
 import { Search, Plus, Package, AlertTriangle, ArrowLeftRight, IndianRupee, User, ChevronRight, TrendingUp, BarChart3 } from 'lucide-react';
@@ -180,9 +181,10 @@ export default function DashboardScreen() {
   const [saleOverview, setSaleOverview] = useState<SaleOverviewItem[]>([]);
   const [stockOverview, setStockOverview] = useState<StockOverviewItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isOffline, setIsOffline] = useState(!checkOnline());
   const isFetchingRef = useRef(false);
 
-  // ✅ Stale-while-revalidate: Show cached data immediately, fetch fresh in background
+  // Listen for online/offline status changes
   const fetchDashboard = useCallback(async (isBackground = false) => {
     if (!user?.id || isFetchingRef.current) return;
 
@@ -209,6 +211,27 @@ export default function DashboardScreen() {
   useEffect(() => {
     fetchDashboard();
   }, [fetchDashboard]);
+
+  // ✅ Listen for online/offline changes
+  useEffect(() => {
+    const handleOnlineStatus = (e: Event) => {
+      const online = e instanceof CustomEvent ? e.detail : navigator.onLine;
+      setIsOffline(!online);
+      if (online) {
+        // Back online - refresh data
+        invalidateCache(cacheKeys.dashboard(user?.id || ''));
+        fetchDashboard(true);
+      }
+    };
+    window.addEventListener('app:online-status', handleOnlineStatus);
+    window.addEventListener('online', handleOnlineStatus);
+    window.addEventListener('offline', handleOnlineStatus);
+    return () => {
+      window.removeEventListener('app:online-status', handleOnlineStatus);
+      window.removeEventListener('online', handleOnlineStatus);
+      window.removeEventListener('offline', handleOnlineStatus);
+    };
+  }, [user?.id, fetchDashboard]);
 
   // ✅ Background refresh on window focus (stale-while-revalidate)
   useEffect(() => {
@@ -274,6 +297,16 @@ export default function DashboardScreen() {
   return (
     <div className="animated-bg min-h-screen pb-24">
       <div className="max-w-md mx-auto px-4 pt-4">
+        {/* Offline Banner */}
+        {isOffline && (
+          <div className="mb-4 px-4 py-2 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-orange-400 animate-pulse" />
+            <span className="text-xs text-orange-300 font-medium">
+              {language === 'bn' ? 'অফলাইন মোড - লোকাল ডেটা দেখাচ্ছে' : language === 'hi' ? 'ऑफ़लाइन मोड - स्थानीय डेटा दिखा रहा है' : 'Offline Mode - Showing local data'}
+            </span>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <button

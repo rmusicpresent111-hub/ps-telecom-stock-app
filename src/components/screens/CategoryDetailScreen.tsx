@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Category, Product } from '@/lib/types';
-import { getProducts } from '@/lib/supabase-service';
+import { getProductsOffline } from '@/lib/offline-service';
 import { ArrowLeft, Plus, Search, Package, AlertTriangle, ArrowLeftRight, IndianRupee } from 'lucide-react';
 import { toast } from 'sonner';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -55,8 +55,8 @@ export default function CategoryDetailScreen() {
     if (!user?.id || !selectedCategoryId) return;
     try {
       setLoading(true);
-      const data = await getProducts(user.id, { categoryId: selectedCategoryId });
-      setProducts(data.products || []);
+      const prods = await getProductsOffline(user.id, { categoryId: selectedCategoryId });
+      setProducts(prods || []);
     } catch {
       toast.error(t('error', language));
     } finally {

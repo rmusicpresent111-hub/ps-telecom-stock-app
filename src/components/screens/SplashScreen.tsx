@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAppStore } from '@/store/appStore';
 import { getProfile } from '@/lib/supabase-service';
+import { initialSyncForUser } from '@/lib/sync-engine';
 
 const floatingIcons = ['📱', '🎧', '🔌', '⌚', '📺'];
 
@@ -62,6 +63,8 @@ export default function SplashScreen() {
           getProfile(currentUser.id)
             .then(() => {
               resetNavigation('dashboard');
+              // Start background offline sync
+              initialSyncForUser(currentUser.id).catch(() => {});
             })
             .catch(() => {
               // User not found in Supabase - logout and go to login

@@ -9,7 +9,8 @@ import {
   Receipt, ShoppingBag, Zap, Home, Car, UtensilsCrossed, MoreHorizontal, X
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { getCashEntries, upsertCashEntry, updateCashEntry, deleteCashEntry as deleteCashEntrySvc, getExpenses, createExpense, updateExpense, deleteExpense as deleteExpenseSvc } from '@/lib/supabase-service';
+import { upsertCashEntry, updateCashEntry, deleteCashEntry as deleteCashEntrySvc, createExpense, updateExpense, deleteExpense as deleteExpenseSvc } from '@/lib/supabase-service';
+import { getCashEntriesOffline, getExpensesOffline } from '@/lib/offline-service';
 
 interface CashEntry {
   id: string;
@@ -81,7 +82,7 @@ export default function DailyBookScreen() {
   const fetchCashEntries = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const data = await getCashEntries(user.id, { period });
+      const data = await getCashEntriesOffline(user.id, { period });
       setCashEntries((data.entries || []) as CashEntry[]);
       setSummary(data.summary || { totalHandCash: 0, totalLiquidCash: 0, totalCash: 0 });
     } catch {
@@ -92,7 +93,7 @@ export default function DailyBookScreen() {
   const fetchExpenses = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const data = await getExpenses(user.id, { period });
+      const data = await getExpensesOffline(user.id, { period });
       setExpenses((data.expenses || []) as Expense[]);
       setExpenseSummary(data.summary || { totalExpense: 0, byCategory: {}, count: 0 });
     } catch {

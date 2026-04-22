@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo, memo } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Product } from '@/lib/types';
-import { getProducts } from '@/lib/supabase-service';
+import { getProductsOffline } from '@/lib/offline-service';
 import { Plus, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -81,10 +81,10 @@ export default function ProductListScreen() {
     if (!user?.id) return;
     try {
       setLoading(true);
-      const data = debouncedSearch
-        ? await getProducts(user.id, { search: debouncedSearch })
-        : await getProducts(user.id);
-      setProducts(data.products || []);
+      const prods = debouncedSearch
+        ? await getProductsOffline(user.id, { search: debouncedSearch })
+        : await getProductsOffline(user.id);
+      setProducts(prods || []);
     } catch {
       toast.error(t('error', language));
     } finally {

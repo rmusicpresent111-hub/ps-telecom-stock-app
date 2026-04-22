@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, memo } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Transaction } from '@/lib/types';
-import { getTransactions } from '@/lib/supabase-service';
+import { getTransactionsOffline } from '@/lib/offline-service';
 import { Clock } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -54,10 +54,10 @@ export default function HistoryScreen() {
     if (!user?.id) return;
     try {
       setLoading(true);
-      const data = filter !== 'ALL'
-        ? await getTransactions(user.id, { type: filter })
-        : await getTransactions(user.id);
-      setTransactions(data.transactions || []);
+      const txns = filter !== 'ALL'
+        ? await getTransactionsOffline(user.id, { type: filter })
+        : await getTransactionsOffline(user.id);
+      setTransactions(txns || []);
     } catch {
       toast.error(t('error', language));
     } finally {

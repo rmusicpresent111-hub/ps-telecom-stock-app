@@ -7,7 +7,8 @@ import { Product } from '@/lib/types';
 import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
-import { getProducts, createProduct, updateProduct } from '@/lib/supabase-service';
+import { createProduct, updateProduct } from '@/lib/supabase-service';
+import { getProductsOffline } from '@/lib/offline-service';
 
 export default function AddProductScreen() {
   const {
@@ -30,9 +31,9 @@ export default function AddProductScreen() {
 
   useEffect(() => {
     if (selectedProductId && user?.id) {
-      getProducts(user.id)
-        .then((data) => {
-          const product = data.products?.find((p: Product) => p.id === selectedProductId);
+      getProductsOffline(user.id)
+        .then((prods) => {
+          const product = prods?.find((p: Product) => p.id === selectedProductId);
           if (product) {
             setExistingProduct(product);
             setName(product.name);
