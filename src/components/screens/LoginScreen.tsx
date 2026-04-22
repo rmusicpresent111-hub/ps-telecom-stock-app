@@ -109,7 +109,7 @@ export default function LoginScreen() {
           {/* Forgot password link */}
           <div className="text-right">
             <button
-              className="text-[#00f0ff] text-xs hover:underline"
+              className="text-[#D4A853] text-xs hover:underline"
               onClick={() => navigateTo('forgot-password')}
             >
               {t('forgotLink', lang)}
@@ -149,7 +149,7 @@ export default function LoginScreen() {
         <p className="text-white/50 text-sm">
           {t('noAccount', lang)}{' '}
           <button
-            className="text-[#00f0ff] font-medium hover:underline"
+            className="text-[#D4A853] font-medium hover:underline"
             onClick={() => navigateTo('signup')}
           >
             {t('signup', lang)}

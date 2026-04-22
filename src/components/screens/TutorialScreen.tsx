@@ -23,7 +23,7 @@ const tutorialPages: TutorialPage[] = [
     titleBn: 'ড্যাশবোর্ড ওভারভিউ',
     titleHi: 'डैशबोर्ड अवलोकन',
     description: 'Track your total items, low stock alerts, today\'s transactions and stock value at a glance',
-    accent: '#00f0ff',
+    accent: '#D4A853',
   },
   {
     image: '/tutorial-2-new.png',
@@ -31,7 +31,7 @@ const tutorialPages: TutorialPage[] = [
     titleBn: 'প্রোডাক্ট ম্যানেজমেন্ট',
     titleHi: 'प्रोडक्ट मैनेजमेंट',
     description: 'Add, edit and manage all your products with categories, prices and quantities',
-    accent: '#b44aff',
+    accent: '#A07C3E',
   },
   {
     image: '/tutorial-3-new.png',
@@ -39,7 +39,7 @@ const tutorialPages: TutorialPage[] = [
     titleBn: 'স্টক ইন ও আউট',
     titleHi: 'स्टॉक इन और आउट',
     description: 'Easily manage stock entries, exits and instant sales with one tap',
-    accent: '#39ff14',
+    accent: '#F5DEB3',
   },
   {
     image: '/tutorial-4-new.png',
@@ -410,7 +410,7 @@ export default function TutorialScreen() {
             style={{
               background: `linear-gradient(135deg, ${page.accent}dd, ${page.accent}99)`,
               boxShadow: `0 4px 20px ${page.accent}30`,
-              color: page.accent === '#ffd700' || page.accent === '#39ff14' ? '#0a0a1a' : '#ffffff',
+              color: page.accent === '#ffd700' || page.accent === '#F5DEB3' ? '#091413' : '#ffffff',
             }}
             onClick={goNext}
             whileTap={{ scale: 0.97 }}

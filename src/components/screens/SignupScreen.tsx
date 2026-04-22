@@ -199,7 +199,7 @@ export default function SignupScreen() {
         <p className="text-white/50 text-sm">
           {t('hasAccount', lang)}{' '}
           <button
-            className="text-[#00f0ff] font-medium hover:underline"
+            className="text-[#D4A853] font-medium hover:underline"
             onClick={() => navigateTo('login')}
           >
             {t('login', lang)}

@@ -77,15 +77,15 @@ interface GrandTotal {
 const stockValueChartConfig: ChartConfig = {
   totalSellingValue: {
     label: 'Stock Value (₹)',
-    color: '#00f0ff',
+    color: '#D4A853',
   },
   totalPurchaseValue: {
     label: 'Purchase Value (₹)',
-    color: '#b44aff',
+    color: '#A07C3E',
   },
 };
 
-const BAR_COLORS = ['#00f0ff', '#b44aff', '#39ff14', '#ff6b00', '#ff006e', '#ffd700', '#00e5ff', '#e040fb', '#76ff03', '#ff9100', '#f50057', '#ffea00', '#18ffff', '#d500f9', '#64dd17', '#ff3d00', '#c51162', '#aeea00', '#00b8d4'];
+const BAR_COLORS = ['#D4A853', '#A07C3E', '#F5DEB3', '#ff6b00', '#ff006e', '#ffd700', '#00e5ff', '#e040fb', '#76ff03', '#ff9100', '#f50057', '#ffea00', '#18ffff', '#d500f9', '#64dd17', '#ff3d00', '#c51162', '#aeea00', '#00b8d4'];
 
 export default function ReportsScreen() {
   const { user, language, goBack } = useAppStore();
@@ -229,10 +229,10 @@ export default function ReportsScreen() {
           className="flex items-center justify-between mb-6"
         >
           <button onClick={goBack} className="p-2 rounded-full glass-card" aria-label="Back">
-            <ArrowLeft size={20} className="text-cyan-400" />
+            <ArrowLeft size={20} className="text-emerald-400" />
           </button>
           <div className="flex items-center gap-2">
-            <FileText size={20} className="text-cyan-400" />
+            <FileText size={20} className="text-emerald-400" />
             <h1 className="text-lg font-bold">{t('reports', language)}</h1>
           </div>
           <div className="w-10" />
@@ -272,28 +272,28 @@ export default function ReportsScreen() {
                 transition={{ delay: 0.15 }}
                 className="grid grid-cols-2 gap-3 mb-5"
               >
-                <div className="rounded-2xl p-3" style={{ background: 'linear-gradient(135deg, rgba(0,240,255,0.12), rgba(0,200,212,0.05))', border: '1px solid rgba(0,240,255,0.2)' }}>
+                <div className="rounded-2xl p-3" style={{ background: 'linear-gradient(135deg, rgba(212,168,83,0.12), rgba(180,140,60,0.05))', border: '1px solid rgba(212,168,83,0.2)' }}>
                   <div className="flex items-center gap-1.5 mb-1">
-                    <IndianRupee size={14} className="text-cyan-400" />
+                    <IndianRupee size={14} className="text-emerald-400" />
                     <span className="text-[10px] text-white/50">Stock Value</span>
                   </div>
-                  <p className="text-lg font-bold text-cyan-400">₹{grandTotal.totalSellingValue.toLocaleString()}</p>
+                  <p className="text-lg font-bold text-emerald-400">₹{grandTotal.totalSellingValue.toLocaleString()}</p>
                 </div>
-                <div className="rounded-2xl p-3" style={{ background: 'linear-gradient(135deg, rgba(57,255,20,0.12), rgba(0,200,120,0.05))', border: '1px solid rgba(57,255,20,0.2)' }}>
+                <div className="rounded-2xl p-3" style={{ background: 'linear-gradient(135deg, rgba(245,222,179,0.12), rgba(200,160,80,0.05))', border: '1px solid rgba(245,222,179,0.2)' }}>
                   <div className="flex items-center gap-1.5 mb-1">
                     <TrendingUp size={14} className="text-green-400" />
                     <span className="text-[10px] text-white/50">Expected Profit</span>
                   </div>
                   <p className="text-lg font-bold text-green-400">₹{grandTotal.totalProfit.toLocaleString()}</p>
                 </div>
-                <div className="rounded-2xl p-3" style={{ background: 'linear-gradient(135deg, rgba(180,74,255,0.12), rgba(140,50,220,0.05))', border: '1px solid rgba(180,74,255,0.2)' }}>
+                <div className="rounded-2xl p-3" style={{ background: 'linear-gradient(135deg, rgba(160,124,62,0.12), rgba(140,105,50,0.05))', border: '1px solid rgba(160,124,62,0.2)' }}>
                   <div className="flex items-center gap-1.5 mb-1">
-                    <Package size={14} className="text-purple-400" />
+                    <Package size={14} className="text-emerald-600" />
                     <span className="text-[10px] text-white/50">Total Products</span>
                   </div>
-                  <p className="text-lg font-bold text-purple-400">{grandTotal.totalProducts}</p>
+                  <p className="text-lg font-bold text-emerald-600">{grandTotal.totalProducts}</p>
                 </div>
-                <div className={`rounded-2xl p-3 ${grandTotal.totalLowStock > 0 ? '' : ''}`} style={{ background: grandTotal.totalLowStock > 0 ? 'linear-gradient(135deg, rgba(255,107,0,0.12), rgba(255,180,0,0.05))' : 'linear-gradient(135deg, rgba(57,255,20,0.12), rgba(0,200,120,0.05))', border: grandTotal.totalLowStock > 0 ? '1px solid rgba(255,107,0,0.2)' : '1px solid rgba(57,255,20,0.2)' }}>
+                <div className={`rounded-2xl p-3 ${grandTotal.totalLowStock > 0 ? '' : ''}`} style={{ background: grandTotal.totalLowStock > 0 ? 'linear-gradient(135deg, rgba(255,107,0,0.12), rgba(255,180,0,0.05))' : 'linear-gradient(135deg, rgba(245,222,179,0.12), rgba(200,160,80,0.05))', border: grandTotal.totalLowStock > 0 ? '1px solid rgba(255,107,0,0.2)' : '1px solid rgba(245,222,179,0.2)' }}>
                   <div className="flex items-center gap-1.5 mb-1">
                     <AlertTriangle size={14} className={grandTotal.totalLowStock > 0 ? 'text-orange-400' : 'text-green-400'} />
                     <span className="text-[10px] text-white/50">Low Stock</span>
@@ -398,7 +398,7 @@ export default function ReportsScreen() {
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
                       <div className="text-right">
-                        <p className="text-sm font-bold text-cyan-400">₹{cat.totalSellingValue.toLocaleString()}</p>
+                        <p className="text-sm font-bold text-emerald-400">₹{cat.totalSellingValue.toLocaleString()}</p>
                         <p className="text-[10px] text-white/40">{cat.totalQty} pcs • {cat.productCount} items</p>
                       </div>
                       {expandedCategory === cat.categoryId ? (
@@ -430,11 +430,11 @@ export default function ReportsScreen() {
                     <div className="grid grid-cols-3 gap-2 mt-3 mb-3">
                       <div>
                         <p className="text-[9px] text-white/40">Purchase</p>
-                        <p className="text-xs font-medium text-purple-400">₹{cat.totalPurchaseValue.toLocaleString()}</p>
+                        <p className="text-xs font-medium text-emerald-600">₹{cat.totalPurchaseValue.toLocaleString()}</p>
                       </div>
                       <div>
                         <p className="text-[9px] text-white/40">Selling</p>
-                        <p className="text-xs font-medium text-cyan-400">₹{cat.totalSellingValue.toLocaleString()}</p>
+                        <p className="text-xs font-medium text-emerald-400">₹{cat.totalSellingValue.toLocaleString()}</p>
                       </div>
                       <div>
                         <p className="text-[9px] text-white/40">Profit</p>
@@ -460,7 +460,7 @@ export default function ReportsScreen() {
                           </div>
                           <div className="flex items-center gap-3 shrink-0">
                             <span className="text-[10px] text-white/40">{prod.quantity} pcs</span>
-                            <span className="text-xs font-medium text-cyan-400/80">₹{prod.stockValue.toLocaleString()}</span>
+                            <span className="text-xs font-medium text-emerald-400/80">₹{prod.stockValue.toLocaleString()}</span>
                           </div>
                         </div>
                       ))}
@@ -499,7 +499,7 @@ export default function ReportsScreen() {
                   <div className="grid grid-cols-3 gap-2">
                     <div>
                       <p className="text-[10px] text-white/40">{t('sale', language)}</p>
-                      <p className="text-xs font-medium text-cyan-400">₹{revenue.toLocaleString()}</p>
+                      <p className="text-xs font-medium text-emerald-400">₹{revenue.toLocaleString()}</p>
                       <p className="text-[10px] text-white/30">{sell} units</p>
                     </div>
                     <div>

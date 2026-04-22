@@ -27,7 +27,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#0a0a1a",
+  themeColor: "#091413",
 };
 
 export default function RootLayout({
@@ -48,7 +48,7 @@ export default function RootLayout({
           toastOptions={{
             style: {
               background: 'rgba(20, 20, 40, 0.9)',
-              border: '1px solid rgba(0, 240, 255, 0.2)',
+              border: '1px solid rgba(212, 168, 83, 0.2)',
               backdropFilter: 'blur(12px)',
               color: '#fff',
             },

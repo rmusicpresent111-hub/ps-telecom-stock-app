@@ -37,26 +37,26 @@ const defaultCategories = [
 const saleChartConfig: ChartConfig = {
   sales: {
     label: 'Sales (₹)',
-    color: '#00f0ff',
+    color: '#D4A853',
   },
   quantity: {
     label: 'Items Sold',
-    color: '#b44aff',
+    color: '#A07C3E',
   },
 };
 
 const stockChartConfig: ChartConfig = {
   quantity: {
     label: 'Stock Qty',
-    color: '#39ff14',
+    color: '#F5DEB3',
   },
   value: {
     label: 'Value (₹)',
-    color: '#00f0ff',
+    color: '#D4A853',
   },
 };
 
-const PIE_COLORS = ['#00f0ff', '#b44aff', '#39ff14', '#ff6b00', '#ff006e', '#ffd700', '#00e5ff', '#e040fb', '#76ff03', '#ff9100', '#f50057', '#ffea00', '#18ffff', '#d500f9', '#64dd17', '#ff3d00', '#c51162', '#aeea00', '#00b8d4'];
+const PIE_COLORS = ['#D4A853', '#A07C3E', '#F5DEB3', '#ff6b00', '#ff006e', '#ffd700', '#00e5ff', '#e040fb', '#76ff03', '#ff9100', '#f50057', '#ffea00', '#18ffff', '#d500f9', '#64dd17', '#ff3d00', '#c51162', '#aeea00', '#00b8d4'];
 
 interface SaleOverviewItem {
   date: string;
@@ -143,7 +143,7 @@ export default function DashboardScreen() {
             className="p-2 rounded-full glass-card"
             aria-label="Profile"
           >
-            <User size={20} className="text-cyan-400" />
+            <User size={20} className="text-emerald-400" />
           </button>
           <h1 className="text-xl font-bold neon-glow">{shopName}</h1>
           <button
@@ -151,7 +151,7 @@ export default function DashboardScreen() {
             className="p-2 rounded-full glass-card"
             aria-label="Add Product"
           >
-            <Plus size={20} className="text-cyan-400" />
+            <Plus size={20} className="text-emerald-400" />
           </button>
         </motion.div>
 
@@ -200,19 +200,19 @@ export default function DashboardScreen() {
           </div>
           <div className="stat-card-blue rounded-2xl p-4">
             <div className="flex items-center gap-2 mb-1">
-              <ArrowLeftRight size={16} className="text-cyan-400" />
+              <ArrowLeftRight size={16} className="text-emerald-400" />
               <span className="text-xs text-white/60">{t('todayTransaction', language)}</span>
             </div>
-            <p className="text-2xl font-bold text-cyan-400">
+            <p className="text-2xl font-bold text-emerald-400">
               {loading ? '...' : (stats?.todayTransactions ?? 0)}
             </p>
           </div>
           <div className="stat-card-purple rounded-2xl p-4">
             <div className="flex items-center gap-2 mb-1">
-              <IndianRupee size={16} className="text-purple-400" />
+              <IndianRupee size={16} className="text-emerald-600" />
               <span className="text-xs text-white/60">{t('stockValue', language)}</span>
             </div>
-            <p className="text-2xl font-bold text-purple-400">
+            <p className="text-2xl font-bold text-emerald-600">
               {loading ? '...' : `₹${(stats?.stockValue ?? 0).toLocaleString()}`}
             </p>
           </div>
@@ -286,7 +286,7 @@ export default function DashboardScreen() {
                     <span className="text-[11px] font-medium text-white/90 truncate w-full text-center leading-tight">
                       {cat.name}
                     </span>
-                    <span className="text-[10px] text-cyan-400/70 font-medium">
+                    <span className="text-[10px] text-emerald-400/70 font-medium">
                       {cat._count?.products ?? 0} items
                     </span>
                   </motion.button>
@@ -319,7 +319,7 @@ export default function DashboardScreen() {
                   <span className="text-[11px] font-medium text-white/90 truncate w-full text-center leading-tight">
                     {cat.name}
                   </span>
-                  <span className="text-[10px] text-cyan-400/70 font-medium">0 items</span>
+                  <span className="text-[10px] text-emerald-400/70 font-medium">0 items</span>
                 </motion.div>
               ))}
             </div>
@@ -334,20 +334,20 @@ export default function DashboardScreen() {
           className="mt-8"
         >
           <div className="flex items-center gap-2 mb-4">
-            <TrendingUp size={18} className="text-cyan-400" />
+            <TrendingUp size={18} className="text-emerald-400" />
             <h2 className="text-lg font-bold">Sale Overview</h2>
           </div>
 
           <div className="glass-card-strong p-4">
             {/* Summary stats */}
             <div className="grid grid-cols-2 gap-3 mb-4">
-              <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(0,240,255,0.12), rgba(0,200,212,0.05))', border: '1px solid rgba(0,240,255,0.2)' }}>
+              <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(212,168,83,0.12), rgba(180,140,60,0.05))', border: '1px solid rgba(212,168,83,0.2)' }}>
                 <p className="text-[10px] text-white/50 mb-1">7-Day Sales</p>
-                <p className="text-lg font-bold text-cyan-400">₹{totalSaleAmount.toLocaleString()}</p>
+                <p className="text-lg font-bold text-emerald-400">₹{totalSaleAmount.toLocaleString()}</p>
               </div>
-              <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(180,74,255,0.12), rgba(140,50,220,0.05))', border: '1px solid rgba(180,74,255,0.2)' }}>
+              <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(160,124,62,0.12), rgba(140,105,50,0.05))', border: '1px solid rgba(160,124,62,0.2)' }}>
                 <p className="text-[10px] text-white/50 mb-1">Items Sold</p>
-                <p className="text-lg font-bold text-purple-400">{totalSoldItems}</p>
+                <p className="text-lg font-bold text-emerald-600">{totalSoldItems}</p>
               </div>
             </div>
 
@@ -379,7 +379,7 @@ export default function DashboardScreen() {
                     {saleOverview.map((_entry, index) => (
                       <Cell
                         key={`cell-${index}`}
-                        fill={index === saleOverview.length - 1 ? '#00f0ff' : 'rgba(0,240,255,0.4)'}
+                        fill={index === saleOverview.length - 1 ? '#D4A853' : 'rgba(212,168,83,0.4)'}
                       />
                     ))}
                   </Bar>
@@ -408,13 +408,13 @@ export default function DashboardScreen() {
           <div className="glass-card-strong p-4">
             {/* Summary stats */}
             <div className="grid grid-cols-2 gap-3 mb-4">
-              <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(57,255,20,0.12), rgba(0,200,120,0.05))', border: '1px solid rgba(57,255,20,0.2)' }}>
+              <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(245,222,179,0.12), rgba(200,160,80,0.05))', border: '1px solid rgba(245,222,179,0.2)' }}>
                 <p className="text-[10px] text-white/50 mb-1">Total Stock</p>
                 <p className="text-lg font-bold text-green-400">{totalStockQty.toLocaleString()} pcs</p>
               </div>
-              <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(0,240,255,0.12), rgba(0,150,255,0.05))', border: '1px solid rgba(0,240,255,0.2)' }}>
+              <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(212,168,83,0.12), rgba(34,90,75,0.05))', border: '1px solid rgba(212,168,83,0.2)' }}>
                 <p className="text-[10px] text-white/50 mb-1">Stock Value</p>
-                <p className="text-lg font-bold text-cyan-400">₹{totalStockVal.toLocaleString()}</p>
+                <p className="text-lg font-bold text-emerald-400">₹{totalStockVal.toLocaleString()}</p>
               </div>
             </div>
 
@@ -460,7 +460,7 @@ export default function DashboardScreen() {
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="text-white/50">{item.quantity} pcs</span>
-                        <span className="text-cyan-400/70 font-medium">₹{item.value.toLocaleString()}</span>
+                        <span className="text-emerald-400/70 font-medium">₹{item.value.toLocaleString()}</span>
                       </div>
                     </div>
                   ))}

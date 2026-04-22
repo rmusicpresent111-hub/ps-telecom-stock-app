@@ -16,13 +16,13 @@ interface OnboardingPage {
 }
 
 const pages: OnboardingPage[] = [
-  { icon: Package, titleKey: 'onboarding1Title', descKey: 'onboarding1Desc', accent: '#00f0ff' },
-  { icon: Plus, titleKey: 'onboarding2Title', descKey: 'onboarding2Desc', accent: '#b44aff' },
-  { icon: TrendingUp, titleKey: 'onboarding3Title', descKey: 'onboarding3Desc', accent: '#39ff14' },
-  { icon: FileText, titleKey: 'onboarding4Title', descKey: 'onboarding4Desc', accent: '#00f0ff' },
+  { icon: Package, titleKey: 'onboarding1Title', descKey: 'onboarding1Desc', accent: '#D4A853' },
+  { icon: Plus, titleKey: 'onboarding2Title', descKey: 'onboarding2Desc', accent: '#A07C3E' },
+  { icon: TrendingUp, titleKey: 'onboarding3Title', descKey: 'onboarding3Desc', accent: '#F5DEB3' },
+  { icon: FileText, titleKey: 'onboarding4Title', descKey: 'onboarding4Desc', accent: '#D4A853' },
   { icon: Cloud, titleKey: 'onboarding5Title', descKey: 'onboarding5Desc', accent: '#ff6b00' },
-  { icon: Globe, titleKey: 'onboarding6Title', descKey: 'onboarding6Desc', accent: '#b44aff' },
-  { icon: Search, titleKey: 'onboarding7Title', descKey: 'onboarding7Desc', accent: '#00f0ff' },
+  { icon: Globe, titleKey: 'onboarding6Title', descKey: 'onboarding6Desc', accent: '#A07C3E' },
+  { icon: Search, titleKey: 'onboarding7Title', descKey: 'onboarding7Desc', accent: '#D4A853' },
 ];
 
 const slideVariants = {
@@ -174,9 +174,9 @@ export default function OnboardingScreen() {
                 width: i === currentPage ? 24 : 8,
                 background:
                   i === currentPage
-                    ? 'linear-gradient(90deg, #00f0ff, #b44aff)'
+                    ? 'linear-gradient(90deg, #D4A853, #A07C3E)'
                     : 'rgba(255, 255, 255, 0.2)',
-                boxShadow: i === currentPage ? '0 0 8px rgba(0, 240, 255, 0.4)' : 'none',
+                boxShadow: i === currentPage ? '0 0 8px rgba(212, 168, 83, 0.4)' : 'none',
               }}
               onClick={() => {
                 setDirection(i > currentPage ? 1 : -1);

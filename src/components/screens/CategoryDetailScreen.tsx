@@ -104,7 +104,7 @@ export default function CategoryDetailScreen() {
           className="flex items-center justify-between mb-4"
         >
           <button onClick={goBack} className="p-2 rounded-full glass-card" aria-label="Back">
-            <ArrowLeft size={20} className="text-cyan-400" />
+            <ArrowLeft size={20} className="text-emerald-400" />
           </button>
           <h1 className="text-lg font-bold neon-glow">{category?.name || 'Category'}</h1>
           <button
@@ -112,7 +112,7 @@ export default function CategoryDetailScreen() {
             className="p-2 rounded-full glass-card"
             aria-label="Add Product"
           >
-            <Plus size={20} className="text-cyan-400" />
+            <Plus size={20} className="text-emerald-400" />
           </button>
         </motion.div>
 
@@ -160,17 +160,17 @@ export default function CategoryDetailScreen() {
           </div>
           <div className="stat-card-blue rounded-2xl p-4">
             <div className="flex items-center gap-2 mb-1">
-              <ArrowLeftRight size={16} className="text-cyan-400" />
+              <ArrowLeftRight size={16} className="text-emerald-400" />
               <span className="text-xs text-white/60">{t('todayTransaction', language)}</span>
             </div>
-            <p className="text-2xl font-bold text-cyan-400">{todayTxCount}</p>
+            <p className="text-2xl font-bold text-emerald-400">{todayTxCount}</p>
           </div>
           <div className="stat-card-purple rounded-2xl p-4">
             <div className="flex items-center gap-2 mb-1">
-              <IndianRupee size={16} className="text-purple-400" />
+              <IndianRupee size={16} className="text-emerald-600" />
               <span className="text-xs text-white/60">{t('stockValue', language)}</span>
             </div>
-            <p className="text-2xl font-bold text-purple-400">₹{totalValue.toLocaleString()}</p>
+            <p className="text-2xl font-bold text-emerald-600">₹{totalValue.toLocaleString()}</p>
           </div>
         </motion.div>
 
@@ -184,7 +184,7 @@ export default function CategoryDetailScreen() {
           <button
             onClick={() => handleStockOperation('STOCK_IN')}
             className="flex-1 neon-btn py-3 text-sm font-semibold text-center"
-            style={{ borderColor: 'rgba(57, 255, 20, 0.4)', color: '#39ff14', background: 'linear-gradient(135deg, rgba(57, 255, 20, 0.15), rgba(57, 200, 120, 0.1))' }}
+            style={{ borderColor: 'rgba(245, 222, 179, 0.4)', color: '#F5DEB3', background: 'linear-gradient(135deg, rgba(245, 222, 179, 0.15), rgba(57, 200, 120, 0.1))' }}
           >
             {t('stockIn', language)}
           </button>
@@ -198,7 +198,7 @@ export default function CategoryDetailScreen() {
           <button
             onClick={() => handleStockOperation('SELL')}
             className="flex-1 neon-btn py-3 text-sm font-semibold text-center"
-            style={{ borderColor: 'rgba(180, 74, 255, 0.4)', color: '#b44aff', background: 'linear-gradient(135deg, rgba(180, 74, 255, 0.15), rgba(140, 50, 220, 0.1))' }}
+            style={{ borderColor: 'rgba(160, 124, 62, 0.4)', color: '#A07C3E', background: 'linear-gradient(135deg, rgba(160, 124, 62, 0.15), rgba(140, 105, 50, 0.1))' }}
           >
             {t('instantSell', language)}
           </button>
@@ -249,7 +249,7 @@ export default function CategoryDetailScreen() {
                       Qty: {product.quantity}
                     </span>
                     <span className="text-xs text-white/50">₹{product.purchasePrice}</span>
-                    <span className="text-xs text-cyan-400">₹{product.sellingPrice}</span>
+                    <span className="text-xs text-emerald-400">₹{product.sellingPrice}</span>
                   </div>
                 </div>
                 <div className="text-right">

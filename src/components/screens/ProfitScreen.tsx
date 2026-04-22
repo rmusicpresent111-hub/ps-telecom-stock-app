@@ -73,7 +73,7 @@ export default function ProfitScreen() {
           className="flex items-center justify-center mb-6"
         >
           <div className="flex items-center gap-2">
-            <TrendingUp size={24} className="text-cyan-400" />
+            <TrendingUp size={24} className="text-emerald-400" />
             <h1 className="text-lg font-bold neon-glow">{t('profit', language)}</h1>
           </div>
         </motion.div>
@@ -140,12 +140,12 @@ export default function ProfitScreen() {
               <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id="profitGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#39ff14" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#39ff14" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#F5DEB3" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#F5DEB3" stopOpacity={0} />
                   </linearGradient>
                   <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#00f0ff" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#00f0ff" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#D4A853" stopOpacity={0.2} />
+                    <stop offset="95%" stopColor="#D4A853" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
@@ -154,13 +154,13 @@ export default function ProfitScreen() {
                 <Tooltip
                   contentStyle={{
                     background: 'rgba(10, 10, 26, 0.9)',
-                    border: '1px solid rgba(0, 240, 255, 0.2)',
+                    border: '1px solid rgba(212, 168, 83, 0.2)',
                     borderRadius: '8px',
                     fontSize: '12px',
                   }}
                 />
-                <Area type="monotone" dataKey="revenue" stroke="#00f0ff" fill="url(#revenueGradient)" strokeWidth={2} />
-                <Area type="monotone" dataKey="profit" stroke="#39ff14" fill="url(#profitGradient)" strokeWidth={2} />
+                <Area type="monotone" dataKey="revenue" stroke="#D4A853" fill="url(#revenueGradient)" strokeWidth={2} />
+                <Area type="monotone" dataKey="profit" stroke="#F5DEB3" fill="url(#profitGradient)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
           )}
@@ -174,9 +174,9 @@ export default function ProfitScreen() {
           className="grid grid-cols-3 gap-3"
         >
           <div className="stat-card-blue rounded-2xl p-4 text-center">
-            <BarChart3 size={16} className="text-cyan-400 mx-auto mb-1" />
+            <BarChart3 size={16} className="text-emerald-400 mx-auto mb-1" />
             <p className="text-xs text-white/60">{t('revenue', language)}</p>
-            <p className="text-sm font-bold text-cyan-400">₹{totalRevenue.toLocaleString()}</p>
+            <p className="text-sm font-bold text-emerald-400">₹{totalRevenue.toLocaleString()}</p>
           </div>
           <div className="stat-card-orange rounded-2xl p-4 text-center">
             <Wallet size={16} className="text-orange-400 mx-auto mb-1" />

@@ -280,7 +280,7 @@ export default function SetupScreen() {
           transition={{ duration: 0.5 }}
           className="flex flex-col items-center gap-4"
         >
-          <div className="w-20 h-20 rounded-2xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #00f0ff, #b44aff)' }}>
+          <div className="w-20 h-20 rounded-2xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #D4A853, #A07C3E)' }}>
             <Database size={36} className="text-white" />
           </div>
           <div>
@@ -302,7 +302,7 @@ export default function SetupScreen() {
               exit={{ opacity: 0 }}
               className="flex flex-col items-center justify-center py-16 gap-4"
             >
-              <Loader2 className="w-10 h-10 text-cyan-400 animate-spin" />
+              <Loader2 className="w-10 h-10 text-emerald-400 animate-spin" />
               <p className="text-white/60 text-sm">Checking database connection...</p>
             </motion.div>
           )}
@@ -319,7 +319,7 @@ export default function SetupScreen() {
               {/* Connection Status */}
               <div className="glass-card p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <Server size={16} className="text-cyan-400" />
+                  <Server size={16} className="text-emerald-400" />
                   <span className="text-sm font-semibold text-white">Connection Status</span>
                 </div>
                 <div className="flex items-center gap-2 mb-2">
@@ -362,7 +362,7 @@ export default function SetupScreen() {
                 </div>
                 <div className="space-y-3">
                   <div className="flex gap-3">
-                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: 'linear-gradient(135deg, #00f0ff, #b44aff)', color: 'white' }}>
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: 'linear-gradient(135deg, #D4A853, #A07C3E)', color: 'white' }}>
                       1
                     </div>
                     <div>
@@ -371,14 +371,14 @@ export default function SetupScreen() {
                         href="https://supabase.com/dashboard/project/iwigztspqhrujaskpobn/sql"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-xs text-cyan-400 flex items-center gap-1 mt-0.5 hover:text-cyan-300"
+                        className="text-xs text-emerald-400 flex items-center gap-1 mt-0.5 hover:text-emerald-300"
                       >
                         Open Dashboard <ExternalLink size={10} />
                       </a>
                     </div>
                   </div>
                   <div className="flex gap-3">
-                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: 'linear-gradient(135deg, #00f0ff, #b44aff)', color: 'white' }}>
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: 'linear-gradient(135deg, #D4A853, #A07C3E)', color: 'white' }}>
                       2
                     </div>
                     <div>
@@ -387,9 +387,9 @@ export default function SetupScreen() {
                         onClick={handleCopySQL}
                         className="mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
                         style={{
-                          background: copied ? 'rgba(16, 185, 129, 0.15)' : 'rgba(0, 240, 255, 0.1)',
-                          color: copied ? '#10b981' : '#00f0ff',
-                          border: copied ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(0, 240, 255, 0.3)',
+                          background: copied ? 'rgba(16, 185, 129, 0.15)' : 'rgba(212, 168, 83, 0.1)',
+                          color: copied ? '#10b981' : '#D4A853',
+                          border: copied ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(212, 168, 83, 0.3)',
                         }}
                       >
                         {copied ? <Check size={12} /> : <Copy size={12} />}
@@ -398,7 +398,7 @@ export default function SetupScreen() {
                     </div>
                   </div>
                   <div className="flex gap-3">
-                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: 'linear-gradient(135deg, #00f0ff, #b44aff)', color: 'white' }}>
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: 'linear-gradient(135deg, #D4A853, #A07C3E)', color: 'white' }}>
                       3
                     </div>
                     <div>
@@ -407,7 +407,7 @@ export default function SetupScreen() {
                     </div>
                   </div>
                   <div className="flex gap-3">
-                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: 'linear-gradient(135deg, #00f0ff, #b44aff)', color: 'white' }}>
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: 'linear-gradient(135deg, #D4A853, #A07C3E)', color: 'white' }}>
                       4
                     </div>
                     <div>
@@ -420,7 +420,7 @@ export default function SetupScreen() {
               {/* Quick Setup with Database URL */}
               <div className="glass-card p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <Database size={16} className="text-purple-400" />
+                  <Database size={16} className="text-emerald-600" />
                   <span className="text-sm font-semibold text-white">Quick Setup (Advanced)</span>
                 </div>
                 <p className="text-xs text-white/40 mb-3">
@@ -432,14 +432,14 @@ export default function SetupScreen() {
                     value={dbUrl}
                     onChange={(e) => setDbUrl(e.target.value)}
                     placeholder="postgresql://postgres.xxx:password@..."
-                    className="flex-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-white placeholder:text-white/25 focus:outline-none focus:border-cyan-400/50"
+                    className="flex-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs text-white placeholder:text-white/25 focus:outline-none focus:border-emerald-400/50"
                   />
                   <button
                     onClick={handleDirectSetup}
                     disabled={!dbUrl.trim() || setupLoading}
                     className="px-4 py-2 rounded-lg text-xs font-medium transition-all disabled:opacity-40"
                     style={{
-                      background: 'linear-gradient(135deg, #00f0ff, #b44aff)',
+                      background: 'linear-gradient(135deg, #D4A853, #A07C3E)',
                       color: 'white',
                     }}
                   >
@@ -457,9 +457,9 @@ export default function SetupScreen() {
                 disabled={checking}
                 className="w-full py-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
                 style={{
-                  background: 'linear-gradient(135deg, #00f0ff, #b44aff)',
+                  background: 'linear-gradient(135deg, #D4A853, #A07C3E)',
                   color: 'white',
-                  boxShadow: '0 0 20px rgba(0, 240, 255, 0.3)',
+                  boxShadow: '0 0 20px rgba(212, 168, 83, 0.3)',
                 }}
               >
                 {checking ? (
@@ -510,9 +510,9 @@ export default function SetupScreen() {
                 onClick={handleContinue}
                 className="w-full py-3.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2"
                 style={{
-                  background: 'linear-gradient(135deg, #00f0ff, #b44aff)',
+                  background: 'linear-gradient(135deg, #D4A853, #A07C3E)',
                   color: 'white',
-                  boxShadow: '0 0 20px rgba(0, 240, 255, 0.3)',
+                  boxShadow: '0 0 20px rgba(212, 168, 83, 0.3)',
                 }}
               >
                 Continue to App <ArrowRight size={16} />

@@ -60,11 +60,11 @@ export default function ForgotPasswordScreen() {
       >
         <div className="w-16 h-16 rounded-2xl mx-auto mb-6 flex items-center justify-center"
           style={{
-            background: 'linear-gradient(135deg, rgba(0, 240, 255, 0.15), rgba(180, 74, 255, 0.15))',
-            border: '1px solid rgba(0, 240, 255, 0.25)',
+            background: 'linear-gradient(135deg, rgba(212, 168, 83, 0.15), rgba(160, 124, 62, 0.15))',
+            border: '1px solid rgba(212, 168, 83, 0.25)',
           }}
         >
-          <Mail size={28} className="text-[#00f0ff]" />
+          <Mail size={28} className="text-[#D4A853]" />
         </div>
         <h1 className="text-2xl sm:text-3xl font-bold neon-glow text-white mb-3">
           {t('forgotPassword', lang)}
@@ -129,11 +129,11 @@ export default function ForgotPasswordScreen() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.4 }}
           >
-            <div className="w-12 h-12 rounded-full mx-auto flex items-center justify-center bg-[#39ff14]/20 border border-[#39ff14]/30">
-              <span className="text-[#39ff14] text-xl">✓</span>
+            <div className="w-12 h-12 rounded-full mx-auto flex items-center justify-center bg-[#F5DEB3]/20 border border-[#F5DEB3]/30">
+              <span className="text-[#F5DEB3] text-xl">✓</span>
             </div>
             <p className="text-white/70 text-sm">
-              Check your inbox at <span className="text-[#00f0ff] font-medium">{email}</span>
+              Check your inbox at <span className="text-[#D4A853] font-medium">{email}</span>
             </p>
           </motion.div>
         )}
@@ -147,7 +147,7 @@ export default function ForgotPasswordScreen() {
         transition={{ duration: 0.5, delay: 0.5 }}
       >
         <button
-          className="text-[#00f0ff] text-sm font-medium hover:underline"
+          className="text-[#D4A853] text-sm font-medium hover:underline"
           onClick={() => navigateTo('login')}
         >
           {t('backToLogin', lang)}

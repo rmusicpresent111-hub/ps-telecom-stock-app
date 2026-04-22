@@ -136,7 +136,7 @@ export default function ProfileScreen() {
           className="flex items-center justify-center mb-6"
         >
           <div className="flex items-center gap-2">
-            <User size={24} className="text-cyan-400" />
+            <User size={24} className="text-emerald-400" />
             <h1 className="text-lg font-bold neon-glow">{t('profile', language)}</h1>
           </div>
         </motion.div>
@@ -148,12 +148,12 @@ export default function ProfileScreen() {
           transition={{ delay: 0.1 }}
           className="glass-card-strong p-6 mb-6 text-center"
         >
-          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-cyan-500/30 to-purple-500/30 flex items-center justify-center mx-auto mb-3">
-            <User size={28} className="text-cyan-400" />
+          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-emerald-500/30 to-emerald-700/30 flex items-center justify-center mx-auto mb-3">
+            <User size={28} className="text-emerald-400" />
           </div>
           <h2 className="text-lg font-bold">{user?.name || 'User'}</h2>
           <p className="text-sm text-white/60">{user?.email || ''}</p>
-          <p className="text-xs text-cyan-400 mt-1">{user?.shopName || 'PS TELECOM'}</p>
+          <p className="text-xs text-emerald-400 mt-1">{user?.shopName || 'PS TELECOM'}</p>
         </motion.div>
 
         {/* Settings list */}
@@ -169,7 +169,7 @@ export default function ProfileScreen() {
             className="glass-card w-full p-4 flex items-center justify-between"
           >
             <div className="flex items-center gap-3">
-              <Pencil size={18} className="text-cyan-400" />
+              <Pencil size={18} className="text-emerald-400" />
               <span className="text-sm">{t('changeName', language)}</span>
             </div>
             <span className="text-xs text-white/40">{user?.name}</span>
@@ -181,10 +181,10 @@ export default function ProfileScreen() {
             className="glass-card w-full p-4 flex items-center justify-between"
           >
             <div className="flex items-center gap-3">
-              {theme === 'dark' ? <Moon size={18} className="text-cyan-400" /> : <Sun size={18} className="text-orange-400" />}
+              {theme === 'dark' ? <Moon size={18} className="text-emerald-400" /> : <Sun size={18} className="text-orange-400" />}
               <span className="text-sm">{theme === 'dark' ? t('darkMode', language) : t('lightMode', language)}</span>
             </div>
-            <div className={`w-10 h-5 rounded-full transition-all ${theme === 'dark' ? 'bg-cyan-500/40' : 'bg-orange-500/40'} relative`}>
+            <div className={`w-10 h-5 rounded-full transition-all ${theme === 'dark' ? 'bg-emerald-500/40' : 'bg-orange-500/40'} relative`}>
               <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-all ${theme === 'dark' ? 'left-0.5' : 'left-[22px]'}`} />
             </div>
           </button>
@@ -195,7 +195,7 @@ export default function ProfileScreen() {
             className="glass-card w-full p-4 flex items-center justify-between"
           >
             <div className="flex items-center gap-3">
-              <Globe size={18} className="text-cyan-400" />
+              <Globe size={18} className="text-emerald-400" />
               <span className="text-sm">{t('languageChange', language)}</span>
             </div>
             <span className="text-xs text-white/40 uppercase">{language}</span>
@@ -221,7 +221,7 @@ export default function ProfileScreen() {
             className="glass-card w-full p-4 flex items-center justify-between"
           >
             <div className="flex items-center gap-3">
-              <FileText size={18} className="text-cyan-400" />
+              <FileText size={18} className="text-emerald-400" />
               <span className="text-sm">{t('reportDownload', language)}</span>
             </div>
           </button>
@@ -248,7 +248,7 @@ export default function ProfileScreen() {
             className="glass-card w-full p-4 flex items-center justify-between"
           >
             <div className="flex items-center gap-3">
-              <Upload size={18} className="text-cyan-400" />
+              <Upload size={18} className="text-emerald-400" />
               <span className="text-sm">{t('restore', language)}</span>
             </div>
           </button>

@@ -280,7 +280,7 @@ export default function DailyBookScreen() {
             <ArrowLeft size={20} className="text-white/70" />
           </button>
           <div className="flex items-center gap-2">
-            <Receipt size={22} className="text-cyan-400" />
+            <Receipt size={22} className="text-emerald-400" />
             <h1 className="text-lg font-bold neon-glow">
               {isBn ? 'দৈনিক বই' : isHi ? 'दैनिक बही' : 'Daily Book'}
             </h1>
@@ -300,7 +300,7 @@ export default function DailyBookScreen() {
               onClick={() => setPeriod(p)}
               className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-all ${
                 period === p
-                  ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-400'
+                  ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
                   : 'glass-card text-white/60'
               }`}
             >
@@ -330,12 +330,12 @@ export default function DailyBookScreen() {
           {/* Total Liquid Cash */}
           <div className="glass-card-strong p-4">
             <div className="flex items-center gap-2 mb-2">
-              <Banknote size={16} className="text-cyan-400" />
+              <Banknote size={16} className="text-emerald-400" />
               <span className="text-xs text-white/50">
                 {isBn ? 'লিকুইড ক্যাশ' : isHi ? 'लिक्विड कैश' : 'Liquid Cash'}
               </span>
             </div>
-            <p className="text-lg font-bold text-cyan-400">{formatCurrency(summary.totalLiquidCash)}</p>
+            <p className="text-lg font-bold text-emerald-400">{formatCurrency(summary.totalLiquidCash)}</p>
           </div>
 
           {/* Total Expense */}
@@ -370,13 +370,13 @@ export default function DailyBookScreen() {
           transition={{ delay: 0.2 }}
           className="glass-card-strong p-4 mb-4 text-center"
           style={{
-            background: 'linear-gradient(135deg, rgba(6,182,212,0.15), rgba(139,92,246,0.15))',
+            background: 'linear-gradient(135deg, rgba(52,120,100,0.15), rgba(40,80,65,0.15))',
           }}
         >
           <span className="text-xs text-white/50">
             {isBn ? 'মোট ক্যাশ (হ্যান্ড + লিকুইড)' : isHi ? 'कुल कैश (हैंड + लिक्विड)' : 'Total Cash (Hand + Liquid)'}
           </span>
-          <p className="text-2xl font-bold text-cyan-400 mt-1">{formatCurrency(summary.totalCash)}</p>
+          <p className="text-2xl font-bold text-emerald-400 mt-1">{formatCurrency(summary.totalCash)}</p>
         </motion.div>
 
         {/* Tab Navigation */}
@@ -392,7 +392,7 @@ export default function DailyBookScreen() {
               onClick={() => setActiveTab(tab)}
               className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-all ${
                 activeTab === tab
-                  ? 'bg-cyan-500/20 text-cyan-400'
+                  ? 'bg-emerald-500/20 text-emerald-400'
                   : 'text-white/50 hover:text-white/70'
               }`}
             >
@@ -462,7 +462,7 @@ export default function DailyBookScreen() {
                             </div>
                             <div className="w-full h-1.5 rounded-full bg-white/5">
                               <div
-                                className="h-full rounded-full bg-cyan-500/40 transition-all"
+                                className="h-full rounded-full bg-emerald-500/40 transition-all"
                                 style={{ width: `${percent}%` }}
                               />
                             </div>
@@ -533,7 +533,7 @@ export default function DailyBookScreen() {
                 onClick={() => { resetCashForm(); setShowCashForm(true); }}
                 className="w-full glass-card p-3 flex items-center justify-center gap-2 hover:bg-white/5 transition-colors"
               >
-                <Plus size={18} className="text-cyan-400" />
+                <Plus size={18} className="text-emerald-400" />
                 <span className="text-sm font-semibold">
                   {isBn ? 'নতুন ক্যাশ এন্ট্রি' : isHi ? 'नई कैश एंट्री' : 'New Cash Entry'}
                 </span>
@@ -568,7 +568,7 @@ export default function DailyBookScreen() {
                         <span className="text-[10px] text-white/40">
                           {isBn ? 'লিকুইড ক্যাশ' : isHi ? 'लिक्विड कैश' : 'Liquid Cash'}
                         </span>
-                        <p className="text-sm font-bold text-cyan-400">{formatCurrency(entry.liquidCash)}</p>
+                        <p className="text-sm font-bold text-emerald-400">{formatCurrency(entry.liquidCash)}</p>
                       </div>
                     </div>
                     {entry.note && (
@@ -681,7 +681,7 @@ export default function DailyBookScreen() {
                       className="w-full p-3 flex items-center justify-between hover:bg-white/5 transition-colors"
                     >
                       <div className="flex items-center gap-2">
-                        <Calendar size={14} className="text-cyan-400" />
+                        <Calendar size={14} className="text-emerald-400" />
                         <span className="text-sm font-bold">{formatDate(group.date)}</span>
                         <span className="text-[10px] text-white/30">({group.items.length})</span>
                       </div>
@@ -932,11 +932,11 @@ export default function DailyBookScreen() {
                         onClick={() => setExpenseCategory(cat.key)}
                         className={`p-2 rounded-xl flex flex-col items-center gap-1 transition-all ${
                           expenseCategory === cat.key
-                            ? 'bg-cyan-500/20 border border-cyan-500/40'
+                            ? 'bg-emerald-500/20 border border-emerald-500/40'
                             : 'glass-card'
                         }`}
                       >
-                        <CatIcon size={16} className={expenseCategory === cat.key ? 'text-cyan-400' : 'text-white/40'} />
+                        <CatIcon size={16} className={expenseCategory === cat.key ? 'text-emerald-400' : 'text-white/40'} />
                         <span className="text-[10px] text-white/60">
                           {isBn ? cat.labelBn : isHi ? cat.labelHi : cat.label}
                         </span>

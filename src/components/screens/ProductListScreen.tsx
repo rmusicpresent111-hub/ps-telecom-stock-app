@@ -60,7 +60,7 @@ export default function ProductListScreen() {
             className="p-2 rounded-full glass-card"
             aria-label="Add Product"
           >
-            <Plus size={20} className="text-cyan-400" />
+            <Plus size={20} className="text-emerald-400" />
           </button>
         </motion.div>
 
@@ -113,7 +113,7 @@ export default function ProductListScreen() {
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-semibold">{product.name}</p>
                         {getCategoryName(product.categoryId) && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-400">
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400">
                             {getCategoryName(product.categoryId)}
                           </span>
                         )}
@@ -123,7 +123,7 @@ export default function ProductListScreen() {
                           Qty: {product.quantity}
                         </span>
                         <span className="text-xs text-white/50">Buy: ₹{product.purchasePrice}</span>
-                        <span className="text-xs text-cyan-400">Sell: ₹{product.sellingPrice}</span>
+                        <span className="text-xs text-emerald-400">Sell: ₹{product.sellingPrice}</span>
                       </div>
                     </div>
                     <div className="text-right ml-3">

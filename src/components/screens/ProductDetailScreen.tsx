@@ -102,12 +102,12 @@ export default function ProductDetailScreen() {
           className="flex items-center justify-between mb-6"
         >
           <button onClick={goBack} className="p-2 rounded-full glass-card" aria-label="Back">
-            <ArrowLeft size={20} className="text-cyan-400" />
+            <ArrowLeft size={20} className="text-emerald-400" />
           </button>
           <h1 className="text-lg font-bold truncate max-w-[200px]">{product.name}</h1>
           <div className="flex gap-2">
             <button onClick={handleEdit} className="p-2 rounded-full glass-card" aria-label="Edit">
-              <Edit size={18} className="text-cyan-400" />
+              <Edit size={18} className="text-emerald-400" />
             </button>
             <button onClick={() => setShowDeleteDialog(true)} className="p-2 rounded-full glass-card" aria-label="Delete">
               <Trash2 size={18} className="text-red-400" />
@@ -157,7 +157,7 @@ export default function ProductDetailScreen() {
               <IndianRupee size={14} className="text-white/40" />
               <div>
                 <p className="text-[10px] text-white/40">{t('sellingPrice', language)}</p>
-                <p className="text-sm font-medium text-cyan-400">₹{product.sellingPrice}</p>
+                <p className="text-sm font-medium text-emerald-400">₹{product.sellingPrice}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -186,7 +186,7 @@ export default function ProductDetailScreen() {
           <button
             onClick={() => handleStockOperation('STOCK_IN')}
             className="flex-1 neon-btn py-3 text-xs font-semibold text-center"
-            style={{ borderColor: 'rgba(57, 255, 20, 0.4)', color: '#39ff14', background: 'linear-gradient(135deg, rgba(57, 255, 20, 0.15), rgba(57, 200, 120, 0.1))' }}
+            style={{ borderColor: 'rgba(245, 222, 179, 0.4)', color: '#F5DEB3', background: 'linear-gradient(135deg, rgba(245, 222, 179, 0.15), rgba(57, 200, 120, 0.1))' }}
           >
             {t('stockIn', language)}
           </button>
@@ -200,7 +200,7 @@ export default function ProductDetailScreen() {
           <button
             onClick={() => handleStockOperation('SELL')}
             className="flex-1 neon-btn py-3 text-xs font-semibold text-center"
-            style={{ borderColor: 'rgba(180, 74, 255, 0.4)', color: '#b44aff', background: 'linear-gradient(135deg, rgba(180, 74, 255, 0.15), rgba(140, 50, 220, 0.1))' }}
+            style={{ borderColor: 'rgba(160, 124, 62, 0.4)', color: '#A07C3E', background: 'linear-gradient(135deg, rgba(160, 124, 62, 0.15), rgba(140, 105, 50, 0.1))' }}
           >
             {t('instantSell', language)}
           </button>
@@ -223,7 +223,7 @@ export default function ProductDetailScreen() {
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
                       txn.type === 'STOCK_IN' ? 'bg-green-500/20 text-green-400' :
                       txn.type === 'STOCK_OUT' ? 'bg-orange-500/20 text-orange-400' :
-                      'bg-purple-500/20 text-purple-400'
+                      'bg-emerald-700/20 text-emerald-600'
                     }`}>
                       {txn.type === 'STOCK_IN' ? t('stockInLabel', language) :
                        txn.type === 'STOCK_OUT' ? t('stockOutLabel', language) :

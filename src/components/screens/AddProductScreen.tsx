@@ -115,7 +115,7 @@ export default function AddProductScreen() {
           className="flex items-center justify-between mb-6"
         >
           <button onClick={handleCancel} className="p-2 rounded-full glass-card" aria-label="Back">
-            <ArrowLeft size={20} className="text-cyan-400" />
+            <ArrowLeft size={20} className="text-emerald-400" />
           </button>
           <h1 className="text-lg font-bold">
             {isEditing ? t('edit', language) : t('addProduct', language)}

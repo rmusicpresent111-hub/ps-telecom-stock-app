@@ -66,7 +66,7 @@ export default function WelcomeScreen() {
       <div
         className="absolute top-0 left-1/2 -translate-x-1/2 w-[500px] h-[400px] pointer-events-none"
         style={{
-          background: 'radial-gradient(ellipse at center, rgba(0, 240, 255, 0.08) 0%, transparent 70%)',
+          background: 'radial-gradient(ellipse at center, rgba(212, 168, 83, 0.08) 0%, transparent 70%)',
         }}
       />
 
@@ -83,7 +83,7 @@ export default function WelcomeScreen() {
           <div
             className="absolute -inset-4 rounded-3xl blur-2xl"
             style={{
-              background: 'radial-gradient(ellipse at center, rgba(0, 240, 255, 0.2) 0%, rgba(180, 74, 255, 0.15) 50%, transparent 70%)',
+              background: 'radial-gradient(ellipse at center, rgba(212, 168, 83, 0.2) 0%, rgba(160, 124, 62, 0.15) 50%, transparent 70%)',
             }}
           />
 
@@ -91,14 +91,14 @@ export default function WelcomeScreen() {
           <motion.div
             className="relative rounded-2xl overflow-hidden"
             style={{
-              border: '1.5px solid rgba(0, 240, 255, 0.25)',
-              boxShadow: '0 0 40px rgba(0, 240, 255, 0.15), 0 8px 40px rgba(0, 0, 0, 0.4)',
+              border: '1.5px solid rgba(212, 168, 83, 0.25)',
+              boxShadow: '0 0 40px rgba(212, 168, 83, 0.15), 0 8px 40px rgba(0, 0, 0, 0.4)',
             }}
             animate={{
               boxShadow: [
-                '0 0 40px rgba(0, 240, 255, 0.15), 0 8px 40px rgba(0, 0, 0, 0.4)',
-                '0 0 50px rgba(0, 240, 255, 0.25), 0 8px 40px rgba(0, 0, 0, 0.4)',
-                '0 0 40px rgba(0, 240, 255, 0.15), 0 8px 40px rgba(0, 0, 0, 0.4)',
+                '0 0 40px rgba(212, 168, 83, 0.15), 0 8px 40px rgba(0, 0, 0, 0.4)',
+                '0 0 50px rgba(212, 168, 83, 0.25), 0 8px 40px rgba(0, 0, 0, 0.4)',
+                '0 0 40px rgba(212, 168, 83, 0.15), 0 8px 40px rgba(0, 0, 0, 0.4)',
               ],
             }}
             transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
@@ -118,7 +118,7 @@ export default function WelcomeScreen() {
             <div
               className="absolute bottom-0 left-0 right-0 h-24 z-10 pointer-events-none"
               style={{
-                background: 'linear-gradient(to top, rgba(0, 240, 255, 0.08), transparent)',
+                background: 'linear-gradient(to top, rgba(212, 168, 83, 0.08), transparent)',
               }}
             />
 
@@ -165,15 +165,15 @@ export default function WelcomeScreen() {
               key={feature.label}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium"
               style={{
-                background: 'rgba(0, 240, 255, 0.08)',
-                border: '1px solid rgba(0, 240, 255, 0.15)',
-                color: 'rgba(0, 240, 255, 0.8)',
+                background: 'rgba(212, 168, 83, 0.08)',
+                border: '1px solid rgba(212, 168, 83, 0.15)',
+                color: 'rgba(212, 168, 83, 0.8)',
               }}
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.4, delay: 0.8 + i * 0.1 }}
               whileHover={{
-                background: 'rgba(0, 240, 255, 0.15)',
+                background: 'rgba(212, 168, 83, 0.15)',
                 scale: 1.05,
               }}
             >
@@ -218,7 +218,7 @@ export default function WelcomeScreen() {
           onClick={handleGetStarted}
           whileTap={{ scale: 0.97 }}
           whileHover={{
-            boxShadow: '0 0 30px rgba(0, 200, 212, 0.5)',
+            boxShadow: '0 0 30px rgba(180, 140, 60, 0.5)',
           }}
         >
           <Sparkles size={18} />
@@ -236,7 +236,7 @@ export default function WelcomeScreen() {
       <motion.div
         className="absolute bottom-4 left-1/2 -translate-x-1/2 w-24 h-[2px] rounded-full pointer-events-none"
         style={{
-          background: 'linear-gradient(90deg, transparent, #00f0ff, transparent)',
+          background: 'linear-gradient(90deg, transparent, #D4A853, transparent)',
         }}
         animate={{
           opacity: [0, 0.5, 0],

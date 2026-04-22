@@ -48,8 +48,8 @@ export default function HistoryScreen() {
     switch (type) {
       case 'STOCK_IN': return { bg: 'bg-green-500/20', text: 'text-green-400' };
       case 'STOCK_OUT': return { bg: 'bg-orange-500/20', text: 'text-orange-400' };
-      case 'SELL': return { bg: 'bg-purple-500/20', text: 'text-purple-400' };
-      default: return { bg: 'bg-cyan-500/20', text: 'text-cyan-400' };
+      case 'SELL': return { bg: 'bg-emerald-700/20', text: 'text-emerald-600' };
+      default: return { bg: 'bg-emerald-500/20', text: 'text-emerald-400' };
     }
   };
 
@@ -72,7 +72,7 @@ export default function HistoryScreen() {
           className="flex items-center justify-center mb-6"
         >
           <div className="flex items-center gap-2">
-            <Clock size={24} className="text-cyan-400" />
+            <Clock size={24} className="text-emerald-400" />
             <h1 className="text-lg font-bold neon-glow">{t('history', language)}</h1>
           </div>
         </motion.div>

@@ -134,10 +134,10 @@ export default function StockOperationScreen() {
 
   const getAccentColor = () => {
     switch (stockOperationType) {
-      case 'STOCK_IN': return '#39ff14';
+      case 'STOCK_IN': return '#F5DEB3';
       case 'STOCK_OUT': return '#ff6b00';
-      case 'SELL': return '#b44aff';
-      default: return '#00f0ff';
+      case 'SELL': return '#A07C3E';
+      default: return '#D4A853';
     }
   };
 
@@ -202,7 +202,7 @@ export default function StockOperationScreen() {
           className="flex items-center justify-between mb-6"
         >
           <button onClick={goBack} className="p-2 rounded-full glass-card" aria-label="Back">
-            <ArrowLeft size={20} className="text-cyan-400" />
+            <ArrowLeft size={20} className="text-emerald-400" />
           </button>
           <h1 className="text-lg font-bold" style={{ color: accent }}>{getTitle()}</h1>
           <div className="w-10" />
@@ -252,7 +252,7 @@ export default function StockOperationScreen() {
                             <span className={`text-[10px] ${p.quantity <= p.lowStockThreshold ? 'text-orange-400' : 'text-green-400'}`}>
                               Stock: {p.quantity}
                             </span>
-                            <span className="text-[10px] text-cyan-400/60">₹{p.sellingPrice}</span>
+                            <span className="text-[10px] text-emerald-400/60">₹{p.sellingPrice}</span>
                           </div>
                         </div>
                       </button>
@@ -442,7 +442,7 @@ export default function StockOperationScreen() {
                 onClick={handleConfirmClick}
                 disabled={loading || !quantity || !product}
                 className="neon-btn-solid w-full py-3 font-semibold text-sm disabled:opacity-50"
-                style={accent !== '#00f0ff' ? {
+                style={accent !== '#D4A853' ? {
                   background: `linear-gradient(135deg, ${accent}44, ${accent}88)`,
                   color: 'white',
                 } : undefined}

@@ -57,7 +57,7 @@ export default function LanguageScreen() {
                 isSelected ? 'neon-border-glow' : ''
               }`}
               style={{
-                borderColor: isSelected ? 'rgba(0, 240, 255, 0.5)' : undefined,
+                borderColor: isSelected ? 'rgba(212, 168, 83, 0.5)' : undefined,
                 borderWidth: isSelected ? '1px' : undefined,
               }}
               onClick={() => setSelected(option.code)}
@@ -78,7 +78,7 @@ export default function LanguageScreen() {
               <div
                 className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
                   isSelected
-                    ? 'border-[#00f0ff] bg-[#00f0ff]/20'
+                    ? 'border-[#D4A853] bg-[#D4A853]/20'
                     : 'border-white/30'
                 }`}
               >
@@ -88,7 +88,7 @@ export default function LanguageScreen() {
                     animate={{ scale: 1 }}
                     transition={{ type: 'spring', stiffness: 400, damping: 20 }}
                   >
-                    <Check size={14} className="text-[#00f0ff]" />
+                    <Check size={14} className="text-[#D4A853]" />
                   </motion.div>
                 )}
               </div>

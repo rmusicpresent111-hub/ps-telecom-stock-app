@@ -81,7 +81,7 @@ export default function AddCategoryScreen() {
           className="flex items-center justify-between mb-6"
         >
           <button onClick={handleCancel} className="p-2 rounded-full glass-card" aria-label="Back">
-            <ArrowLeft size={20} className="text-cyan-400" />
+            <ArrowLeft size={20} className="text-emerald-400" />
           </button>
           <h1 className="text-lg font-bold">{t('addCategory', language)}</h1>
           <div className="w-10" />
@@ -114,7 +114,7 @@ export default function AddCategoryScreen() {
                 onClick={() => setIconMode('image')}
                 className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${
                   iconMode === 'image'
-                    ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-400'
+                    ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
                     : 'glass-card text-white/60'
                 }`}
               >
@@ -124,7 +124,7 @@ export default function AddCategoryScreen() {
                 onClick={() => setIconMode('emoji')}
                 className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${
                   iconMode === 'emoji'
-                    ? 'bg-cyan-500/20 border border-cyan-500/40 text-cyan-400'
+                    ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
                     : 'glass-card text-white/60'
                 }`}
               >
@@ -153,7 +153,7 @@ export default function AddCategoryScreen() {
                     onClick={() => handlePresetSelect(preset)}
                     className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-all ${
                       selectedImage === preset.image
-                        ? 'bg-cyan-500/20 border border-cyan-500/40 scale-105'
+                        ? 'bg-emerald-500/20 border border-emerald-500/40 scale-105'
                         : 'glass-card hover:scale-105'
                     }`}
                   >
@@ -175,7 +175,7 @@ export default function AddCategoryScreen() {
                     onClick={() => setSelectedEmoji(em)}
                     className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg transition-all ${
                       selectedEmoji === em
-                        ? 'bg-cyan-500/20 border border-cyan-500/40 scale-110'
+                        ? 'bg-emerald-500/20 border border-emerald-500/40 scale-110'
                         : 'glass-card hover:scale-105'
                     }`}
                   >

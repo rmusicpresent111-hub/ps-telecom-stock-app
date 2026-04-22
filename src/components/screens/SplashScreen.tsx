@@ -152,8 +152,8 @@ export default function SplashScreen() {
             <motion.div
               className="h-full rounded-full"
               style={{
-                background: 'linear-gradient(90deg, #00f0ff, #b44aff)',
-                boxShadow: '0 0 10px rgba(0, 240, 255, 0.5)',
+                background: 'linear-gradient(90deg, #D4A853, #A07C3E)',
+                boxShadow: '0 0 10px rgba(212, 168, 83, 0.5)',
               }}
               initial={{ width: '0%' }}
               animate={{ width: `${progress}%` }}
@@ -167,7 +167,7 @@ export default function SplashScreen() {
       <motion.div
         className="absolute bottom-12 left-1/2 -translate-x-1/2 w-24 h-[2px] rounded-full"
         style={{
-          background: 'linear-gradient(90deg, transparent, #00f0ff, transparent)',
+          background: 'linear-gradient(90deg, transparent, #D4A853, transparent)',
         }}
         initial={{ opacity: 0 }}
         animate={{ opacity: [0, 0.5, 0] }}
