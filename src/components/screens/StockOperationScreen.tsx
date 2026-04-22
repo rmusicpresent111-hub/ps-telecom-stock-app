@@ -5,6 +5,7 @@ import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Product } from '@/lib/types';
 import { getProductsOffline, createTransactionOffline } from '@/lib/offline-service';
+import { playStockOutSound, playSellSound, playStockInSound } from '@/lib/sound-service';
 import { ArrowLeft, Search, X, TrendingUp, TrendingDown, ShoppingBag } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -40,10 +41,10 @@ export default function StockOperationScreen() {
     if (!user?.id) return;
     try {
       setFetching(true);
-      const data = selectedCategoryId
-        ? await getProducts(user.id, { categoryId: selectedCategoryId })
-        : await getProducts(user.id);
-      setAllProducts(data.products || []);
+      const products = selectedCategoryId
+        ? await getProductsOffline(user.id, { categoryId: selectedCategoryId })
+        : await getProductsOffline(user.id);
+      setAllProducts(products || []);
       setProductName('');
     } catch {
       toast.error(t('error', language));
@@ -164,7 +165,7 @@ export default function StockOperationScreen() {
 
     setLoading(true);
     try {
-      await createTransaction({
+      await createTransactionOffline({
         type: stockOperationType,
         productId: product.id,
         quantity: qty,
@@ -172,6 +173,16 @@ export default function StockOperationScreen() {
         totalAmount,
         userId: user.id,
       });
+
+      // Play success sound based on operation type
+      if (stockOperationType === 'SELL') {
+        playSellSound();
+      } else if (stockOperationType === 'STOCK_OUT') {
+        playStockOutSound();
+      } else if (stockOperationType === 'STOCK_IN') {
+        playStockInSound();
+      }
+
       toast.success(t('success', language));
       goBack();
     } catch (error) {

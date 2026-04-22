@@ -71,3 +71,32 @@ Stage Summary:
 - Delete operations tracked in pendingDeletes queue and synced to Supabase when back online
 - Auto-sync runs every 30 seconds when online + triggers on online event
 - App fully functional in offline mode with instant local data access
+---
+Task ID: 1
+Agent: main
+Task: Add success sound tunes after stock out, instant sell, and product add operations
+
+Work Log:
+- Created `/home/z/my-project/src/lib/sound-service.ts` — Web Audio API-based sound synthesizer with 5 distinct sounds:
+  - `playSuccessSound()` — Premium C5→E5→G5 major chord arpeggio with shimmer harmonics (for product add/edit)
+  - `playSellSound()` — Cash-register "ka-ching" style with bell ding + success chime (for instant sell)
+  - `playStockOutSound()` — Firm two-note descending then resolving upward (for stock out)
+  - `playStockInSound()` — Ascending positive tone (for stock in)
+  - `playErrorSound()` — Short descending sawtooth tone (for errors)
+- Updated `StockOperationScreen.tsx`:
+  - Added imports for `playStockOutSound`, `playSellSound`, `playStockInSound`
+  - Fixed BUG: `createTransaction()` → `createTransactionOffline()` (was calling undefined function)
+  - Fixed BUG: `getProducts()` → `getProductsOffline()` (was calling undefined function)
+  - Fixed BUG: `data.products` → direct array (getProductsOffline returns `Product[]` not `{products: Product[]}`)
+  - Fixed BUG: Missing `selectedCategoryId` option pass-through
+  - Added sound playback after successful transaction based on operation type
+- Updated `AddProductScreen.tsx`:
+  - Added import for `playSuccessSound`
+  - Added `playSuccessSound()` call before toast on successful product add/edit
+  - Navigation back (goBack) was already working correctly
+
+Stage Summary:
+- All stock operations now play distinct pleasant sounds on success
+- Fixed 4 critical bugs in StockOperationScreen that would have caused runtime errors
+- AddProductScreen already had goBack() on success — confirmed working
+- Lint passes clean, dev server running with 200 status

@@ -8,6 +8,7 @@ import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { createProductOffline, updateProductOffline, getProductsOffline } from '@/lib/offline-service';
+import { playSuccessSound } from '@/lib/sound-service';
 
 export default function AddProductScreen() {
   const {
@@ -80,6 +81,7 @@ export default function AddProductScreen() {
         });
       }
 
+      playSuccessSound();
       toast.success(isEditing ? t('updated', language) : t('added', language));
       setSelectedProductId(null);
       goBack();
