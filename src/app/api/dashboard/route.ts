@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase, generateId, toCamelCase, toSnakeCase, formatDate } from '@/lib/supabase';
+import { supabase, generateId, toCamelCase, formatDate } from '@/lib/supabase';
+
+// Server-side response cache with TTL
+const responseCache = new Map<string, { data: unknown; timestamp: number }>();
+const CACHE_TTL = 60_000; // 60 seconds server-side cache
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,115 +17,110 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Total items (products) — count
-    const { count: totalItems, error: countError } = await supabase
-      .from('products')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId);
-
-    if (countError) {
-      console.error('Product count error:', countError);
+    // Check server-side cache
+    const cacheKey = `dashboard:${userId}`;
+    const cached = responseCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      return NextResponse.json(cached.data, {
+        headers: { 'Cache-Control': 'public, max-age=30, stale-while-revalidate=60' },
+      });
     }
 
-    // Get all products to compute low stock and stock value
-    const { data: productsData, error: productsError } = await supabase
-      .from('products')
-      .select('id, name, quantity, selling_price, purchase_price, low_stock_threshold, category_id, box_number, user_id, created_at, updated_at')
-      .eq('user_id', userId);
+    // Calculate date range for 7-day sale overview
+    const todayDate = new Date();
+    const today = formatDate(todayDate);
+    const sevenDaysAgo = new Date(todayDate);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    const sevenDaysAgoStr = formatDate(sevenDaysAgo);
 
-    if (productsError) {
-      console.error('Products fetch error:', productsError);
-    }
+    // ✅ BATCH 1: Run ALL independent queries in PARALLEL (was 20+ sequential, now 7 parallel)
+    const [
+      productsCountResult,
+      productsDataResult,
+      todayTxnCountResult,
+      categoriesDataResult,
+      recentTxnResult,
+      sevenDayTxnResult,
+      productCountResult,
+    ] = await Promise.all([
+      // Total items count
+      supabase
+        .from('products')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId),
 
-    const products = (productsData || []).map(toCamelCase);
+      // All products (for stock value + low stock calculation - ONE query instead of many)
+      supabase
+        .from('products')
+        .select('id, name, quantity, selling_price, purchase_price, low_stock_threshold, category_id, box_number, user_id, created_at, updated_at')
+        .eq('user_id', userId),
 
-    // Low stock items (quantity <= lowStockThreshold)
+      // Today's transaction count
+      supabase
+        .from('transactions')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('date', today),
+
+      // Categories
+      supabase
+        .from('categories')
+        .select('*')
+        .eq('user_id', userId),
+
+      // Recent transactions (with product join)
+      supabase
+        .from('transactions')
+        .select('*, product:products(*)')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(5),
+
+      // ✅ SINGLE query for 7-day sales (was 7 separate queries!)
+      supabase
+        .from('transactions')
+        .select('total_amount, quantity, date')
+        .eq('user_id', userId)
+        .eq('type', 'SELL')
+        .gte('date', sevenDaysAgoStr)
+        .lte('date', today),
+
+      // Product counts by category
+      supabase
+        .from('products')
+        .select('category_id')
+        .eq('user_id', userId),
+    ]);
+
+    const products = (productsDataResult.data || []).map(toCamelCase);
+
+    // Low stock items - computed from already-fetched products (no extra query)
     const lowItems = products.filter((p: Record<string, unknown>) => (p.quantity as number) <= (p.lowStockThreshold as number)).length;
 
-    // Total stock value
+    // Total stock value - computed from already-fetched products
     const stockValue = products.reduce(
       (sum: number, p: Record<string, unknown>) => sum + ((p.quantity as number) * (p.sellingPrice as number)),
       0
     );
 
-    // Today's transactions
-    const today = formatDate(new Date());
-    const { count: todayTransactions, error: txnCountError } = await supabase
-      .from('transactions')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('date', today);
-
-    if (txnCountError) {
-      console.error('Transaction count error:', txnCountError);
-    }
-
-    // Low stock products detail (with category join)
-    const { data: lowStockData, error: lowStockError } = await supabase
-      .from('products')
-      .select('*, category:categories(*)')
-      .eq('user_id', userId)
-      .order('quantity', { ascending: true })
-      .limit(100);
-
-    if (lowStockError) {
-      console.error('Low stock products error:', lowStockError);
-    }
-
-    const lowStockProducts = (lowStockData || [])
-      .map((p: Record<string, unknown>) => {
-        const camel = toCamelCase(p);
-        // Flatten the joined category object
-        if (camel.category && typeof camel.category === 'object') {
-          camel.category = toCamelCase(camel.category as Record<string, unknown>);
-        }
-        return camel;
-      })
+    // Low stock products detail - use already-fetched products (no extra query!)
+    const lowStockProducts = products
       .filter((p: Record<string, unknown>) => (p.quantity as number) <= (p.lowStockThreshold as number))
       .slice(0, 10);
 
-    // Recent transactions (with product join)
-    const { data: recentTxnData, error: recentTxnError } = await supabase
-      .from('transactions')
-      .select('*, product:products(*)')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(5);
-
-    if (recentTxnError) {
-      console.error('Recent transactions error:', recentTxnError);
-    }
-
-    const recentTransactions = (recentTxnData || []).map((t: Record<string, unknown>) => {
+    // Recent transactions
+    const recentTransactions = (recentTxnResult.data || []).map((t: Record<string, unknown>) => {
       const camel = toCamelCase(t);
-      // Flatten the joined product object
       if (camel.product && typeof camel.product === 'object') {
         camel.product = toCamelCase(camel.product as Record<string, unknown>);
       }
       return camel;
     });
 
-    // Category distribution — fetch categories with product counts
-    const { data: categoriesData, error: categoriesError } = await supabase
-      .from('categories')
-      .select('*')
-      .eq('user_id', userId);
-
-    if (categoriesError) {
-      console.error('Categories fetch error:', categoriesError);
-    }
-
-    let categories = (categoriesData || []).map(toCamelCase);
-
-    // Compute product counts per category from products
-    const { data: productCountData, error: productCountError } = await supabase
-      .from('products')
-      .select('category_id')
-      .eq('user_id', userId);
-
+    // Product counts by category
     const productCountMap: Record<string, number> = {};
-    if (productCountData) {
-      for (const p of productCountData) {
+    if (productCountResult.data) {
+      for (const p of productCountResult.data) {
         const catId = p.category_id;
         if (catId) {
           productCountMap[catId] = (productCountMap[catId] || 0) + 1;
@@ -129,10 +128,10 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Attach _count to categories for compatibility
-    categories = categories.map((cat: Record<string, unknown>) => ({
-      ...cat,
-      _count: { products: productCountMap[(cat.id as string)] || 0 },
+    // Categories with product counts
+    let categories = (categoriesDataResult.data || []).map((cat: Record<string, unknown>) => ({
+      ...toCamelCase(cat),
+      _count: { products: productCountMap[(cat as Record<string, unknown>).id as string] || 0 },
     }));
 
     // Auto-seed default categories if user has none
@@ -167,14 +166,10 @@ export async function GET(request: NextRequest) {
         user_id: userId,
       }));
 
-      const { data: insertedData, error: insertError } = await supabase
+      const { data: insertedData } = await supabase
         .from('categories')
         .insert(insertRows)
         .select('*');
-
-      if (insertError) {
-        console.error('Default categories insert error:', insertError);
-      }
 
       categories = (insertedData || []).map((cat: Record<string, unknown>) => ({
         ...toCamelCase(cat),
@@ -185,39 +180,25 @@ export async function GET(request: NextRequest) {
     // Migration: Split "Flip Cover/Back Cover" into two separate categories
     const oldCombined = categories.find((c: Record<string, unknown>) => c.name === 'Flip Cover/Back Cover');
     if (oldCombined) {
-      // Rename existing to "Flip Cover"
-      const { error: updateError } = await supabase
-        .from('categories')
-        .update({ name: 'Flip Cover' })
-        .eq('id', oldCombined.id as string);
+      await Promise.all([
+        supabase
+          .from('categories')
+          .update({ name: 'Flip Cover' })
+          .eq('id', (oldCombined as Record<string, unknown>).id as string),
+        supabase
+          .from('categories')
+          .insert({
+            id: generateId(),
+            name: 'Back Cover',
+            image: '/categories/back-cover.png',
+            user_id: userId,
+          }),
+      ]);
 
-      if (updateError) {
-        console.error('Category rename error:', updateError);
-      }
-
-      // Create new "Back Cover" category
-      const { error: createError } = await supabase
-        .from('categories')
-        .insert({
-          id: generateId(),
-          name: 'Back Cover',
-          image: '/categories/back-cover.png',
-          user_id: userId,
-        });
-
-      if (createError) {
-        console.error('Category create error:', createError);
-      }
-
-      // Re-fetch categories after migration
-      const { data: refreshedData, error: refreshError } = await supabase
+      const { data: refreshedData } = await supabase
         .from('categories')
         .select('*')
         .eq('user_id', userId);
-
-      if (refreshError) {
-        console.error('Categories refresh error:', refreshError);
-      }
 
       categories = (refreshedData || []).map((cat: Record<string, unknown>) => {
         const camel = toCamelCase(cat);
@@ -228,68 +209,57 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Sale Overview: Last 7 days daily sales
-    const todayDate = new Date();
+    // ✅ Sale Overview: Process 7-day data from SINGLE query (was 7 sequential queries!)
+    const saleMap = new Map<string, { sales: number; quantity: number }>();
+    for (const t of (sevenDayTxnResult.data || [])) {
+      const dateStr = t.date as string;
+      const existing = saleMap.get(dateStr) || { sales: 0, quantity: 0 };
+      existing.sales += (t.total_amount as number) || 0;
+      existing.quantity += (t.quantity as number) || 0;
+      saleMap.set(dateStr, existing);
+    }
+
     const saleOverview = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(todayDate);
       d.setDate(d.getDate() - i);
       const dateStr = formatDate(d);
       const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' });
-
-      const { data: dayTxnData, error: dayTxnError } = await supabase
-        .from('transactions')
-        .select('total_amount, quantity')
-        .eq('user_id', userId)
-        .eq('type', 'SELL')
-        .eq('date', dateStr);
-
-      if (dayTxnError) {
-        console.error('Day transactions error:', dayTxnError);
-      }
-
-      const dayTxns = dayTxnData || [];
-      const totalSales = dayTxns.reduce((sum: number, t: Record<string, unknown>) => sum + (t.total_amount as number), 0);
-      const totalQty = dayTxns.reduce((sum: number, t: Record<string, unknown>) => sum + (t.quantity as number), 0);
-
+      const dayData = saleMap.get(dateStr) || { sales: 0, quantity: 0 };
       saleOverview.push({
         date: dateStr,
         label: dayLabel,
-        sales: totalSales,
-        quantity: totalQty,
+        sales: dayData.sales,
+        quantity: dayData.quantity,
       });
     }
 
-    // Stock Overview: Stock quantity by category
-    const stockOverview = [];
-    for (const cat of categories) {
-      const { data: catProductsData, error: catProductsError } = await supabase
-        .from('products')
-        .select('quantity, selling_price')
-        .eq('user_id', userId)
-        .eq('category_id', (cat as Record<string, unknown>).id as string);
-
-      if (catProductsError) {
-        console.error('Category products error:', catProductsError);
-      }
-
-      const catProducts = catProductsData || [];
-      const totalQty = catProducts.reduce((sum: number, p: Record<string, unknown>) => sum + (p.quantity as number), 0);
-      const totalValue = catProducts.reduce((sum: number, p: Record<string, unknown>) => sum + (p.quantity as number) * (p.selling_price as number), 0);
-      if (totalQty > 0) {
-        stockOverview.push({
-          category: (cat as Record<string, unknown>).name,
-          quantity: totalQty,
-          value: totalValue,
-        });
-      }
+    // ✅ Stock Overview: Compute from already-fetched products (was N queries per category!)
+    const stockByCategory = new Map<string, { quantity: number; value: number }>();
+    for (const p of products) {
+      const catId = (p as Record<string, unknown>).categoryId as string;
+      if (!catId) continue;
+      const cat = categories.find((c: Record<string, unknown>) => c.id === catId);
+      const catName = cat ? (cat as Record<string, unknown>).name as string : 'Unknown';
+      const existing = stockByCategory.get(catName) || { quantity: 0, value: 0 };
+      existing.quantity += (p as Record<string, unknown>).quantity as number;
+      existing.value += ((p as Record<string, unknown>).quantity as number) * ((p as Record<string, unknown>).sellingPrice as number);
+      stockByCategory.set(catName, existing);
     }
 
-    return NextResponse.json({
+    const stockOverview = Array.from(stockByCategory.entries())
+      .filter(([_, data]) => data.quantity > 0)
+      .map(([category, data]) => ({
+        category,
+        quantity: data.quantity,
+        value: data.value,
+      }));
+
+    const result = {
       stats: {
-        totalItems: totalItems || 0,
+        totalItems: productsCountResult.count || 0,
         lowItems,
-        todayTransactions: todayTransactions || 0,
+        todayTransactions: todayTxnCountResult.count || 0,
         stockValue,
       },
       lowStockProducts,
@@ -297,6 +267,13 @@ export async function GET(request: NextRequest) {
       categories,
       saleOverview,
       stockOverview,
+    };
+
+    // Cache the response server-side
+    responseCache.set(cacheKey, { data: result, timestamp: Date.now() });
+
+    return NextResponse.json(result, {
+      headers: { 'Cache-Control': 'public, max-age=30, stale-while-revalidate=60' },
     });
   } catch (error) {
     console.error('Dashboard stats error:', error);

@@ -51,7 +51,9 @@ export async function GET(request: NextRequest) {
       _count: { products: countMap[cat.id] ?? 0 },
     }));
 
-    return NextResponse.json({ categories: result });
+    return NextResponse.json({ categories: result }, {
+      headers: { 'Cache-Control': 'private, max-age=60, stale-while-revalidate=120' },
+    });
   } catch (error) {
     console.error('Get categories error:', error);
     return NextResponse.json(

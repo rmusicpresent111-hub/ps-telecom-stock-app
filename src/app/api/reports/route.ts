@@ -90,7 +90,9 @@ export async function GET(request: NextRequest) {
         totalLowStock: stockValueData.reduce((s, d) => s + d.lowStockCount, 0),
       };
 
-      return NextResponse.json({ type: 'stock-value', data: stockValueData, grandTotal });
+      return NextResponse.json({ type: 'stock-value', data: stockValueData, grandTotal }, {
+        headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' },
+      });
     }
 
     // For daily, monthly, and category reports — fetch transactions with product (and category) join
@@ -161,7 +163,9 @@ export async function GET(request: NextRequest) {
       }
 
       const daily = Array.from(dailyMap.values());
-      return NextResponse.json({ type: 'daily', data: daily });
+      return NextResponse.json({ type: 'daily', data: daily }, {
+        headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' },
+      });
     }
 
     if (type === 'monthly') {
@@ -206,7 +210,9 @@ export async function GET(request: NextRequest) {
       }
 
       const monthly = Array.from(monthlyMap.values());
-      return NextResponse.json({ type: 'monthly', data: monthly });
+      return NextResponse.json({ type: 'monthly', data: monthly }, {
+        headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' },
+      });
     }
 
     if (type === 'category') {
@@ -274,7 +280,9 @@ export async function GET(request: NextRequest) {
         };
       });
 
-      return NextResponse.json({ type: 'category', data: categoryData });
+      return NextResponse.json({ type: 'category', data: categoryData }, {
+        headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' },
+      });
     }
 
     return NextResponse.json(

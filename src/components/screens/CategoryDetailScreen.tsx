@@ -1,26 +1,55 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Category, Product } from '@/lib/types';
-import { motion } from 'framer-motion';
+import { getProducts } from '@/lib/supabase-service';
 import { ArrowLeft, Plus, Search, Package, AlertTriangle, ArrowLeftRight, IndianRupee } from 'lucide-react';
 import { toast } from 'sonner';
-import { getProducts } from '@/lib/supabase-service';
+import { useDebounce } from '@/hooks/useDebounce';
+
+// Map for category images - defined outside component
+const categoryImageMap: Record<string, string> = {
+  'Mobile': '/categories/mobile.png',
+  'Display/Combo': '/categories/display.png',
+  'Tempered Glass': '/categories/tempered-glass.png',
+  'Flip Cover': '/categories/flip-cover.png',
+  'Back Cover': '/categories/back-cover.png',
+  'UV Glass': '/categories/uv-glass.png',
+  'Smart Watch': '/categories/smart-watch.png',
+  'Battery': '/categories/battery.png',
+  'Charger': '/categories/charger.png',
+  'Neck Band': '/categories/neckband.png',
+  'Ear Pods': '/categories/earpods.png',
+  'Selfie Stick': '/categories/selfie-stick.png',
+  'Ring Light': '/categories/ring-light.png',
+  'Mobile Stand': '/categories/mobile-stand.png',
+  'Watch Strap': '/categories/watch-strap.png',
+  'Earphone': '/categories/earphone.png',
+  'Memory Card': '/categories/memory-card.png',
+  'Data Cable': '/categories/data-cable.png',
+  'Home Theater': '/categories/home-theater.png',
+  'Refrigerator': '/categories/refrigerator.png',
+};
 
 export default function CategoryDetailScreen() {
-  const {
-    user, language, goBack, navigateTo,
-    selectedCategoryId, categories,
-    setSelectedProductId, setStockOperationType,
-  } = useAppStore();
+  const user = useAppStore(s => s.user);
+  const language = useAppStore(s => s.language);
+  const goBack = useAppStore(s => s.goBack);
+  const navigateTo = useAppStore(s => s.navigateTo);
+  const selectedCategoryId = useAppStore(s => s.selectedCategoryId);
+  const categories = useAppStore(s => s.categories);
+  const setSelectedProductId = useAppStore(s => s.setSelectedProductId);
+  const setStockOperationType = useAppStore(s => s.setStockOperationType);
 
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
 
-  const category = categories.find((c) => c.id === selectedCategoryId);
+  const debouncedSearch = useDebounce(search, 300);
+
+  const category = useMemo(() => categories.find((c) => c.id === selectedCategoryId), [categories, selectedCategoryId]);
 
   const fetchProducts = useCallback(async () => {
     if (!user?.id || !selectedCategoryId) return;
@@ -33,27 +62,30 @@ export default function CategoryDetailScreen() {
     } finally {
       setLoading(false);
     }
-  }, [user?.id, selectedCategoryId, language]);
+  }, [user?.id, selectedCategoryId]);
 
   useEffect(() => {
     fetchProducts();
   }, [fetchProducts]);
 
-  const filteredProducts = products.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase())
-  );
+  // Client-side search filter
+  const filteredProducts = useMemo(() => {
+    if (!debouncedSearch.trim()) return products;
+    return products.filter((p) =>
+      p.name.toLowerCase().includes(debouncedSearch.toLowerCase())
+    );
+  }, [products, debouncedSearch]);
 
   const totalItems = products.length;
-  const lowStockCount = products.filter((p) => p.quantity <= p.lowStockThreshold).length;
-  const totalValue = products.reduce((sum, p) => sum + p.quantity * p.sellingPrice, 0);
-  const todayTxCount = 0;
+  const lowStockCount = useMemo(() => products.filter((p) => p.quantity <= p.lowStockThreshold).length, [products]);
+  const totalValue = useMemo(() => products.reduce((sum, p) => sum + p.quantity * p.sellingPrice, 0), [products]);
 
-  const handleProductTap = (product: Product) => {
+  const handleProductTap = useCallback((product: Product) => {
     setSelectedProductId(product.id);
     navigateTo('product-detail');
-  };
+  }, [setSelectedProductId, navigateTo]);
 
-  const handleStockOperation = (type: 'STOCK_IN' | 'STOCK_OUT' | 'SELL') => {
+  const handleStockOperation = useCallback((type: 'STOCK_IN' | 'STOCK_OUT' | 'SELL') => {
     if (products.length === 0) {
       toast.error(t('noData', language));
       return;
@@ -64,31 +96,7 @@ export default function CategoryDetailScreen() {
     setStockOperationType(type);
     const screenMap = { STOCK_IN: 'stock-in', STOCK_OUT: 'stock-out', SELL: 'instant-sell' } as const;
     navigateTo(screenMap[type]);
-  };
-
-  // Map for category images
-  const categoryImageMap: Record<string, string> = {
-    'Mobile': '/categories/mobile.png',
-    'Display/Combo': '/categories/display.png',
-    'Tempered Glass': '/categories/tempered-glass.png',
-    'Flip Cover': '/categories/flip-cover.png',
-    'Back Cover': '/categories/back-cover.png',
-    'UV Glass': '/categories/uv-glass.png',
-    'Smart Watch': '/categories/smart-watch.png',
-    'Battery': '/categories/battery.png',
-    'Charger': '/categories/charger.png',
-    'Neck Band': '/categories/neckband.png',
-    'Ear Pods': '/categories/earpods.png',
-    'Selfie Stick': '/categories/selfie-stick.png',
-    'Ring Light': '/categories/ring-light.png',
-    'Mobile Stand': '/categories/mobile-stand.png',
-    'Watch Strap': '/categories/watch-strap.png',
-    'Earphone': '/categories/earphone.png',
-    'Memory Card': '/categories/memory-card.png',
-    'Data Cable': '/categories/data-cable.png',
-    'Home Theater': '/categories/home-theater.png',
-    'Refrigerator': '/categories/refrigerator.png',
-  };
+  }, [products, language, setSelectedProductId, setStockOperationType, navigateTo]);
 
   const categoryImage = category?.image?.startsWith('/categories/')
     ? category.image
@@ -98,11 +106,7 @@ export default function CategoryDetailScreen() {
     <div className="animated-bg min-h-screen pb-24">
       <div className="max-w-md mx-auto px-4 pt-4">
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between mb-4"
-        >
+        <div className="flex items-center justify-between mb-4">
           <button onClick={goBack} className="p-2 rounded-full glass-card" aria-label="Back">
             <ArrowLeft size={20} className="text-emerald-400" />
           </button>
@@ -114,36 +118,27 @@ export default function CategoryDetailScreen() {
           >
             <Plus size={20} className="text-emerald-400" />
           </button>
-        </motion.div>
+        </div>
 
         {/* Category Image Banner */}
         {categoryImage && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.05 }}
-            className="relative mb-5 rounded-2xl overflow-hidden h-32"
-          >
+          <div className="relative mb-5 rounded-2xl overflow-hidden h-32">
             <img
               src={categoryImage}
               alt={category?.name || 'Category'}
               className="w-full h-full object-cover"
+              loading="lazy"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
             <div className="absolute bottom-3 left-4">
               <h2 className="text-white font-bold text-lg drop-shadow-lg">{category?.name}</h2>
               <p className="text-white/70 text-xs">{products.length} products in this category</p>
             </div>
-          </motion.div>
+          </div>
         )}
 
         {/* Stats section */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="grid grid-cols-2 gap-3 mb-6"
-        >
+        <div className="grid grid-cols-2 gap-3 mb-6">
           <div className="stat-card-green rounded-2xl p-4">
             <div className="flex items-center gap-2 mb-1">
               <Package size={16} className="text-green-400" />
@@ -163,7 +158,7 @@ export default function CategoryDetailScreen() {
               <ArrowLeftRight size={16} className="text-emerald-400" />
               <span className="text-xs text-white/60">{t('todayTransaction', language)}</span>
             </div>
-            <p className="text-2xl font-bold text-emerald-400">{todayTxCount}</p>
+            <p className="text-2xl font-bold text-emerald-400">0</p>
           </div>
           <div className="stat-card-purple rounded-2xl p-4">
             <div className="flex items-center gap-2 mb-1">
@@ -172,15 +167,10 @@ export default function CategoryDetailScreen() {
             </div>
             <p className="text-2xl font-bold text-emerald-600">₹{totalValue.toLocaleString()}</p>
           </div>
-        </motion.div>
+        </div>
 
         {/* Action buttons */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="flex gap-3 mb-6"
-        >
+        <div className="flex gap-3 mb-6">
           <button
             onClick={() => handleStockOperation('STOCK_IN')}
             className="flex-1 neon-btn py-3 text-sm font-semibold text-center"
@@ -202,15 +192,10 @@ export default function CategoryDetailScreen() {
           >
             {t('instantSell', language)}
           </button>
-        </motion.div>
+        </div>
 
         {/* Search bar */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="relative mb-4"
-        >
+        <div className="relative mb-4">
           <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40" />
           <input
             type="text"
@@ -219,28 +204,20 @@ export default function CategoryDetailScreen() {
             placeholder={t('searchProducts', language)}
             className="glass-input w-full pl-11 pr-4 py-3 text-sm"
           />
-        </motion.div>
+        </div>
 
         {/* Product list */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="space-y-3 max-h-96 overflow-y-auto"
-        >
+        <div className="space-y-3 max-h-96 overflow-y-auto">
           {loading ? (
             <div className="text-center py-8 text-white/40">{t('loading', language)}</div>
           ) : filteredProducts.length === 0 ? (
             <div className="text-center py-8 text-white/40">{t('noData', language)}</div>
           ) : (
-            filteredProducts.map((product, idx) => (
-              <motion.button
+            filteredProducts.map((product) => (
+              <button
                 key={product.id}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.05 * idx }}
                 onClick={() => handleProductTap(product)}
-                className="glass-card glass-shine w-full p-4 flex items-center justify-between"
+                className="glass-card w-full p-4 flex items-center justify-between"
               >
                 <div className="flex-1 text-left">
                   <p className="text-sm font-semibold">{product.name}</p>
@@ -261,10 +238,10 @@ export default function CategoryDetailScreen() {
                     {product.quantity <= product.lowStockThreshold ? 'Low' : 'In Stock'}
                   </span>
                 </div>
-              </motion.button>
+              </button>
             ))
           )}
-        </motion.div>
+        </div>
       </div>
     </div>
   );

@@ -48,7 +48,9 @@ export async function GET(request: NextRequest) {
       return camelProduct;
     });
 
-    return NextResponse.json({ products });
+    return NextResponse.json({ products }, {
+      headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' },
+    });
   } catch (error) {
     console.error('Get products error:', error);
     return NextResponse.json(

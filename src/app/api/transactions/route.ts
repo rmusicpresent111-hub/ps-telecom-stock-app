@@ -63,7 +63,9 @@ export async function GET(request: NextRequest) {
       return camelTransaction;
     });
 
-    return NextResponse.json({ transactions });
+    return NextResponse.json({ transactions }, {
+      headers: { 'Cache-Control': 'private, max-age=15, stale-while-revalidate=30' },
+    });
   } catch (error) {
     console.error('Get transactions error:', error);
     return NextResponse.json(

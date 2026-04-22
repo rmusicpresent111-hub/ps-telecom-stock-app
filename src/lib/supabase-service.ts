@@ -1,10 +1,10 @@
 /**
  * Client-side Supabase Service Module
- * Replaces all API route calls with direct Supabase client queries
- * This enables the app to work as a static export (no server needed)
+ * Optimized with in-memory caching and parallel queries
  */
 
 import { supabase, generateId, toCamelCase, toSnakeCase } from './supabase';
+import { getCached, setCache, invalidateCache, cacheKeys, cacheTTL } from './cache';
 
 // ============ AUTH ============
 
@@ -87,6 +87,10 @@ export async function signup(name: string, email: string, password: string, shop
 // ============ PROFILE ============
 
 export async function getProfile(userId: string) {
+  const key = cacheKeys.profile(userId);
+  const cached = getCached<{ user: unknown }>(key);
+  if (cached) return cached;
+
   const { data, error } = await supabase
     .from('users')
     .select('id, email, name, shop_name, role, language, theme, created_at, updated_at')
@@ -97,7 +101,9 @@ export async function getProfile(userId: string) {
     throw new Error('User not found');
   }
 
-  return { user: toCamelCase(data) };
+  const result = { user: toCamelCase(data) };
+  setCache(key, result, cacheTTL.categories);
+  return result;
 }
 
 export async function updateProfile(id: string, updates: { name?: string; shopName?: string; language?: string; theme?: string }) {
@@ -128,6 +134,7 @@ export async function updateProfile(id: string, updates: { name?: string; shopNa
     throw new Error('Internal server error');
   }
 
+  invalidateCache(cacheKeys.profile(id));
   return { user: toCamelCase(data) };
 }
 
@@ -142,19 +149,28 @@ export async function deleteAccount(id: string) {
     throw new Error('User not found');
   }
 
-  await supabase.from('transactions').delete().eq('user_id', id);
-  await supabase.from('products').delete().eq('user_id', id);
-  await supabase.from('categories').delete().eq('user_id', id);
-  await supabase.from('cash_entries').delete().eq('user_id', id);
-  await supabase.from('expenses').delete().eq('user_id', id);
-  await supabase.from('users').delete().eq('id', id);
+  // Delete in parallel
+  await Promise.all([
+    supabase.from('transactions').delete().eq('user_id', id),
+    supabase.from('products').delete().eq('user_id', id),
+    supabase.from('categories').delete().eq('user_id', id),
+    supabase.from('cash_entries').delete().eq('user_id', id),
+    supabase.from('expenses').delete().eq('user_id', id),
+  ]);
 
+  await supabase.from('users').delete().eq('id', id);
+  invalidateCache();
   return { message: 'User account deleted successfully' };
 }
 
 // ============ PRODUCTS ============
 
 export async function getProducts(userId: string, options?: { categoryId?: string; search?: string }) {
+  const optsKey = options ? `${options.categoryId || ''}:${options.search || ''}` : 'all';
+  const key = cacheKeys.products(userId, optsKey);
+  const cached = getCached<{ products: unknown[] }>(key);
+  if (cached) return cached;
+
   let query = supabase
     .from('products')
     .select('*, category:categories(*)')
@@ -184,7 +200,9 @@ export async function getProducts(userId: string, options?: { categoryId?: strin
     return camelProduct;
   });
 
-  return { products };
+  const result = { products };
+  setCache(key, result, cacheTTL.products);
+  return result;
 }
 
 export async function createProduct(productData: {
@@ -230,6 +248,11 @@ export async function createProduct(productData: {
     product.category = toCamelCase(category as Record<string, unknown>);
   }
 
+  // Invalidate product and dashboard caches
+  invalidateCache(cacheKeys.products(productData.userId));
+  invalidateCache(cacheKeys.dashboard(productData.userId));
+  invalidateCache(cacheKeys.categories(productData.userId));
+
   return { product };
 }
 
@@ -244,7 +267,7 @@ export async function updateProduct(id: string, updates: {
 }) {
   const { data: existing } = await supabase
     .from('products')
-    .select('*')
+    .select('user_id')
     .eq('id', id)
     .single();
 
@@ -282,13 +305,18 @@ export async function updateProduct(id: string, updates: {
     product.category = toCamelCase(category as Record<string, unknown>);
   }
 
+  // Invalidate caches
+  const userId = existing.user_id as string;
+  invalidateCache(cacheKeys.products(userId));
+  invalidateCache(cacheKeys.dashboard(userId));
+
   return { product };
 }
 
 export async function deleteProduct(id: string) {
   const { data: existing } = await supabase
     .from('products')
-    .select('*')
+    .select('user_id')
     .eq('id', id)
     .single();
 
@@ -305,43 +333,57 @@ export async function deleteProduct(id: string) {
     throw new Error('Internal server error');
   }
 
+  const userId = existing.user_id as string;
+  invalidateCache(cacheKeys.products(userId));
+  invalidateCache(cacheKeys.dashboard(userId));
+  invalidateCache(cacheKeys.categories(userId));
+
   return { message: 'Product deleted successfully' };
 }
 
 // ============ CATEGORIES ============
 
 export async function getCategories(userId: string) {
-  const { data: categories, error: categoriesError } = await supabase
-    .from('categories')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false });
+  const key = cacheKeys.categories(userId);
+  const cached = getCached<{ categories: unknown[] }>(key);
+  if (cached) return cached;
 
-  if (categoriesError) {
+  // Run both queries in parallel
+  const [categoriesResult, productCountsResult] = await Promise.all([
+    supabase
+      .from('categories')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('products')
+      .select('category_id')
+      .eq('user_id', userId),
+  ]);
+
+  if (categoriesResult.error) {
     throw new Error('Internal server error');
   }
 
-  const { data: productCounts, error: productCountsError } = await supabase
-    .from('products')
-    .select('category_id')
-    .eq('user_id', userId);
-
-  if (productCountsError) {
+  if (productCountsResult.error) {
     throw new Error('Internal server error');
   }
 
   const countMap: Record<string, number> = {};
-  for (const row of productCounts ?? []) {
+  for (const row of productCountsResult.data ?? []) {
     const catId = row.category_id;
     countMap[catId] = (countMap[catId] ?? 0) + 1;
   }
 
-  const result = (categories ?? []).map((cat) => ({
-    ...toCamelCase(cat),
-    _count: { products: countMap[cat.id] ?? 0 },
-  }));
+  const result = {
+    categories: (categoriesResult.data ?? []).map((cat) => ({
+      ...toCamelCase(cat),
+      _count: { products: countMap[cat.id] ?? 0 },
+    })),
+  };
 
-  return { categories: result };
+  setCache(key, result, cacheTTL.categories);
+  return result;
 }
 
 export async function createCategory(name: string, image: string, userId: string) {
@@ -372,12 +414,20 @@ export async function createCategory(name: string, image: string, userId: string
     _count: { products: 0 },
   };
 
+  invalidateCache(cacheKeys.categories(userId));
+  invalidateCache(cacheKeys.dashboard(userId));
+
   return { category };
 }
 
 // ============ TRANSACTIONS ============
 
 export async function getTransactions(userId: string, options?: { type?: string; productId?: string; date?: string; from?: string; to?: string }) {
+  const optsKey = `${options?.type || ''}:${options?.productId || ''}:${options?.date || ''}:${options?.from || ''}:${options?.to || ''}`;
+  const key = cacheKeys.transactions(userId, optsKey);
+  const cached = getCached<{ transactions: unknown[] }>(key);
+  if (cached) return cached;
+
   let query = supabase
     .from('transactions')
     .select('*, product:products(*)')
@@ -419,7 +469,9 @@ export async function getTransactions(userId: string, options?: { type?: string;
     return camelTransaction;
   });
 
-  return { transactions };
+  const result = { transactions };
+  setCache(key, result, cacheTTL.transactions);
+  return result;
 }
 
 export async function createTransaction(transactionData: {
@@ -489,7 +541,6 @@ export async function createTransaction(transactionData: {
     .eq('id', productId);
 
   if (updateError) {
-    // Attempt to roll back the inserted transaction
     await supabase.from('transactions').delete().eq('id', transactionId);
     throw new Error('Failed to update product stock');
   }
@@ -499,6 +550,11 @@ export async function createTransaction(transactionData: {
   if (productData && typeof productData === 'object') {
     transactionFields.product = toCamelCase(productData as Record<string, unknown>);
   }
+
+  // Invalidate all relevant caches
+  invalidateCache(cacheKeys.transactions(userId));
+  invalidateCache(cacheKeys.products(userId));
+  invalidateCache(cacheKeys.dashboard(userId));
 
   return { transaction: transactionFields };
 }
@@ -542,6 +598,11 @@ function getDateRange(period: string, date?: string, from?: string, to?: string)
 
 export async function getExpenses(userId: string, options?: { period?: string; date?: string; from?: string; to?: string; category?: string }) {
   const period = options?.period || 'today';
+  const optsKey = `${period}:${options?.date || ''}:${options?.from || ''}:${options?.to || ''}:${options?.category || ''}`;
+  const key = cacheKeys.expenses(userId, optsKey);
+  const cached = getCached<unknown>(key);
+  if (cached) return cached;
+
   const { startDate, endDate } = getDateRange(period, options?.date, options?.from, options?.to);
 
   let query = supabase
@@ -564,7 +625,7 @@ export async function getExpenses(userId: string, options?: { period?: string; d
 
   const expenses = (data || []).map(toCamelCase);
 
-  const totalExpense = expenses.reduce((sum, e) => sum + ((e.amount as number) || 0), 0);
+  const totalExpense = expenses.reduce((sum: number, e) => sum + ((e.amount as number) || 0), 0);
 
   const byCategory = expenses.reduce((acc, e) => {
     const cat = (e.category as string) || 'other';
@@ -573,7 +634,7 @@ export async function getExpenses(userId: string, options?: { period?: string; d
     return acc;
   }, {} as Record<string, number>);
 
-  return {
+  const result = {
     expenses,
     summary: {
       totalExpense,
@@ -581,6 +642,9 @@ export async function getExpenses(userId: string, options?: { period?: string; d
       count: expenses.length,
     },
   };
+
+  setCache(key, result, cacheTTL.reports);
+  return result;
 }
 
 export async function createExpense(expenseData: {
@@ -613,6 +677,7 @@ export async function createExpense(expenseData: {
     throw new Error('Failed to create expense');
   }
 
+  invalidateCache(cacheKeys.expenses(expenseData.userId));
   return { expense: toCamelCase(data) };
 }
 
@@ -635,6 +700,7 @@ export async function updateExpense(id: string, updates: { amount?: number; cate
     throw new Error('Failed to update expense');
   }
 
+  invalidateCache('expenses:');
   return { expense: toCamelCase(data) };
 }
 
@@ -650,6 +716,7 @@ export async function deleteExpense(id: string) {
     throw new Error('Failed to delete expense');
   }
 
+  invalidateCache('expenses:');
   return { success: true };
 }
 
@@ -657,35 +724,40 @@ export async function deleteExpense(id: string) {
 
 export async function getCashEntries(userId: string, options?: { period?: string; date?: string; from?: string; to?: string }) {
   const period = options?.period || 'today';
+  const optsKey = `${period}:${options?.date || ''}:${options?.from || ''}:${options?.to || ''}`;
+  const key = cacheKeys.cashEntries(userId, optsKey);
+  const cached = getCached<unknown>(key);
+  if (cached) return cached;
+
   const { startDate, endDate } = getDateRange(period, options?.date, options?.from, options?.to);
 
-  const { data: entries, error } = await supabase
-    .from('cash_entries')
-    .select('*')
-    .eq('user_id', userId)
-    .gte('date', startDate)
-    .lte('date', endDate)
-    .order('date', { ascending: false });
+  // Run both queries in parallel
+  const [entriesResult, latestResult] = await Promise.all([
+    supabase
+      .from('cash_entries')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .order('date', { ascending: false }),
+    supabase
+      .from('cash_entries')
+      .select('*')
+      .eq('user_id', userId)
+      .order('date', { ascending: false })
+      .limit(1),
+  ]);
 
-  if (error) {
+  if (entriesResult.error) {
     throw new Error('Failed to fetch cash entries');
   }
 
-  const camelEntries = (entries || []).map(toCamelCase);
-
-  // Get latest entry for totals
-  const { data: latestEntry } = await supabase
-    .from('cash_entries')
-    .select('*')
-    .eq('user_id', userId)
-    .order('date', { ascending: false })
-    .limit(1);
-
-  const latest = latestEntry && latestEntry.length > 0 ? toCamelCase(latestEntry[0]) : null;
+  const camelEntries = (entriesResult.data || []).map(toCamelCase);
+  const latest = latestResult.data && latestResult.data.length > 0 ? toCamelCase(latestResult.data[0]) : null;
   const totalHandCash = (latest?.handCash as number) || 0;
   const totalLiquidCash = (latest?.liquidCash as number) || 0;
 
-  return {
+  const result = {
     entries: camelEntries,
     summary: {
       totalHandCash,
@@ -693,6 +765,9 @@ export async function getCashEntries(userId: string, options?: { period?: string
       totalCash: totalHandCash + totalLiquidCash,
     },
   };
+
+  setCache(key, result, cacheTTL.reports);
+  return result;
 }
 
 export async function upsertCashEntry(entryData: {
@@ -706,7 +781,6 @@ export async function upsertCashEntry(entryData: {
     throw new Error('userId and date required');
   }
 
-  // Check if entry for this date already exists
   const { data: existingRows } = await supabase
     .from('cash_entries')
     .select('*')
@@ -715,7 +789,6 @@ export async function upsertCashEntry(entryData: {
 
   let entry;
   if (existingRows && existingRows.length > 0) {
-    // Update existing entry
     const existing = toCamelCase(existingRows[0]);
     const updates: Record<string, unknown> = {};
     if (entryData.handCash !== undefined) updates.handCash = entryData.handCash;
@@ -737,7 +810,6 @@ export async function upsertCashEntry(entryData: {
     }
     entry = toCamelCase(data);
   } else {
-    // Create new entry
     const newEntry = {
       id: generateId(),
       userId: entryData.userId,
@@ -759,6 +831,7 @@ export async function upsertCashEntry(entryData: {
     entry = toCamelCase(data);
   }
 
+  invalidateCache(cacheKeys.cashEntries(entryData.userId));
   return { entry };
 }
 
@@ -781,6 +854,7 @@ export async function updateCashEntry(id: string, updates: { handCash?: number; 
     throw new Error('Failed to update cash entry');
   }
 
+  invalidateCache('cashEntries:');
   return { entry: toCamelCase(data) };
 }
 
@@ -796,10 +870,11 @@ export async function deleteCashEntry(id: string) {
     throw new Error('Failed to delete cash entry');
   }
 
+  invalidateCache('cashEntries:');
   return { success: true };
 }
 
-// ============ DASHBOARD ============
+// ============ DASHBOARD (OPTIMIZED) ============
 
 function formatDate(date: Date): string {
   return date.toISOString().split('T')[0];
@@ -829,21 +904,82 @@ const defaultCategoriesList = [
 ];
 
 export async function getDashboard(userId: string) {
-  // Total items (products) — count
-  const { count: totalItems } = await supabase
-    .from('products')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', userId);
+  // Check cache first
+  const key = cacheKeys.dashboard(userId);
+  const cached = getCached<unknown>(key);
+  if (cached) return cached;
 
-  // Get all products
-  const { data: productsData } = await supabase
-    .from('products')
-    .select('id, name, quantity, selling_price, purchase_price, low_stock_threshold, category_id, box_number, user_id, created_at, updated_at')
-    .eq('user_id', userId);
+  const today = formatDate(new Date());
 
-  const products = (productsData || []).map(toCamelCase);
+  // Calculate date range for 7-day sale overview
+  const todayDate = new Date();
+  const sevenDaysAgo = new Date(todayDate);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+  const sevenDaysAgoStr = formatDate(sevenDaysAgo);
 
-  // Low stock items
+  // BATCH 1: Run independent queries in parallel
+  const [
+    productsCountResult,
+    productsDataResult,
+    todayTxnCountResult,
+    categoriesDataResult,
+    recentTxnResult,
+    // Single query for 7-day sales instead of 7 separate queries!
+    sevenDayTxnResult,
+    productCountResult,
+  ] = await Promise.all([
+    // Total items count
+    supabase
+      .from('products')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId),
+
+    // All products (for stock value + low stock calculation)
+    supabase
+      .from('products')
+      .select('id, name, quantity, selling_price, purchase_price, low_stock_threshold, category_id, box_number, user_id, created_at, updated_at')
+      .eq('user_id', userId),
+
+    // Today's transaction count
+    supabase
+      .from('transactions')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('date', today),
+
+    // Categories
+    supabase
+      .from('categories')
+      .select('*')
+      .eq('user_id', userId),
+
+    // Recent transactions
+    supabase
+      .from('transactions')
+      .select('*, product:products(*)')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(5),
+
+    // 7-day sales (SINGLE QUERY instead of 7)
+    supabase
+      .from('transactions')
+      .select('total_amount, quantity, date')
+      .eq('user_id', userId)
+      .eq('type', 'SELL')
+      .gte('date', sevenDaysAgoStr)
+      .lte('date', today),
+
+    // Product counts by category
+    supabase
+      .from('products')
+      .select('category_id')
+      .eq('user_id', userId),
+  ]);
+
+  const products = (productsDataResult.data || []).map(toCamelCase);
+
+  // Low stock items (computed from already fetched products)
   const lowItems = products.filter((p: Record<string, unknown>) => (p.quantity as number) <= (p.lowStockThreshold as number)).length;
 
   // Total stock value
@@ -852,42 +988,13 @@ export async function getDashboard(userId: string) {
     0
   );
 
-  // Today's transactions
-  const today = formatDate(new Date());
-  const { count: todayTransactions } = await supabase
-    .from('transactions')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .eq('date', today);
-
-  // Low stock products detail
-  const { data: lowStockData } = await supabase
-    .from('products')
-    .select('*, category:categories(*)')
-    .eq('user_id', userId)
-    .order('quantity', { ascending: true })
-    .limit(100);
-
-  const lowStockProducts = (lowStockData || [])
-    .map((p: Record<string, unknown>) => {
-      const camel = toCamelCase(p);
-      if (camel.category && typeof camel.category === 'object') {
-        camel.category = toCamelCase(camel.category as Record<string, unknown>);
-      }
-      return camel;
-    })
+  // Low stock products detail - use already fetched products instead of another query
+  const lowStockProducts = products
     .filter((p: Record<string, unknown>) => (p.quantity as number) <= (p.lowStockThreshold as number))
     .slice(0, 10);
 
   // Recent transactions
-  const { data: recentTxnData } = await supabase
-    .from('transactions')
-    .select('*, product:products(*)')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(5);
-
-  const recentTransactions = (recentTxnData || []).map((t: Record<string, unknown>) => {
+  const recentTransactions = (recentTxnResult.data || []).map((t: Record<string, unknown>) => {
     const camel = toCamelCase(t);
     if (camel.product && typeof camel.product === 'object') {
       camel.product = toCamelCase(camel.product as Record<string, unknown>);
@@ -896,21 +1003,9 @@ export async function getDashboard(userId: string) {
   });
 
   // Categories with product counts
-  const { data: categoriesData } = await supabase
-    .from('categories')
-    .select('*')
-    .eq('user_id', userId);
-
-  let categories = (categoriesData || []).map(toCamelCase);
-
-  const { data: productCountData } = await supabase
-    .from('products')
-    .select('category_id')
-    .eq('user_id', userId);
-
   const productCountMap: Record<string, number> = {};
-  if (productCountData) {
-    for (const p of productCountData) {
+  if (productCountResult.data) {
+    for (const p of productCountResult.data) {
       const catId = p.category_id;
       if (catId) {
         productCountMap[catId] = (productCountMap[catId] || 0) + 1;
@@ -918,9 +1013,9 @@ export async function getDashboard(userId: string) {
     }
   }
 
-  categories = categories.map((cat: Record<string, unknown>) => ({
-    ...cat,
-    _count: { products: productCountMap[(cat.id as string)] || 0 },
+  let categories = (categoriesDataResult.data || []).map((cat: Record<string, unknown>) => ({
+    ...toCamelCase(cat),
+    _count: { products: productCountMap[(cat as Record<string, unknown>).id as string] || 0 },
   }));
 
   // Auto-seed default categories if user has none
@@ -946,19 +1041,20 @@ export async function getDashboard(userId: string) {
   // Migration: Split "Flip Cover/Back Cover" into two
   const oldCombined = categories.find((c: Record<string, unknown>) => c.name === 'Flip Cover/Back Cover');
   if (oldCombined) {
-    await supabase
-      .from('categories')
-      .update({ name: 'Flip Cover' })
-      .eq('id', (oldCombined as Record<string, unknown>).id as string);
-
-    await supabase
-      .from('categories')
-      .insert({
-        id: generateId(),
-        name: 'Back Cover',
-        image: '/categories/back-cover.png',
-        user_id: userId,
-      });
+    await Promise.all([
+      supabase
+        .from('categories')
+        .update({ name: 'Flip Cover' })
+        .eq('id', (oldCombined as Record<string, unknown>).id as string),
+      supabase
+        .from('categories')
+        .insert({
+          id: generateId(),
+          name: 'Back Cover',
+          image: '/categories/back-cover.png',
+          user_id: userId,
+        }),
+    ]);
 
     const { data: refreshedData } = await supabase
       .from('categories')
@@ -974,60 +1070,57 @@ export async function getDashboard(userId: string) {
     });
   }
 
-  // Sale Overview: Last 7 days
-  const todayDate = new Date();
+  // Sale Overview: Process 7-day data from SINGLE query (was 7 queries)
+  const saleMap = new Map<string, { sales: number; quantity: number }>();
+  for (const t of (sevenDayTxnResult.data || [])) {
+    const dateStr = t.date as string;
+    const existing = saleMap.get(dateStr) || { sales: 0, quantity: 0 };
+    existing.sales += (t.total_amount as number) || 0;
+    existing.quantity += (t.quantity as number) || 0;
+    saleMap.set(dateStr, existing);
+  }
+
   const saleOverview = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date(todayDate);
     d.setDate(d.getDate() - i);
     const dateStr = formatDate(d);
     const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' });
-
-    const { data: dayTxnData } = await supabase
-      .from('transactions')
-      .select('total_amount, quantity')
-      .eq('user_id', userId)
-      .eq('type', 'SELL')
-      .eq('date', dateStr);
-
-    const dayTxns = dayTxnData || [];
-    const totalSales = dayTxns.reduce((sum: number, t: Record<string, unknown>) => sum + (t.total_amount as number), 0);
-    const totalQty = dayTxns.reduce((sum: number, t: Record<string, unknown>) => sum + (t.quantity as number), 0);
-
+    const dayData = saleMap.get(dateStr) || { sales: 0, quantity: 0 };
     saleOverview.push({
       date: dateStr,
       label: dayLabel,
-      sales: totalSales,
-      quantity: totalQty,
+      sales: dayData.sales,
+      quantity: dayData.quantity,
     });
   }
 
-  // Stock Overview: Stock quantity by category
-  const stockOverview = [];
-  for (const cat of categories) {
-    const { data: catProductsData } = await supabase
-      .from('products')
-      .select('quantity, selling_price')
-      .eq('user_id', userId)
-      .eq('category_id', (cat as Record<string, unknown>).id as string);
-
-    const catProducts = catProductsData || [];
-    const totalQty = catProducts.reduce((sum: number, p: Record<string, unknown>) => sum + (p.quantity as number), 0);
-    const totalValue = catProducts.reduce((sum: number, p: Record<string, unknown>) => sum + (p.quantity as number) * (p.selling_price as number), 0);
-    if (totalQty > 0) {
-      stockOverview.push({
-        category: (cat as Record<string, unknown>).name,
-        quantity: totalQty,
-        value: totalValue,
-      });
-    }
+  // Stock Overview: Compute from already-fetched products (no extra queries!)
+  const stockByCategory = new Map<string, { quantity: number; value: number }>();
+  for (const p of products) {
+    const catId = (p as Record<string, unknown>).categoryId as string;
+    if (!catId) continue;
+    const cat = categories.find((c: Record<string, unknown>) => c.id === catId);
+    const catName = cat ? (cat as Record<string, unknown>).name as string : 'Unknown';
+    const existing = stockByCategory.get(catName) || { quantity: 0, value: 0 };
+    existing.quantity += (p as Record<string, unknown>).quantity as number;
+    existing.value += ((p as Record<string, unknown>).quantity as number) * ((p as Record<string, unknown>).sellingPrice as number);
+    stockByCategory.set(catName, existing);
   }
 
-  return {
+  const stockOverview = Array.from(stockByCategory.entries())
+    .filter(([_, data]) => data.quantity > 0)
+    .map(([category, data]) => ({
+      category,
+      quantity: data.quantity,
+      value: data.value,
+    }));
+
+  const result = {
     stats: {
-      totalItems: totalItems || 0,
+      totalItems: productsCountResult.count || 0,
       lowItems,
-      todayTransactions: todayTransactions || 0,
+      todayTransactions: todayTxnCountResult.count || 0,
       stockValue,
     },
     lowStockProducts,
@@ -1036,6 +1129,9 @@ export async function getDashboard(userId: string) {
     saleOverview,
     stockOverview,
   };
+
+  setCache(key, result, cacheTTL.dashboard);
+  return result;
 }
 
 // ============ REPORTS ============
@@ -1055,6 +1151,11 @@ function deepCamelCase(obj: unknown): unknown {
 }
 
 export async function getReports(userId: string, type: string, options?: { from?: string; to?: string }) {
+  const optsKey = `${type}:${options?.from || ''}:${options?.to || ''}`;
+  const key = cacheKeys.reports(userId, type, optsKey);
+  const cached = getCached<unknown>(key);
+  if (cached) return cached;
+
   if (type === 'stock-value') {
     const { data: categories } = await supabase
       .from('categories')
@@ -1104,7 +1205,9 @@ export async function getReports(userId: string, type: string, options?: { from?
       totalLowStock: stockValueData.reduce((s, d) => s + d.lowStockCount, 0),
     };
 
-    return { type: 'stock-value', data: stockValueData, grandTotal };
+    const result = { type: 'stock-value', data: stockValueData, grandTotal };
+    setCache(key, result, cacheTTL.reports);
+    return result;
   }
 
   // For daily, monthly, and category reports
@@ -1128,6 +1231,8 @@ export async function getReports(userId: string, type: string, options?: { from?
   }
 
   const txList = (transactions || []).map((t) => deepCamelCase(t)) as Record<string, unknown>[];
+
+  let result;
 
   if (type === 'daily') {
     const dailyMap = new Map<string, {
@@ -1156,10 +1261,8 @@ export async function getReports(userId: string, type: string, options?: { from?
       }
     }
 
-    return { type: 'daily', data: Array.from(dailyMap.values()) };
-  }
-
-  if (type === 'monthly') {
+    result = { type: 'daily', data: Array.from(dailyMap.values()) };
+  } else if (type === 'monthly') {
     const monthlyMap = new Map<string, {
       month: string; revenue: number; cost: number; profit: number;
       stockIn: number; stockOut: number; sell: number;
@@ -1186,10 +1289,8 @@ export async function getReports(userId: string, type: string, options?: { from?
       }
     }
 
-    return { type: 'monthly', data: Array.from(monthlyMap.values()) };
-  }
-
-  if (type === 'category') {
+    result = { type: 'monthly', data: Array.from(monthlyMap.values()) };
+  } else if (type === 'category') {
     const categoryMap = new Map<string, {
       categoryId: string; categoryName: string; revenue: number; cost: number;
       profit: number; totalTransactions: number; stockIn: number; stockOut: number; sell: number;
@@ -1239,187 +1340,118 @@ export async function getReports(userId: string, type: string, options?: { from?
       };
     });
 
-    return { type: 'category', data: categoryData };
+    result = { type: 'category', data: categoryData };
+  } else {
+    throw new Error('Invalid report type. Use daily, monthly, stock-value, or category.');
   }
 
-  throw new Error('Invalid report type. Use daily, monthly, stock-value, or category.');
+  setCache(key, result, cacheTTL.reports);
+  return result;
 }
 
 // ============ BACKUP ============
 
-export async function exportBackup(userId: string) {
-  const { data: categories } = await supabase
-    .from('categories')
-    .select('*')
-    .eq('user_id', userId);
-
-  const { data: products } = await supabase
-    .from('products')
-    .select('*')
-    .eq('user_id', userId);
-
-  const { data: transactions } = await supabase
-    .from('transactions')
-    .select('*')
-    .eq('user_id', userId);
-
-  return {
-    exportDate: new Date().toISOString(),
-    userId,
-    categories: (categories || []).map(toCamelCase),
-    products: (products || []).map(toCamelCase),
-    transactions: (transactions || []).map(toCamelCase),
-  };
-}
-
-export async function importBackup(userId: string, backup: {
-  categories?: Record<string, unknown>[];
-  products?: Record<string, unknown>[];
-  transactions?: Record<string, unknown>[];
-}) {
-  // Verify user exists
-  const { data: user } = await supabase
-    .from('users')
-    .select('id')
-    .eq('id', userId)
-    .single();
-
-  if (!user) {
-    throw new Error('User not found');
-  }
-
-  // Import categories
-  if (backup.categories && Array.isArray(backup.categories)) {
-    for (const cat of backup.categories) {
-      const catData = toSnakeCase({
-        id: cat.id,
-        name: cat.name,
-        image: cat.image ?? '',
-        userId,
-      });
-
-      const { error: insertError } = await supabase
-        .from('categories')
-        .insert(catData)
-        .select('*')
-        .single();
-
-      if (insertError) {
-        await supabase
-          .from('categories')
-          .update({ name: catData.name, image: catData.image })
-          .eq('id', catData.id)
-          .select('*')
-          .single();
-      }
-    }
-  }
-
-  // Import products
-  if (backup.products && Array.isArray(backup.products)) {
-    for (const prod of backup.products) {
-      const prodData = toSnakeCase({
-        id: prod.id,
-        name: prod.name,
-        categoryId: prod.categoryId,
-        quantity: prod.quantity ?? 0,
-        boxNumber: prod.boxNumber ?? '',
-        purchasePrice: prod.purchasePrice ?? 0,
-        sellingPrice: prod.sellingPrice ?? 0,
-        lowStockThreshold: prod.lowStockThreshold ?? 5,
-        userId,
-      });
-
-      const { error: insertError } = await supabase
-        .from('products')
-        .insert(prodData)
-        .select('*')
-        .single();
-
-      if (insertError) {
-        const updateFields = toSnakeCase({
-          name: prod.name,
-          categoryId: prod.categoryId,
-          quantity: prod.quantity ?? 0,
-          boxNumber: prod.boxNumber ?? '',
-          purchasePrice: prod.purchasePrice ?? 0,
-          sellingPrice: prod.sellingPrice ?? 0,
-          lowStockThreshold: prod.lowStockThreshold ?? 5,
-        });
-
-        await supabase
-          .from('products')
-          .update(updateFields)
-          .eq('id', prodData.id)
-          .select('*')
-          .single();
-      }
-    }
-  }
-
-  // Import transactions
-  if (backup.transactions && Array.isArray(backup.transactions)) {
-    for (const tran of backup.transactions) {
-      const tranData = toSnakeCase({
-        id: tran.id,
-        type: tran.type,
-        productId: tran.productId,
-        quantity: tran.quantity,
-        unitPrice: tran.unitPrice ?? 0,
-        totalAmount: tran.totalAmount ?? 0,
-        date: tran.date,
-        userId,
-      });
-
-      const { error: insertError } = await supabase
-        .from('transactions')
-        .insert(tranData)
-        .select('*')
-        .single();
-
-      if (insertError) {
-        const updateFields = toSnakeCase({
-          type: tran.type,
-          quantity: tran.quantity,
-          unitPrice: tran.unitPrice ?? 0,
-          totalAmount: tran.totalAmount ?? 0,
-          date: tran.date,
-        });
-
-        await supabase
-          .from('transactions')
-          .update(updateFields)
-          .eq('id', tranData.id)
-          .select('*')
-          .single();
-      }
-    }
-  }
-
-  return {
-    message: 'Data imported successfully',
-    imported: {
-      categories: backup.categories?.length ?? 0,
-      products: backup.products?.length ?? 0,
-      transactions: backup.transactions?.length ?? 0,
-    },
-  };
-}
+// ============ RESET DATA ============
 
 export async function resetData(userId: string) {
-  const { data: user } = await supabase
-    .from('users')
-    .select('id')
-    .eq('id', userId)
-    .single();
+  if (!userId) throw new Error('userId required');
 
-  if (!user) {
-    throw new Error('User not found');
+  // Delete all user data in parallel (keep user account)
+  await Promise.all([
+    supabase.from('transactions').delete().eq('user_id', userId),
+    supabase.from('products').delete().eq('user_id', userId),
+    supabase.from('categories').delete().eq('user_id', userId),
+    supabase.from('cash_entries').delete().eq('user_id', userId),
+    supabase.from('expenses').delete().eq('user_id', userId),
+  ]);
+
+  invalidateCache();
+  return { message: 'All data reset successfully' };
+}
+
+export async function exportBackup(userId: string) {
+  // Run all queries in parallel
+  const [categoriesResult, productsResult, transactionsResult, expensesResult, cashEntriesResult] = await Promise.all([
+    supabase.from('categories').select('*').eq('user_id', userId),
+    supabase.from('products').select('*').eq('user_id', userId),
+    supabase.from('transactions').select('*').eq('user_id', userId),
+    supabase.from('expenses').select('*').eq('user_id', userId),
+    supabase.from('cash_entries').select('*').eq('user_id', userId),
+  ]);
+
+  return {
+    categories: (categoriesResult.data || []).map(toCamelCase),
+    products: (productsResult.data || []).map(toCamelCase),
+    transactions: (transactionsResult.data || []).map(toCamelCase),
+    expenses: (expensesResult.data || []).map(toCamelCase),
+    cashEntries: (cashEntriesResult.data || []).map(toCamelCase),
+    exportedAt: new Date().toISOString(),
+  };
+}
+
+export async function importBackup(userId: string, data: {
+  categories?: unknown[];
+  products?: unknown[];
+  transactions?: unknown[];
+  expenses?: unknown[];
+  cashEntries?: unknown[];
+}) {
+  // Delete existing data in parallel
+  await Promise.all([
+    supabase.from('transactions').delete().eq('user_id', userId),
+    supabase.from('products').delete().eq('user_id', userId),
+    supabase.from('categories').delete().eq('user_id', userId),
+    supabase.from('cash_entries').delete().eq('user_id', userId),
+    supabase.from('expenses').delete().eq('user_id', userId),
+  ]);
+
+  // Insert new data in parallel
+  const insertPromises: Promise<unknown>[] = [];
+
+  if (data.categories?.length) {
+    const rows = data.categories.map((cat) => ({
+      ...toSnakeCase(cat as Record<string, unknown>),
+      user_id: userId,
+    }));
+    insertPromises.push(supabase.from('categories').insert(rows));
   }
 
-  await supabase.from('transactions').delete().eq('user_id', userId);
-  await supabase.from('products').delete().eq('user_id', userId);
-  await supabase.from('categories').delete().eq('user_id', userId);
+  if (data.products?.length) {
+    const rows = data.products.map((prod) => ({
+      ...toSnakeCase(prod as Record<string, unknown>),
+      user_id: userId,
+    }));
+    insertPromises.push(supabase.from('products').insert(rows));
+  }
 
-  return { message: 'All data reset successfully' };
+  if (data.transactions?.length) {
+    const rows = data.transactions.map((txn) => ({
+      ...toSnakeCase(txn as Record<string, unknown>),
+      user_id: userId,
+    }));
+    insertPromises.push(supabase.from('transactions').insert(rows));
+  }
+
+  if (data.expenses?.length) {
+    const rows = data.expenses.map((exp) => ({
+      ...toSnakeCase(exp as Record<string, unknown>),
+      user_id: userId,
+    }));
+    insertPromises.push(supabase.from('expenses').insert(rows));
+  }
+
+  if (data.cashEntries?.length) {
+    const rows = data.cashEntries.map((entry) => ({
+      ...toSnakeCase(entry as Record<string, unknown>),
+      user_id: userId,
+    }));
+    insertPromises.push(supabase.from('cash_entries').insert(rows));
+  }
+
+  await Promise.all(insertPromises);
+
+  // Invalidate all caches
+  invalidateCache();
+
+  return { message: 'Backup imported successfully' };
 }

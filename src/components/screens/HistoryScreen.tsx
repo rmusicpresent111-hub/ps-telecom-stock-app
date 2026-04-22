@@ -1,18 +1,50 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, memo } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Transaction } from '@/lib/types';
 import { getTransactions } from '@/lib/supabase-service';
-import { motion } from 'framer-motion';
 import { Clock } from 'lucide-react';
 import { toast } from 'sonner';
 
 type FilterType = 'ALL' | 'STOCK_IN' | 'STOCK_OUT' | 'SELL';
 
+// Memoized transaction item
+const TransactionItem = memo(function TransactionItem({ txn, typeColor, typeLabel }: {
+  txn: Transaction;
+  typeColor: { bg: string; text: string };
+  typeLabel: string;
+}) {
+  return (
+    <div className="glass-card p-4">
+      <div className="flex items-start justify-between">
+        <div className="flex items-start gap-3 flex-1">
+          <span className={`text-[10px] px-2 py-1 rounded-full font-semibold ${typeColor.bg} ${typeColor.text}`}>
+            {typeLabel}
+          </span>
+          <div className="flex-1">
+            <p className="text-sm font-medium">
+              {txn.product?.name || 'Unknown Product'}
+            </p>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-xs text-white/50">×{txn.quantity}</span>
+              <span className="text-xs text-white/50">₹{txn.unitPrice}/unit</span>
+            </div>
+          </div>
+        </div>
+        <div className="text-right ml-3">
+          <p className={`text-sm font-bold ${typeColor.text}`}>₹{txn.totalAmount.toLocaleString()}</p>
+          <p className="text-[10px] text-white/40">{txn.date}</p>
+        </div>
+      </div>
+    </div>
+  );
+});
+
 export default function HistoryScreen() {
-  const { user, language } = useAppStore();
+  const user = useAppStore(s => s.user);
+  const language = useAppStore(s => s.language);
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filter, setFilter] = useState<FilterType>('ALL');
@@ -31,7 +63,7 @@ export default function HistoryScreen() {
     } finally {
       setLoading(false);
     }
-  }, [user?.id, filter, language]);
+  }, [user?.id, filter]);
 
   useEffect(() => {
     fetchTransactions();
@@ -66,24 +98,15 @@ export default function HistoryScreen() {
     <div className="animated-bg min-h-screen pb-24">
       <div className="max-w-md mx-auto px-4 pt-4">
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-center mb-6"
-        >
+        <div className="flex items-center justify-center mb-6">
           <div className="flex items-center gap-2">
             <Clock size={24} className="text-emerald-400" />
             <h1 className="text-lg font-bold neon-glow">{t('history', language)}</h1>
           </div>
-        </motion.div>
+        </div>
 
         {/* Filter tabs */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="flex gap-2 mb-6 overflow-x-auto"
-        >
+        <div className="flex gap-2 mb-6 overflow-x-auto">
           {filterTabs.map((tab) => (
             <button
               key={tab.key}
@@ -97,7 +120,7 @@ export default function HistoryScreen() {
               {tab.label}
             </button>
           ))}
-        </motion.div>
+        </div>
 
         {/* Transaction list */}
         <div className="space-y-3 max-h-[calc(100vh-200px)] overflow-y-auto">
@@ -106,39 +129,14 @@ export default function HistoryScreen() {
           ) : transactions.length === 0 ? (
             <div className="text-center py-12 text-white/40">{t('noData', language)}</div>
           ) : (
-            transactions.map((txn, idx) => {
-              const colors = getTypeColor(txn.type);
-              return (
-                <motion.div
-                  key={txn.id}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.03 * idx }}
-                  className="glass-card p-4"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-3 flex-1">
-                      <span className={`text-[10px] px-2 py-1 rounded-full font-semibold ${colors.bg} ${colors.text}`}>
-                        {getTypeLabel(txn.type)}
-                      </span>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">
-                          {txn.product?.name || 'Unknown Product'}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs text-white/50">×{txn.quantity}</span>
-                          <span className="text-xs text-white/50">₹{txn.unitPrice}/unit</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right ml-3">
-                      <p className={`text-sm font-bold ${colors.text}`}>₹{txn.totalAmount.toLocaleString()}</p>
-                      <p className="text-[10px] text-white/40">{txn.date}</p>
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })
+            transactions.map((txn) => (
+              <TransactionItem
+                key={txn.id}
+                txn={txn}
+                typeColor={getTypeColor(txn.type)}
+                typeLabel={getTypeLabel(txn.type)}
+              />
+            ))
           )}
         </div>
       </div>

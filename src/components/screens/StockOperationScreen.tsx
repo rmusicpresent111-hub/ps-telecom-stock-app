@@ -5,9 +5,9 @@ import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Product } from '@/lib/types';
 import { getProducts, createTransaction } from '@/lib/supabase-service';
-import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Search, X, TrendingUp, TrendingDown, ShoppingBag } from 'lucide-react';
 import { toast } from 'sonner';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const stockOpMeta: Record<string, { icon: React.ElementType; confirmLabel: string }> = {
   STOCK_IN: { icon: TrendingUp, confirmLabel: 'Stock In' },
@@ -16,11 +16,12 @@ const stockOpMeta: Record<string, { icon: React.ElementType; confirmLabel: strin
 };
 
 export default function StockOperationScreen() {
-  const {
-    user, language, goBack,
-    selectedProductId, stockOperationType,
-    selectedCategoryId,
-  } = useAppStore();
+  const user = useAppStore(s => s.user);
+  const language = useAppStore(s => s.language);
+  const goBack = useAppStore(s => s.goBack);
+  const selectedProductId = useAppStore(s => s.selectedProductId);
+  const stockOperationType = useAppStore(s => s.stockOperationType);
+  const selectedCategoryId = useAppStore(s => s.selectedCategoryId);
 
   const isSell = stockOperationType === 'SELL';
 
@@ -42,15 +43,14 @@ export default function StockOperationScreen() {
       const data = selectedCategoryId
         ? await getProducts(user.id, { categoryId: selectedCategoryId })
         : await getProducts(user.id);
-      const products = data.products || [];
-      setAllProducts(products);
+      setAllProducts(data.products || []);
       setProductName('');
     } catch {
       toast.error(t('error', language));
     } finally {
       setFetching(false);
     }
-  }, [user?.id, selectedCategoryId, language]);
+  }, [user?.id, selectedCategoryId]);
 
   useEffect(() => {
     fetchProducts();
@@ -151,7 +151,6 @@ export default function StockOperationScreen() {
       toast.error(t('enterQuantity', language));
       return;
     }
-    // Show confirmation dialog
     setShowConfirmDialog(true);
   };
 
@@ -196,17 +195,13 @@ export default function StockOperationScreen() {
     <div className="animated-bg min-h-screen pb-24">
       <div className="max-w-md mx-auto px-4 pt-4">
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between mb-6"
-        >
+        <div className="flex items-center justify-between mb-6">
           <button onClick={goBack} className="p-2 rounded-full glass-card" aria-label="Back">
             <ArrowLeft size={20} className="text-emerald-400" />
           </button>
           <h1 className="text-lg font-bold" style={{ color: accent }}>{getTitle()}</h1>
           <div className="w-10" />
-        </motion.div>
+        </div>
 
         {fetching ? (
           <div className="text-center py-12 text-white/40">{t('loading', language)}</div>
@@ -215,12 +210,7 @@ export default function StockOperationScreen() {
         ) : isSell ? (
           /* ==================== INSTANT SELL LAYOUT ==================== */
           <>
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="glass-card-strong p-6 space-y-4"
-            >
+            <div className="glass-card-strong p-6 space-y-4">
               {/* Step 1: Product name with suggestion dropdown */}
               <div className="relative" ref={suggestionsRef}>
                 <label className="text-xs text-white/60 mb-1 block">{t('productName', language)}</label>
@@ -268,13 +258,9 @@ export default function StockOperationScreen() {
                 )}
               </div>
 
-              {/* Step 2: After product selected, show Quantity & Selling Price */}
+              {/* Step 2: After product selected */}
               {product && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="space-y-4"
-                >
+                <div className="space-y-4">
                   {/* Selected product info */}
                   <div className="glass-card p-3 flex items-center justify-between">
                     <div>
@@ -333,17 +319,12 @@ export default function StockOperationScreen() {
                       </div>
                     </div>
                   )}
-                </motion.div>
+                </div>
               )}
-            </motion.div>
+            </div>
 
             {/* Confirm button */}
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="mt-6"
-            >
+            <div className="mt-6">
               <button
                 onClick={handleConfirmClick}
                 disabled={loading || !quantity || !product}
@@ -355,31 +336,23 @@ export default function StockOperationScreen() {
               >
                 {loading ? t('loading', language) : t('confirm', language)}
               </button>
-            </motion.div>
+            </div>
           </>
         ) : (
           /* ==================== STOCK IN / STOCK OUT LAYOUT ==================== */
           <>
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="glass-card-strong p-6 space-y-4"
-            >
-              {/* Product name - simple editable text input */}
+            <div className="glass-card-strong p-6 space-y-4">
+              {/* Product name */}
               <div>
                 <label className="text-xs text-white/60 mb-1 block">{t('productName', language)}</label>
                 <input
                   type="text"
                   value={productName}
-                  onChange={(e) => {
-                    setProductName(e.target.value);
-                  }}
+                  onChange={(e) => setProductName(e.target.value)}
                   placeholder={t('productName', language)}
                   className="glass-input w-full px-4 py-3 text-sm"
                   autoFocus
                 />
-                {/* Product match indicator */}
                 {productName.trim() && (
                   product ? (
                     <p className="text-[11px] text-green-400 mt-1">✓ {product.name} — Stock: {product.quantity}</p>
@@ -389,10 +362,8 @@ export default function StockOperationScreen() {
                 )}
               </div>
 
-              {/* Only show quantity & price when product is matched */}
               {product && (
                 <>
-                  {/* Quantity */}
                   <div>
                     <label className="text-xs text-white/60 mb-1 block">{t('quantity', language)}</label>
                     <input
@@ -404,7 +375,6 @@ export default function StockOperationScreen() {
                     />
                   </div>
 
-                  {/* Price input */}
                   <div>
                     <label className="text-xs text-white/60 mb-1 block">{getPriceLabel()}</label>
                     <input
@@ -416,7 +386,6 @@ export default function StockOperationScreen() {
                     />
                   </div>
 
-                  {/* Total preview */}
                   {quantity && price && (
                     <div className="pt-2 border-t border-white/10">
                       <div className="flex justify-between items-center">
@@ -429,15 +398,9 @@ export default function StockOperationScreen() {
                   )}
                 </>
               )}
-            </motion.div>
+            </div>
 
-            {/* Confirm button */}
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="mt-6"
-            >
+            <div className="mt-6">
               <button
                 onClick={handleConfirmClick}
                 disabled={loading || !quantity || !product}
@@ -449,7 +412,7 @@ export default function StockOperationScreen() {
               >
                 {loading ? t('loading', language) : t('confirm', language)}
               </button>
-            </motion.div>
+            </div>
           </>
         )}
       </div>
@@ -464,10 +427,8 @@ export default function StockOperationScreen() {
             className="fixed inset-0 z-[100] flex items-center justify-center p-6"
             onClick={handleConfirmCancel}
           >
-            {/* Backdrop */}
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <div className="absolute inset-0 bg-black/60" />
 
-            {/* Dialog */}
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -476,7 +437,6 @@ export default function StockOperationScreen() {
               onClick={(e) => e.stopPropagation()}
               className="glass-card-strong p-6 w-full max-w-sm relative z-10"
             >
-              {/* Close button */}
               <button
                 onClick={handleConfirmCancel}
                 className="absolute top-3 right-3 p-1.5 rounded-full hover:bg-white/10 transition-colors"
@@ -484,7 +444,6 @@ export default function StockOperationScreen() {
                 <X size={16} className="text-white/40" />
               </button>
 
-              {/* Icon */}
               <div
                 className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4"
                 style={{ backgroundColor: `${accent}20`, border: `1px solid ${accent}66` }}
@@ -492,12 +451,10 @@ export default function StockOperationScreen() {
                 <ConfirmIcon size={24} style={{ color: accent }} />
               </div>
 
-              {/* Title */}
               <h3 className="text-lg font-bold text-center mb-3" style={{ color: accent }}>
                 {meta.confirmLabel}?
               </h3>
 
-              {/* Operation details */}
               <div className="space-y-2 mb-5">
                 <div className="flex justify-between items-center py-2 px-3 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }}>
                   <span className="text-xs text-white/50">Product</span>
@@ -519,7 +476,6 @@ export default function StockOperationScreen() {
                 )}
               </div>
 
-              {/* Buttons */}
               <div className="flex gap-3">
                 <button
                   onClick={handleConfirmCancel}

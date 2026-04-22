@@ -1,26 +1,37 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Product, Transaction } from '@/lib/types';
-import { motion } from 'framer-motion';
 import { ArrowLeft, Edit, Trash2, Package, Archive, IndianRupee, Tag } from 'lucide-react';
 import { toast } from 'sonner';
 import { getProducts, getTransactions, deleteProduct } from '@/lib/supabase-service';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function ProductDetailScreen() {
-  const {
-    user, language, goBack, navigateTo,
-    selectedProductId, setSelectedProductId,
-    setSelectedCategoryId, setStockOperationType,
-    categories,
-  } = useAppStore();
+  const user = useAppStore(s => s.user);
+  const language = useAppStore(s => s.language);
+  const goBack = useAppStore(s => s.goBack);
+  const navigateTo = useAppStore(s => s.navigateTo);
+  const selectedProductId = useAppStore(s => s.selectedProductId);
+  const setSelectedProductId = useAppStore(s => s.setSelectedProductId);
+  const setStockOperationType = useAppStore(s => s.setStockOperationType);
+  const categories = useAppStore(s => s.categories);
 
   const [product, setProduct] = useState<Product | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  // Memoize category lookup
+  const categoryMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of categories) {
+      map.set(c.id, c.name);
+    }
+    return map;
+  }, [categories]);
 
   const fetchProduct = useCallback(async () => {
     if (!user?.id || !selectedProductId) return;
@@ -39,17 +50,17 @@ export default function ProductDetailScreen() {
     } finally {
       setLoading(false);
     }
-  }, [user?.id, selectedProductId, language]);
+  }, [user?.id, selectedProductId]);
 
   useEffect(() => {
     fetchProduct();
   }, [fetchProduct]);
 
-  const handleEdit = () => {
+  const handleEdit = useCallback(() => {
     navigateTo('add-product');
-  };
+  }, [navigateTo]);
 
-  const handleDelete = async () => {
+  const handleDelete = useCallback(async () => {
     if (!selectedProductId) return;
     try {
       await deleteProduct(selectedProductId);
@@ -60,23 +71,18 @@ export default function ProductDetailScreen() {
       toast.error((error as Error).message || t('error', language));
     }
     setShowDeleteDialog(false);
-  };
+  }, [selectedProductId, language, setSelectedProductId, goBack]);
 
-  const handleStockOperation = (type: 'STOCK_IN' | 'STOCK_OUT' | 'SELL') => {
+  const handleStockOperation = useCallback((type: 'STOCK_IN' | 'STOCK_OUT' | 'SELL') => {
     setStockOperationType(type);
     const screenMap = { STOCK_IN: 'stock-in', STOCK_OUT: 'stock-out', SELL: 'instant-sell' } as const;
     navigateTo(screenMap[type]);
-  };
-
-  const getCategoryName = (categoryId: string) => {
-    const cat = categories.find((c) => c.id === categoryId);
-    return cat?.name || '';
-  };
+  }, [setStockOperationType, navigateTo]);
 
   if (loading) {
     return (
       <div className="animated-bg min-h-screen flex items-center justify-center">
-        <p className="text-white/40">{t('loading', language)}</p>
+        <div className="w-8 h-8 border-2 border-[#D4A853]/30 border-t-[#D4A853] rounded-full animate-spin" />
       </div>
     );
   }
@@ -96,11 +102,7 @@ export default function ProductDetailScreen() {
     <div className="animated-bg min-h-screen pb-24">
       <div className="max-w-md mx-auto px-4 pt-4">
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between mb-6"
-        >
+        <div className="flex items-center justify-between mb-6">
           <button onClick={goBack} className="p-2 rounded-full glass-card" aria-label="Back">
             <ArrowLeft size={20} className="text-emerald-400" />
           </button>
@@ -113,21 +115,16 @@ export default function ProductDetailScreen() {
               <Trash2 size={18} className="text-red-400" />
             </button>
           </div>
-        </motion.div>
+        </div>
 
         {/* Info section */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="glass-card-strong p-6 mb-6"
-        >
+        <div className="glass-card-strong p-6 mb-6">
           <div className="grid grid-cols-2 gap-4">
             <div className="flex items-center gap-2">
               <Tag size={14} className="text-white/40" />
               <div>
                 <p className="text-[10px] text-white/40">{t('category', language)}</p>
-                <p className="text-sm font-medium">{getCategoryName(product.categoryId)}</p>
+                <p className="text-sm font-medium">{categoryMap.get(product.categoryId) || ''}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -174,15 +171,10 @@ export default function ProductDetailScreen() {
               <span className="text-xs text-white/60">{product.lowStockThreshold}</span>
             </div>
           </div>
-        </motion.div>
+        </div>
 
         {/* Action buttons */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="flex gap-3 mb-6"
-        >
+        <div className="flex gap-3 mb-6">
           <button
             onClick={() => handleStockOperation('STOCK_IN')}
             className="flex-1 neon-btn py-3 text-xs font-semibold text-center"
@@ -204,14 +196,10 @@ export default function ProductDetailScreen() {
           >
             {t('instantSell', language)}
           </button>
-        </motion.div>
+        </div>
 
         {/* Transaction history */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-        >
+        <div>
           <h3 className="text-sm font-semibold mb-3">{t('history', language)}</h3>
           <div className="space-y-2 max-h-60 overflow-y-auto">
             {transactions.length === 0 ? (
@@ -239,36 +227,44 @@ export default function ProductDetailScreen() {
               ))
             )}
           </div>
-        </motion.div>
+        </div>
       </div>
 
       {/* Delete confirmation dialog */}
-      {showDeleteDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <AnimatePresence>
+        {showDeleteDialog && (
           <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="glass-card-strong p-6 mx-4 max-w-sm w-full"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
           >
-            <h3 className="text-lg font-bold mb-2">{t('areYouSure', language)}</h3>
-            <p className="text-sm text-white/60 mb-6">{t('thisActionCannot', language)}</p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowDeleteDialog(false)}
-                className="flex-1 neon-btn py-2 text-sm font-semibold"
-              >
-                {t('cancel', language)}
-              </button>
-              <button
-                onClick={handleDelete}
-                className="flex-1 py-2 text-sm font-semibold rounded-xl bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30 transition-colors"
-              >
-                {t('delete', language)}
-              </button>
-            </div>
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="glass-card-strong p-6 mx-4 max-w-sm w-full"
+            >
+              <h3 className="text-lg font-bold mb-2">{t('areYouSure', language)}</h3>
+              <p className="text-sm text-white/60 mb-6">{t('thisActionCannot', language)}</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDeleteDialog(false)}
+                  className="flex-1 neon-btn py-2 text-sm font-semibold"
+                >
+                  {t('cancel', language)}
+                </button>
+                <button
+                  onClick={handleDelete}
+                  className="flex-1 py-2 text-sm font-semibold rounded-xl bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30 transition-colors"
+                >
+                  {t('delete', language)}
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
     </div>
   );
 }

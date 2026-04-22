@@ -1,15 +1,81 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo, memo, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { getDashboard } from '@/lib/supabase-service';
+import { invalidateCache, cacheKeys } from '@/lib/cache';
 import { DashboardStats, Category, Product } from '@/lib/types';
-import { motion } from 'framer-motion';
 import { Search, Plus, Package, AlertTriangle, ArrowLeftRight, IndianRupee, User, ChevronRight, TrendingUp, BarChart3 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Bar, BarChart, XAxis, YAxis, CartesianGrid, Cell, Pie, PieChart as RechartsPieChart, ResponsiveContainer } from 'recharts';
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
+import dynamic from 'next/dynamic';
+
+// Lazy load recharts - saves ~200KB from initial bundle
+const LazyBarChart = dynamic(
+  () => import('recharts').then(mod => {
+    const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell, ResponsiveContainer } = mod;
+    return function BarChartComponent({ data, config }: { data: SaleOverviewItem[]; config: ChartConfig }) {
+      return (
+        <ResponsiveContainer width="100%" height={180}>
+          <BarChart data={data} margin={{ top: 5, right: 5, left: -15, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+            <XAxis
+              dataKey="label"
+              tickLine={false}
+              axisLine={false}
+              tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 10 }}
+            />
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 10 }}
+              tickFormatter={(val: number) => `₹${val >= 1000 ? `${(val/1000).toFixed(0)}k` : val}`}
+            />
+            <Bar dataKey="sales" radius={[4, 4, 0, 0]} maxBarSize={28}>
+              {data.map((_entry, index) => (
+                <Cell
+                  key={`cell-${index}`}
+                  fill={index === data.length - 1 ? '#D4A853' : 'rgba(212,168,83,0.4)'}
+                />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      );
+    };
+  }),
+  { ssr: false, loading: () => <div className="h-[180px] flex items-center justify-center"><div className="w-6 h-6 border-2 border-[#D4A853]/30 border-t-[#D4A853] rounded-full animate-spin" /></div> }
+);
+
+const LazyPieChart = dynamic(
+  () => import('recharts').then(mod => {
+    const { PieChart, Pie, Cell, ResponsiveContainer } = mod;
+    return function PieChartComponent({ data, colors }: { data: StockOverviewItem[]; colors: string[] }) {
+      return (
+        <ResponsiveContainer width="100%" height={200}>
+          <PieChart>
+            <Pie
+              data={data}
+              dataKey="quantity"
+              nameKey="category"
+              cx="50%"
+              cy="50%"
+              outerRadius={75}
+              innerRadius={40}
+              strokeWidth={2}
+              stroke="rgba(10,10,30,0.8)"
+            >
+              {data.map((_entry, index) => (
+                <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
+              ))}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+      );
+    };
+  }),
+  { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><div className="w-6 h-6 border-2 border-[#D4A853]/30 border-t-[#D4A853] rounded-full animate-spin" /></div> }
+);
 
 const defaultCategories = [
   { name: 'Mobile', image: '/categories/mobile.png', emoji: '📱' },
@@ -34,28 +100,6 @@ const defaultCategories = [
   { name: 'Refrigerator', image: '/categories/refrigerator.png', emoji: '❄️' },
 ];
 
-const saleChartConfig: ChartConfig = {
-  sales: {
-    label: 'Sales (₹)',
-    color: '#D4A853',
-  },
-  quantity: {
-    label: 'Items Sold',
-    color: '#A07C3E',
-  },
-};
-
-const stockChartConfig: ChartConfig = {
-  quantity: {
-    label: 'Stock Qty',
-    color: '#F5DEB3',
-  },
-  value: {
-    label: 'Value (₹)',
-    color: '#D4A853',
-  },
-};
-
 const PIE_COLORS = ['#D4A853', '#A07C3E', '#F5DEB3', '#ff6b00', '#ff006e', '#ffd700', '#00e5ff', '#e040fb', '#76ff03', '#ff9100', '#f50057', '#ffea00', '#18ffff', '#d500f9', '#64dd17', '#ff3d00', '#c51162', '#aeea00', '#00b8d4'];
 
 interface SaleOverviewItem {
@@ -71,23 +115,80 @@ interface StockOverviewItem {
   value: number;
 }
 
+// Memoized category card component
+const CategoryCard = memo(function CategoryCard({ cat, defaultCat, onTap }: { cat: Category; defaultCat: typeof defaultCategories[0] | undefined; onTap: () => void }) {
+  const imgSrc = cat.image?.startsWith('/categories/') ? cat.image : (defaultCat?.image || '');
+  return (
+    <button
+      onClick={onTap}
+      className="glass-card category-card p-3 flex flex-col items-center gap-2"
+    >
+      <div className="category-img-wrapper w-14 h-14 bg-white/5 flex items-center justify-center">
+        {imgSrc ? (
+          <>
+            <img src={imgSrc} alt={cat.name} className="w-full h-full object-cover" loading="lazy" />
+            <div className="category-img-overlay" />
+          </>
+        ) : (
+          <span className="text-2xl">{cat.image || '📦'}</span>
+        )}
+      </div>
+      <span className="text-[11px] font-medium text-white/90 truncate w-full text-center leading-tight">
+        {cat.name}
+      </span>
+      <span className="text-[10px] text-emerald-400/70 font-medium">
+        {cat._count?.products ?? 0} items
+      </span>
+    </button>
+  );
+});
+
+// ✅ Memoized stat card to prevent re-renders
+const StatCard = memo(function StatCard({ icon: Icon, label, value, iconColor, className }: {
+  icon: React.ComponentType<{ size: number; className?: string }>;
+  label: string;
+  value: string;
+  iconColor: string;
+  className: string;
+}) {
+  return (
+    <div className={`${className} rounded-2xl p-4`}>
+      <div className="flex items-center gap-2 mb-1">
+        <Icon size={16} className={iconColor} />
+        <span className="text-xs text-white/60">{label}</span>
+      </div>
+      <p className={`text-2xl font-bold ${iconColor}`}>
+        {value}
+      </p>
+    </div>
+  );
+});
+
 export default function DashboardScreen() {
-  const {
-    user, language, shopName, navigateTo,
-    setSelectedCategoryId, setSearchQuery, searchQuery,
-    categories, setCategories,
-  } = useAppStore();
+  const user = useAppStore(s => s.user);
+  const language = useAppStore(s => s.language);
+  const shopName = useAppStore(s => s.shopName);
+  const navigateTo = useAppStore(s => s.navigateTo);
+  const setSelectedCategoryId = useAppStore(s => s.setSelectedCategoryId);
+  const setSearchQuery = useAppStore(s => s.setSearchQuery);
+  const searchQuery = useAppStore(s => s.searchQuery);
+  const categories = useAppStore(s => s.categories);
+  const setCategories = useAppStore(s => s.setCategories);
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
   const [saleOverview, setSaleOverview] = useState<SaleOverviewItem[]>([]);
   const [stockOverview, setStockOverview] = useState<StockOverviewItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const isFetchingRef = useRef(false);
 
-  const fetchDashboard = useCallback(async () => {
-    if (!user?.id) return;
+  // ✅ Stale-while-revalidate: Show cached data immediately, fetch fresh in background
+  const fetchDashboard = useCallback(async (isBackground = false) => {
+    if (!user?.id || isFetchingRef.current) return;
+
+    isFetchingRef.current = true;
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       const data = await getDashboard(user.id);
       setStats(data.stats);
       setLowStockProducts(data.lowStockProducts || []);
@@ -97,47 +198,84 @@ export default function DashboardScreen() {
         setCategories(data.categories);
       }
     } catch {
-      toast.error(t('error', language));
+      if (!isBackground) toast.error(t('error', language));
     } finally {
       setLoading(false);
+      isFetchingRef.current = false;
     }
-  }, [user?.id, language, setCategories]);
+  }, [user?.id]);
 
+  // Initial load
   useEffect(() => {
     fetchDashboard();
   }, [fetchDashboard]);
 
-  const handleCategoryTap = (cat: Category) => {
+  // ✅ Background refresh on window focus (stale-while-revalidate)
+  useEffect(() => {
+    const handleFocus = () => {
+      invalidateCache(cacheKeys.dashboard(user?.id || ''));
+      fetchDashboard(true);
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [user?.id, fetchDashboard]);
+
+  const handleCategoryTap = useCallback((cat: Category) => {
     setSelectedCategoryId(cat.id);
     navigateTo('category-detail');
-  };
+  }, [setSelectedCategoryId, navigateTo]);
 
-  const handleSearch = (value: string) => {
+  const handleSearch = useCallback((value: string) => {
     setSearchQuery(value);
-  };
+  }, [setSearchQuery]);
 
-  const handleSearchSubmit = () => {
+  const handleSearchSubmit = useCallback(() => {
     if (searchQuery.trim()) {
       navigateTo('product-list');
     }
-  };
+  }, [searchQuery, navigateTo]);
 
-  const displayCategories = categories.length > 0 ? categories : [];
+  // Memoize computed values
+  const totalSaleAmount = useMemo(() => saleOverview.reduce((sum, d) => sum + d.sales, 0), [saleOverview]);
+  const totalSoldItems = useMemo(() => saleOverview.reduce((sum, d) => sum + d.quantity, 0), [saleOverview]);
+  const totalStockQty = useMemo(() => stockOverview.reduce((sum, d) => sum + d.quantity, 0), [stockOverview]);
+  const totalStockVal = useMemo(() => stockOverview.reduce((sum, d) => sum + d.value, 0), [stockOverview]);
 
-  const totalSaleAmount = saleOverview.reduce((sum, d) => sum + d.sales, 0);
-  const totalSoldItems = saleOverview.reduce((sum, d) => sum + d.quantity, 0);
-  const totalStockQty = stockOverview.reduce((sum, d) => sum + d.quantity, 0);
-  const totalStockVal = stockOverview.reduce((sum, d) => sum + d.value, 0);
+  // Precompute defaultCategory lookup - stable reference
+  const defaultCatMap = useMemo(() => {
+    const map = new Map<string, typeof defaultCategories[0]>();
+    for (const dc of defaultCategories) {
+      map.set(dc.name, dc);
+    }
+    return map;
+  }, []);
+
+  // ✅ Memoize stat values to prevent string recreation
+  const statValues = useMemo(() => ({
+    totalItems: loading ? '...' : String(stats?.totalItems ?? 0),
+    lowItems: loading ? '...' : String(stats?.lowItems ?? 0),
+    todayTransactions: loading ? '...' : String(stats?.todayTransactions ?? 0),
+    stockValue: loading ? '...' : `₹${(stats?.stockValue ?? 0).toLocaleString()}`,
+  }), [loading, stats]);
+
+  // ✅ Memoize i18n labels
+  const labels = useMemo(() => ({
+    totalItems: t('totalItems', language),
+    lowItems: t('lowItems', language),
+    todayTransaction: t('todayTransaction', language),
+    stockValue: t('stockValue', language),
+    searchProducts: t('searchProducts', language),
+    categories: t('categories', language),
+    addCategory: t('addCategory', language),
+    lowStockAlert: t('lowStockAlert', language),
+    lowStockMsg: t('lowStockMsg', language).toLowerCase(),
+  }), [language]);
 
   return (
     <div className="animated-bg min-h-screen pb-24">
       <div className="max-w-md mx-auto px-4 pt-4">
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between mb-6"
-        >
+        <div className="flex items-center justify-between mb-6">
           <button
             onClick={() => navigateTo('profile')}
             className="p-2 rounded-full glass-card"
@@ -153,77 +291,38 @@ export default function DashboardScreen() {
           >
             <Plus size={20} className="text-emerald-400" />
           </button>
-        </motion.div>
+        </div>
 
         {/* Search bar */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="relative mb-6"
-        >
+        <div className="relative mb-6">
           <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearchSubmit()}
-            placeholder={t('searchProducts', language)}
+            placeholder={labels.searchProducts}
             className="glass-input w-full pl-11 pr-4 py-3 text-sm"
           />
-        </motion.div>
+        </div>
 
         {/* Stats section */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="grid grid-cols-2 gap-3 mb-6"
-        >
-          <div className="stat-card-green rounded-2xl p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Package size={16} className="text-green-400" />
-              <span className="text-xs text-white/60">{t('totalItems', language)}</span>
-            </div>
-            <p className="text-2xl font-bold text-green-400">
-              {loading ? '...' : (stats?.totalItems ?? 0)}
-            </p>
-          </div>
-          <div className={`rounded-2xl p-4 ${(stats?.lowItems ?? 0) > 0 ? 'stat-card-orange' : 'stat-card-green'}`}>
-            <div className="flex items-center gap-2 mb-1">
-              <AlertTriangle size={16} className={(stats?.lowItems ?? 0) > 0 ? 'text-orange-400' : 'text-green-400'} />
-              <span className="text-xs text-white/60">{t('lowItems', language)}</span>
-            </div>
-            <p className={`text-2xl font-bold ${(stats?.lowItems ?? 0) > 0 ? 'text-orange-400' : 'text-green-400'}`}>
-              {loading ? '...' : (stats?.lowItems ?? 0)}
-            </p>
-          </div>
-          <div className="stat-card-blue rounded-2xl p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <ArrowLeftRight size={16} className="text-emerald-400" />
-              <span className="text-xs text-white/60">{t('todayTransaction', language)}</span>
-            </div>
-            <p className="text-2xl font-bold text-emerald-400">
-              {loading ? '...' : (stats?.todayTransactions ?? 0)}
-            </p>
-          </div>
-          <div className="stat-card-purple rounded-2xl p-4">
-            <div className="flex items-center gap-2 mb-1">
-              <IndianRupee size={16} className="text-emerald-600" />
-              <span className="text-xs text-white/60">{t('stockValue', language)}</span>
-            </div>
-            <p className="text-2xl font-bold text-emerald-600">
-              {loading ? '...' : `₹${(stats?.stockValue ?? 0).toLocaleString()}`}
-            </p>
-          </div>
-        </motion.div>
+        <div className="grid grid-cols-2 gap-3 mb-6">
+          <StatCard icon={Package} label={labels.totalItems} value={statValues.totalItems} iconColor="text-green-400" className="stat-card-green" />
+          <StatCard
+            icon={AlertTriangle}
+            label={labels.lowItems}
+            value={statValues.lowItems}
+            iconColor={(stats?.lowItems ?? 0) > 0 ? 'text-orange-400' : 'text-green-400'}
+            className={(stats?.lowItems ?? 0) > 0 ? 'stat-card-orange' : 'stat-card-green'}
+          />
+          <StatCard icon={ArrowLeftRight} label={labels.todayTransaction} value={statValues.todayTransactions} iconColor="text-emerald-400" className="stat-card-blue" />
+          <StatCard icon={IndianRupee} label={labels.stockValue} value={statValues.stockValue} iconColor="text-emerald-600" className="stat-card-purple" />
+        </div>
 
         {/* Low stock alert */}
         {lowStockProducts.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.3 }}
+          <div
             className="glass-card p-4 mb-6 border-orange-500/30"
             onClick={() => navigateTo('product-list')}
             role="button"
@@ -233,83 +332,51 @@ export default function DashboardScreen() {
                 <AlertTriangle size={20} className="text-orange-400" />
               </div>
               <div className="flex-1">
-                <p className="text-sm font-semibold text-orange-400">{t('lowStockAlert', language)}</p>
+                <p className="text-sm font-semibold text-orange-400">{labels.lowStockAlert}</p>
                 <p className="text-xs text-white/60">
-                  {lowStockProducts.length} {t('lowStockMsg', language).toLowerCase()}
+                  {lowStockProducts.length} {labels.lowStockMsg}
                 </p>
               </div>
               <ChevronRight size={18} className="text-white/40" />
             </div>
-          </motion.div>
+          </div>
         )}
 
         {/* Categories section */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-        >
+        <div>
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold">{t('categories', language)}</h2>
+            <h2 className="text-lg font-bold">{labels.categories}</h2>
             <button
               onClick={() => navigateTo('add-category')}
               className="neon-btn px-3 py-1.5 text-xs font-semibold"
             >
-              + {t('addCategory', language)}
+              + {labels.addCategory}
             </button>
           </div>
 
-          {displayCategories.length > 0 ? (
+          {categories.length > 0 ? (
             <div className="grid grid-cols-3 gap-3">
-              {displayCategories.map((cat, idx) => {
-                const defaultCat = defaultCategories.find(dc => dc.name === cat.name);
-                const imgSrc = cat.image?.startsWith('/categories/') ? cat.image : (defaultCat?.image || '');
-                return (
-                  <motion.button
-                    key={cat.id}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: Math.min(0.03 * idx, 0.5) }}
-                    onClick={() => handleCategoryTap(cat)}
-                    className="glass-card glass-shine category-card p-3 flex flex-col items-center gap-2"
-                  >
-                    <div className="category-img-wrapper w-14 h-14 bg-white/5 flex items-center justify-center">
-                      {imgSrc ? (
-                        <>
-                          <img src={imgSrc} alt={cat.name} className="w-full h-full object-cover" />
-                          <div className="category-img-overlay" />
-                        </>
-                      ) : (
-                        <span className="text-2xl">{cat.image || '📦'}</span>
-                      )}
-                    </div>
-                    <span className="text-[11px] font-medium text-white/90 truncate w-full text-center leading-tight">
-                      {cat.name}
-                    </span>
-                    <span className="text-[10px] text-emerald-400/70 font-medium">
-                      {cat._count?.products ?? 0} items
-                    </span>
-                  </motion.button>
-                );
-              })}
+              {categories.map((cat) => (
+                <CategoryCard
+                  key={cat.id}
+                  cat={cat}
+                  defaultCat={defaultCatMap.get(cat.name)}
+                  onTap={() => handleCategoryTap(cat)}
+                />
+              ))}
             </div>
           ) : (
             <div className="grid grid-cols-3 gap-3">
-              {defaultCategories.map((cat, idx) => (
-                <motion.div
+              {defaultCategories.map((cat) => (
+                <div
                   key={cat.name}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: Math.min(0.03 * idx, 0.5) }}
-                  onClick={() => {
-                    navigateTo('add-category');
-                  }}
-                  className="glass-card glass-shine category-card p-3 flex flex-col items-center gap-2 cursor-pointer"
+                  onClick={() => navigateTo('add-category')}
+                  className="glass-card category-card p-3 flex flex-col items-center gap-2 cursor-pointer"
                 >
                   <div className="category-img-wrapper w-14 h-14 bg-white/5 flex items-center justify-center">
                     {cat.image ? (
                       <>
-                        <img src={cat.image} alt={cat.name} className="w-full h-full object-cover" />
+                        <img src={cat.image} alt={cat.name} className="w-full h-full object-cover" loading="lazy" />
                         <div className="category-img-overlay" />
                       </>
                     ) : (
@@ -320,26 +387,20 @@ export default function DashboardScreen() {
                     {cat.name}
                   </span>
                   <span className="text-[10px] text-emerald-400/70 font-medium">0 items</span>
-                </motion.div>
+                </div>
               ))}
             </div>
           )}
-        </motion.div>
+        </div>
 
         {/* Sale Overview Section */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="mt-8"
-        >
+        <div className="mt-8">
           <div className="flex items-center gap-2 mb-4">
             <TrendingUp size={18} className="text-emerald-400" />
             <h2 className="text-lg font-bold">Sale Overview</h2>
           </div>
 
           <div className="glass-card-strong p-4">
-            {/* Summary stats */}
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(212,168,83,0.12), rgba(180,140,60,0.05))', border: '1px solid rgba(212,168,83,0.2)' }}>
                 <p className="text-[10px] text-white/50 mb-1">7-Day Sales</p>
@@ -351,62 +412,24 @@ export default function DashboardScreen() {
               </div>
             </div>
 
-            {/* Bar chart */}
             {saleOverview.length > 0 ? (
-              <ChartContainer config={saleChartConfig} className="h-[180px] w-full">
-                <BarChart data={saleOverview} margin={{ top: 5, right: 5, left: -15, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                  <XAxis
-                    dataKey="label"
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 10 }}
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 10 }}
-                    tickFormatter={(val: number) => `₹${val >= 1000 ? `${(val/1000).toFixed(0)}k` : val}`}
-                  />
-                  <ChartTooltip
-                    content={<ChartTooltipContent />}
-                  />
-                  <Bar
-                    dataKey="sales"
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={28}
-                  >
-                    {saleOverview.map((_entry, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={index === saleOverview.length - 1 ? '#D4A853' : 'rgba(212,168,83,0.4)'}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ChartContainer>
+              <LazyBarChart data={saleOverview} config={saleChartConfig} />
             ) : (
               <div className="h-[120px] flex items-center justify-center">
                 <p className="text-xs text-white/30">No sales data yet</p>
               </div>
             )}
           </div>
-        </motion.div>
+        </div>
 
         {/* Stock Overview Section */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
-          className="mt-6"
-        >
+        <div className="mt-6">
           <div className="flex items-center gap-2 mb-4">
             <BarChart3 size={18} className="text-green-400" />
             <h2 className="text-lg font-bold">Stock Overview</h2>
           </div>
 
           <div className="glass-card-strong p-4">
-            {/* Summary stats */}
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(245,222,179,0.12), rgba(200,160,80,0.05))', border: '1px solid rgba(245,222,179,0.2)' }}>
                 <p className="text-[10px] text-white/50 mb-1">Total Stock</p>
@@ -418,34 +441,9 @@ export default function DashboardScreen() {
               </div>
             </div>
 
-            {/* Pie chart for stock distribution */}
             {stockOverview.length > 0 ? (
               <>
-                <ChartContainer config={stockChartConfig} className="h-[200px] w-full">
-                  <RechartsPieChart>
-                    <ChartTooltip
-                      content={<ChartTooltipContent />}
-                    />
-                    <Pie
-                      data={stockOverview}
-                      dataKey="quantity"
-                      nameKey="category"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={75}
-                      innerRadius={40}
-                      strokeWidth={2}
-                      stroke="rgba(10,10,30,0.8)"
-                    >
-                      {stockOverview.map((_entry, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={PIE_COLORS[index % PIE_COLORS.length]}
-                        />
-                      ))}
-                    </Pie>
-                  </RechartsPieChart>
-                </ChartContainer>
+                <LazyPieChart data={stockOverview} colors={PIE_COLORS} />
 
                 {/* Legend */}
                 <div className="mt-3 max-h-36 overflow-y-auto space-y-1.5">
@@ -472,8 +470,16 @@ export default function DashboardScreen() {
               </div>
             )}
           </div>
-        </motion.div>
+        </div>
       </div>
     </div>
   );
 }
+
+// Chart configs - outside component to avoid recreation
+const saleChartConfig = {
+  sales: { label: 'Sales (₹)', color: '#D4A853' },
+  quantity: { label: 'Items Sold', color: '#A07C3E' },
+};
+
+type ChartConfig = Record<string, { label: string; color: string }>;

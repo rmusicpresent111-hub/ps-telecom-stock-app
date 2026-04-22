@@ -1,34 +1,34 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, lazy, Suspense, useMemo } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Screen } from '@/lib/types';
 import { t } from '@/lib/i18n';
 import { LogOut, X } from 'lucide-react';
-
-// Screens
-import SplashScreen from '@/components/screens/SplashScreen';
-import OnboardingScreen from '@/components/screens/OnboardingScreen';
-import LanguageScreen from '@/components/screens/LanguageScreen';
-import LoginScreen from '@/components/screens/LoginScreen';
-import SignupScreen from '@/components/screens/SignupScreen';
-import ForgotPasswordScreen from '@/components/screens/ForgotPasswordScreen';
-import DashboardScreen from '@/components/screens/DashboardScreen';
-import CategoryDetailScreen from '@/components/screens/CategoryDetailScreen';
-import AddProductScreen from '@/components/screens/AddProductScreen';
-import ProductListScreen from '@/components/screens/ProductListScreen';
-import ProductDetailScreen from '@/components/screens/ProductDetailScreen';
-import StockOperationScreen from '@/components/screens/StockOperationScreen';
-import AddCategoryScreen from '@/components/screens/AddCategoryScreen';
-import ProfitScreen from '@/components/screens/ProfitScreen';
-import HistoryScreen from '@/components/screens/HistoryScreen';
-import ProfileScreen from '@/components/screens/ProfileScreen';
-import ReportsScreen from '@/components/screens/ReportsScreen';
-import DailyBookScreen from '@/components/screens/DailyBookScreen';
-import WelcomeScreen from '@/components/screens/WelcomeScreen';
-import TutorialScreen from '@/components/screens/TutorialScreen';
 import BottomNav from '@/components/BottomNav';
+
+// Lazy load ALL screen components - only loads what's needed
+const SplashScreen = lazy(() => import('@/components/screens/SplashScreen'));
+const OnboardingScreen = lazy(() => import('@/components/screens/OnboardingScreen'));
+const LanguageScreen = lazy(() => import('@/components/screens/LanguageScreen'));
+const LoginScreen = lazy(() => import('@/components/screens/LoginScreen'));
+const SignupScreen = lazy(() => import('@/components/screens/SignupScreen'));
+const ForgotPasswordScreen = lazy(() => import('@/components/screens/ForgotPasswordScreen'));
+const DashboardScreen = lazy(() => import('@/components/screens/DashboardScreen'));
+const CategoryDetailScreen = lazy(() => import('@/components/screens/CategoryDetailScreen'));
+const AddProductScreen = lazy(() => import('@/components/screens/AddProductScreen'));
+const ProductListScreen = lazy(() => import('@/components/screens/ProductListScreen'));
+const ProductDetailScreen = lazy(() => import('@/components/screens/ProductDetailScreen'));
+const StockOperationScreen = lazy(() => import('@/components/screens/StockOperationScreen'));
+const AddCategoryScreen = lazy(() => import('@/components/screens/AddCategoryScreen'));
+const ProfitScreen = lazy(() => import('@/components/screens/ProfitScreen'));
+const HistoryScreen = lazy(() => import('@/components/screens/HistoryScreen'));
+const ProfileScreen = lazy(() => import('@/components/screens/ProfileScreen'));
+const ReportsScreen = lazy(() => import('@/components/screens/ReportsScreen'));
+const DailyBookScreen = lazy(() => import('@/components/screens/DailyBookScreen'));
+const WelcomeScreen = lazy(() => import('@/components/screens/WelcomeScreen'));
+const TutorialScreen = lazy(() => import('@/components/screens/TutorialScreen'));
 
 const screenComponents: Record<Screen, React.ComponentType> = {
   splash: SplashScreen,
@@ -56,16 +56,34 @@ const screenComponents: Record<Screen, React.ComponentType> = {
   tutorial: TutorialScreen,
 };
 
-const showBottomNavScreens: Screen[] = [
+// ✅ Use Set for O(1) lookup instead of Array.includes()
+const showBottomNavSet = new Set<Screen>([
   'dashboard',
   'product-list',
   'profit',
   'history',
   'profile',
-];
+]);
+
+// Minimal loading fallback - ultra lightweight
+function ScreenLoader() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#0B0E18]">
+      <div className="w-8 h-8 border-2 border-[#D4A853]/30 border-t-[#D4A853] rounded-full animate-spin" />
+    </div>
+  );
+}
+
+// ✅ Ultra-fast transition config - minimal animation for speed
+const fastTransition = { duration: 0.1 };
 
 export default function Home() {
-  const { currentScreen, theme, isAuthenticated, language, goBack, previousScreens } = useAppStore();
+  const currentScreen = useAppStore(s => s.currentScreen);
+  const theme = useAppStore(s => s.theme);
+  const isAuthenticated = useAppStore(s => s.isAuthenticated);
+  const language = useAppStore(s => s.language);
+  const goBack = useAppStore(s => s.goBack);
+  const previousScreens = useAppStore(s => s.previousScreens);
   const [showExitDialog, setShowExitDialog] = useState(false);
 
   // Apply theme class to document
@@ -80,7 +98,7 @@ export default function Home() {
     }
   }, [theme]);
 
-  // Auto-redirect if authenticated but on auth screens - use resetNavigation to clear history
+  // Auto-redirect if authenticated but on auth screens
   useEffect(() => {
     const authScreens: Screen[] = ['login', 'signup', 'forgot-password'];
     if (isAuthenticated && authScreens.includes(currentScreen)) {
@@ -90,23 +108,17 @@ export default function Home() {
 
   // Handle browser back button / popstate
   useEffect(() => {
-    // Push initial state so we can intercept back navigation
     window.history.pushState({ appState: true }, '');
 
     const handlePopState = () => {
       const state = useAppStore.getState();
-      // If on dashboard (home page), show exit confirmation
       if (state.currentScreen === 'dashboard') {
-        // Push state back so we stay on the page
         window.history.pushState({ appState: true }, '');
         setShowExitDialog(true);
       } else if (state.previousScreens.length > 0) {
-        // Go back to previous screen in our app
         state.goBack();
-        // Push state back so we can intercept again
         window.history.pushState({ appState: true }, '');
       } else {
-        // No previous screen in stack, go to dashboard (home)
         state.resetNavigation('dashboard');
         window.history.pushState({ appState: true }, '');
       }
@@ -116,7 +128,7 @@ export default function Home() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Also handle beforeunload for tab close
+  // Handle beforeunload for tab close
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault();
@@ -126,7 +138,6 @@ export default function Home() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
-  // Custom back handler - shows exit dialog on dashboard, goes back otherwise
   const handleAppBack = useCallback(() => {
     const state = useAppStore.getState();
     if (state.currentScreen === 'dashboard') {
@@ -134,62 +145,54 @@ export default function Home() {
     } else if (state.previousScreens.length > 0) {
       state.goBack();
     } else {
-      // No previous screen, go to dashboard
       state.resetNavigation('dashboard');
     }
   }, []);
 
-  // Expose the custom back handler globally so screens can use it
   useEffect(() => {
     (window as unknown as Record<string, unknown>).__appGoBack = handleAppBack;
   }, [handleAppBack]);
 
-  const handleExitConfirm = () => {
+  const handleExitConfirm = useCallback(() => {
     setShowExitDialog(false);
-    // Try to close the window/tab
     window.close();
-    // If window.close() doesn't work (most browsers block it), navigate to about:blank
     window.location.href = 'about:blank';
-  };
+  }, []);
 
-  const handleExitCancel = () => {
+  const handleExitCancel = useCallback(() => {
     setShowExitDialog(false);
-  };
+  }, []);
 
   const CurrentScreenComponent = screenComponents[currentScreen] || SplashScreen;
-  const showBottomNav = showBottomNavScreens.includes(currentScreen);
+  const showBottomNav = showBottomNavSet.has(currentScreen);
 
-  // i18n for exit dialog
-  const exitTitle = language === 'bn' ? 'অ্যাপ থেকে বের হবেন?' : language === 'hi' ? 'ऐप से बाहर जाएं?' : 'Exit App?';
-  const exitDesc = language === 'bn' ? 'আপনি কি নিশ্চিত PS TELECOM থেকে বের হতে চান?' : language === 'hi' ? 'क्या आप PS TELECOM से बाहर जाना चाहते हैं?' : 'Are you sure you want to exit PS TELECOM?';
-  const exitBtn = language === 'bn' ? 'বের হন' : language === 'hi' ? 'बाहर जाएं' : 'Exit';
-  const cancelBtn = t('cancel', language);
+  // ✅ Memoize i18n strings
+  const exitTexts = useMemo(() => ({
+    title: language === 'bn' ? 'অ্যাপ থেকে বের হবেন?' : language === 'hi' ? 'ऐप से बाहर जाएं?' : 'Exit App?',
+    desc: language === 'bn' ? 'আপনি কি নিশ্চিত PS TELECOM থেকে বের হতে চান?' : language === 'hi' ? 'क्या आप PS TELECOM से बाहर जाना चाहते हैं?' : 'Are you sure you want to exit PS TELECOM?',
+    exitBtn: language === 'bn' ? 'বের হন' : language === 'hi' ? 'बाहर जाएं' : 'Exit',
+    cancelBtn: t('cancel', language),
+  }), [language]);
 
   return (
     <div className={`min-h-screen ${theme === 'light' ? 'light-theme' : ''}`}>
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={currentScreen}
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -20 }}
-          transition={{ duration: 0.2, ease: 'easeInOut' }}
-          className="min-h-screen"
-        >
-          <CurrentScreenComponent />
-        </motion.div>
-      </AnimatePresence>
+      <Suspense fallback={<ScreenLoader />}>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentScreen}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={fastTransition}
+            className="min-h-screen"
+          >
+            <CurrentScreenComponent />
+          </motion.div>
+        </AnimatePresence>
+      </Suspense>
 
       {/* Bottom Navigation */}
-      {showBottomNav && (
-        <motion.div
-          initial={{ y: 50, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.3, duration: 0.3 }}
-        >
-          <BottomNav />
-        </motion.div>
-      )}
+      {showBottomNav && <BottomNav />}
 
       {/* Exit Confirmation Dialog */}
       <AnimatePresence>
@@ -201,10 +204,8 @@ export default function Home() {
             className="fixed inset-0 z-[100] flex items-center justify-center p-6"
             onClick={handleExitCancel}
           >
-            {/* Backdrop */}
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <div className="absolute inset-0 bg-black/60" />
 
-            {/* Dialog */}
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -213,7 +214,6 @@ export default function Home() {
               onClick={(e) => e.stopPropagation()}
               className="glass-card-strong p-6 w-full max-w-sm relative z-10"
             >
-              {/* Close button */}
               <button
                 onClick={handleExitCancel}
                 className="absolute top-3 right-3 p-1.5 rounded-full hover:bg-white/10 transition-colors"
@@ -221,26 +221,19 @@ export default function Home() {
                 <X size={16} className="text-white/40" />
               </button>
 
-              {/* Icon */}
               <div className="w-14 h-14 rounded-full bg-red-500/15 flex items-center justify-center mx-auto mb-4">
                 <LogOut size={24} className="text-red-400" />
               </div>
 
-              {/* Title */}
-              <h3 className="text-lg font-bold text-center mb-2">{exitTitle}</h3>
+              <h3 className="text-lg font-bold text-center mb-2">{exitTexts.title}</h3>
+              <p className="text-sm text-white/50 text-center mb-6">{exitTexts.desc}</p>
 
-              {/* Description */}
-              <p className="text-sm text-white/50 text-center mb-6">
-                {exitDesc}
-              </p>
-
-              {/* Buttons */}
               <div className="flex gap-3">
                 <button
                   onClick={handleExitCancel}
                   className="flex-1 glass-card py-3 text-sm font-semibold text-white/70 rounded-xl hover:bg-white/10 transition-colors"
                 >
-                  {cancelBtn}
+                  {exitTexts.cancelBtn}
                 </button>
                 <button
                   onClick={handleExitConfirm}
@@ -250,7 +243,7 @@ export default function Home() {
                     border: '1px solid rgba(220,38,38,0.5)',
                   }}
                 >
-                  {exitBtn}
+                  {exitTexts.exitBtn}
                 </button>
               </div>
             </motion.div>
