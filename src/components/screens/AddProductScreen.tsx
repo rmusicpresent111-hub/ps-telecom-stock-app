@@ -81,19 +81,8 @@ export default function AddProductScreen() {
       }
 
       toast.success(isEditing ? t('updated', language) : t('added', language));
-      if (isEditing) {
-        setSelectedProductId(null);
-        goBack();
-      } else {
-        // Clear all fields but keep the selected category
-        setName('');
-        setQuantity('');
-        setBoxNumber('');
-        setPurchasePrice('');
-        setSellingPrice('');
-        setLowStockThreshold('5');
-        // categoryId stays the same - auto selected for next product
-      }
+      setSelectedProductId(null);
+      goBack();
     } catch (error) {
       toast.error((error as Error).message || t('error', language));
     } finally {
