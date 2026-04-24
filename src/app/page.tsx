@@ -8,6 +8,9 @@ import { LogOut, X } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
 import { useBackHandler } from '@/hooks/useBackHandler';
 
+// Initialize Capacitor bridge early (registers native back button at system level)
+import '@/lib/capacitor-init';
+
 // Lazy load ALL screen components - only loads what's needed
 const SplashScreen = lazy(() => import('@/components/screens/SplashScreen'));
 const OnboardingScreen = lazy(() => import('@/components/screens/OnboardingScreen'));
@@ -84,7 +87,17 @@ export default function Home() {
   const language = useAppStore(s => s.language);
 
   // ✅ Navigation Stack + Back Handler (browser, Capacitor, in-app)
-  const { showExitDialog, handleExitConfirm, handleExitCancel } = useBackHandler();
+  const { showExitDialog, handleExitConfirm, handleExitCancel, handleBack } = useBackHandler();
+
+  // ✅ Listen for native Capacitor back button (dispatched by capacitor-init.ts)
+  useEffect(() => {
+    const handleNativeBack = () => {
+      console.log('[Page] Received app:back-button event from Capacitor bridge');
+      handleBack();
+    };
+    window.addEventListener('app:back-button', handleNativeBack);
+    return () => window.removeEventListener('app:back-button', handleNativeBack);
+  }, [handleBack]);
 
   // Apply theme class to document
   useEffect(() => {

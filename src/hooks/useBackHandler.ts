@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { Screen } from '@/lib/types';
 
@@ -20,73 +20,124 @@ interface BackHandlerResult {
 
 export function useBackHandler(): BackHandlerResult {
   const [showExitDialog, setShowExitDialog] = useState(false);
+  const listenerRegisteredRef = useRef(false);
+  const handleBackRef = useRef<() => void>(() => {});
 
+  // The core back-navigation logic
   const handleBack = useCallback(() => {
     const state = useAppStore.getState();
     const { currentScreen, previousScreens } = state;
 
+    console.log('[BackHandler] Back pressed. Current:', currentScreen, 'History:', previousScreens.length);
+
     // Don't handle back on auth/splash screens
     if (AUTH_SCREENS.includes(currentScreen)) {
+      console.log('[BackHandler] Auth screen - ignoring back');
       return;
     }
 
-    // On dashboard or any tab screen with no history → show exit dialog
+    // On dashboard with no history → show exit dialog
     if (currentScreen === 'dashboard' && previousScreens.length === 0) {
+      console.log('[BackHandler] Dashboard + no history → show exit dialog');
       setShowExitDialog(true);
       return;
     }
 
     // On a tab screen (not dashboard) with no history → go to dashboard
     if (TAB_SCREENS.includes(currentScreen) && previousScreens.length === 0) {
+      console.log('[BackHandler] Tab screen + no history → go to dashboard');
       state.resetNavigation('dashboard');
       return;
     }
 
     // Has previous screens → go back in stack
     if (previousScreens.length > 0) {
+      console.log('[BackHandler] Has history → goBack()');
       state.goBack();
       return;
     }
 
     // Fallback: go to dashboard
+    console.log('[BackHandler] Fallback → go to dashboard');
     state.resetNavigation('dashboard');
   }, []);
 
-  // Sync browser history with app navigation
+  // Keep the ref updated so event listeners always use the latest version
+  handleBackRef.current = handleBack;
+
+  // ===== 1. Browser popstate handler (PWA / web) =====
   useEffect(() => {
     // Push initial state so back button doesn't exit immediately
     window.history.pushState({ appState: true, screenIndex: 0 }, '');
 
     const handlePopState = () => {
-      handleBack();
+      console.log('[BackHandler] popstate event fired');
+      handleBackRef.current();
       // Re-push state to prevent actual navigation away
       window.history.pushState({ appState: true }, '');
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [handleBack]);
+  }, []);
 
-  // Handle Capacitor/Android hardware back button
+  // ===== 2. Capacitor / Android hardware back button =====
   useEffect(() => {
+    if (listenerRegisteredRef.current) return;
+
     let cleanup: (() => void) | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
     const setupCapacitorBackButton = async () => {
       try {
-        // Try to use @capacitor/app plugin (proper way for Capacitor 3+)
         const { App } = await import('@capacitor/app');
+        console.log('[BackHandler] @capacitor/app imported successfully');
+
         const handler = await App.addListener('backButton', () => {
-          handleBack();
+          console.log('[BackHandler] Capacitor backButton event fired');
+          handleBackRef.current();
         });
-        cleanup = () => handler.remove();
-      } catch {
-        // Fallback: use Cordova-style backbutton event (for older Capacitor or web)
-        const handleBackButton = (e: Event) => {
-          e.preventDefault();
-          handleBack();
+
+        listenerRegisteredRef.current = true;
+        console.log('[BackHandler] Capacitor backButton listener registered ✅');
+
+        cleanup = () => {
+          handler.remove();
+          listenerRegisteredRef.current = false;
         };
-        document.addEventListener('backbutton', handleBackButton);
-        cleanup = () => document.removeEventListener('backbutton', handleBackButton);
+      } catch (err) {
+        console.warn('[BackHandler] @capacitor/app import failed, trying Cordova fallback:', err);
+
+        // Fallback: Cordova-style backbutton event
+        const handleCordovaBack = (e: Event) => {
+          e.preventDefault();
+          console.log('[BackHandler] Cordova backbutton event fired');
+          handleBackRef.current();
+        };
+
+        document.addEventListener('backbutton', handleCordovaBack, false);
+        cleanup = () => document.removeEventListener('backbutton', handleCordovaBack);
+
+        // Also retry Capacitor import after a delay (bridge might not be ready yet)
+        retryTimer = setTimeout(async () => {
+          try {
+            const { App } = await import('@capacitor/app');
+            const handler = await App.addListener('backButton', () => {
+              console.log('[BackHandler] Capacitor backButton (retry) event fired');
+              handleBackRef.current();
+            });
+            // Remove Cordova fallback since Capacitor is working now
+            document.removeEventListener('backbutton', handleCordovaBack);
+            listenerRegisteredRef.current = true;
+            console.log('[BackHandler] Capacitor backButton listener registered on retry ✅');
+            cleanup = () => {
+              handler.remove();
+              listenerRegisteredRef.current = false;
+            };
+          } catch {
+            console.warn('[BackHandler] Capacitor retry also failed, using Cordova fallback');
+          }
+        }, 3000);
       }
     };
 
@@ -94,14 +145,33 @@ export function useBackHandler(): BackHandlerResult {
 
     return () => {
       cleanup?.();
+      if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [handleBack]);
+  }, []);
 
+  // ===== 3. Keyboard Escape key handler (testing in browser) =====
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        console.log('[BackHandler] Escape key pressed');
+        handleBackRef.current();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // ===== Exit handlers =====
   const handleExitConfirm = useCallback(() => {
+    console.log('[BackHandler] Exit confirmed');
     setShowExitDialog(false);
+
     // Try Capacitor App exit first (for native Android)
     import('@capacitor/app')
-      .then(({ App }) => App.exitApp())
+      .then(({ App }) => {
+        App.exitApp();
+      })
       .catch(() => {
         // Fallback for web/PWA
         window.close();
@@ -110,6 +180,7 @@ export function useBackHandler(): BackHandlerResult {
   }, []);
 
   const handleExitCancel = useCallback(() => {
+    console.log('[BackHandler] Exit cancelled');
     setShowExitDialog(false);
   }, []);
 
