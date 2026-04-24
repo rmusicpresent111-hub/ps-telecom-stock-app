@@ -394,7 +394,7 @@ export async function getDashboardOffline(userId: string) {
     const todayTxns = transactions.filter(t => t.date === today);
     
     const lowItems = products.filter(p => p.quantity <= p.lowStockThreshold).length;
-    const stockValue = products.reduce((sum, p) => sum + p.quantity * p.sellingPrice, 0);
+    const stockValue = products.reduce((sum, p) => sum + p.quantity * p.purchasePrice, 0);
     const lowStockProducts = products.filter(p => p.quantity <= p.lowStockThreshold).slice(0, 10);
     const recentTransactions = transactions.slice(0, 5);
 
@@ -436,7 +436,7 @@ export async function getDashboardOffline(userId: string) {
       const catName = cat?.name || 'Unknown';
       const existing = stockByCategory.get(catName) || { quantity: 0, value: 0 };
       existing.quantity += p.quantity;
-      existing.value += p.quantity * p.sellingPrice;
+      existing.value += p.quantity * p.purchasePrice;
       stockByCategory.set(catName, existing);
     }
 
@@ -871,7 +871,7 @@ export async function getReportsOffline(userId: string, type: string, options?: 
             quantity: p.quantity,
             purchasePrice: p.purchasePrice,
             sellingPrice: p.sellingPrice,
-            stockValue: p.quantity * p.sellingPrice,
+            stockValue: p.quantity * p.purchasePrice,
             purchaseValue: p.quantity * p.purchasePrice,
             lowStock: p.quantity <= p.lowStockThreshold,
           })),

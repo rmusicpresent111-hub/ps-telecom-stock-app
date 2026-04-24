@@ -984,7 +984,7 @@ export async function getDashboard(userId: string) {
 
   // Total stock value
   const stockValue = products.reduce(
-    (sum: number, p: Record<string, unknown>) => sum + ((p.quantity as number) * (p.sellingPrice as number)),
+    (sum: number, p: Record<string, unknown>) => sum + ((p.quantity as number) * (p.purchasePrice as number)),
     0
   );
 
@@ -1104,7 +1104,7 @@ export async function getDashboard(userId: string) {
     const catName = cat ? (cat as Record<string, unknown>).name as string : 'Unknown';
     const existing = stockByCategory.get(catName) || { quantity: 0, value: 0 };
     existing.quantity += (p as Record<string, unknown>).quantity as number;
-    existing.value += ((p as Record<string, unknown>).quantity as number) * ((p as Record<string, unknown>).sellingPrice as number);
+    existing.value += ((p as Record<string, unknown>).quantity as number) * ((p as Record<string, unknown>).purchasePrice as number);
     stockByCategory.set(catName, existing);
   }
 
@@ -1189,7 +1189,7 @@ export async function getReports(userId: string, type: string, options?: { from?
           quantity: p.quantity,
           purchasePrice: p.purchasePrice,
           sellingPrice: p.sellingPrice,
-          stockValue: ((p.quantity as number) || 0) * ((p.sellingPrice as number) || 0),
+          stockValue: ((p.quantity as number) || 0) * ((p.purchasePrice as number) || 0),
           purchaseValue: ((p.quantity as number) || 0) * ((p.purchasePrice as number) || 0),
           lowStock: ((p.quantity as number) || 0) <= ((p.lowStockThreshold as number) || 5),
         })),

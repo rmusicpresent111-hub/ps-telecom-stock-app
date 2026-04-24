@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
             quantity: p.quantity,
             purchasePrice: p.purchasePrice,
             sellingPrice: p.sellingPrice,
-            stockValue: ((p.quantity as number) || 0) * ((p.sellingPrice as number) || 0),
+            stockValue: ((p.quantity as number) || 0) * ((p.purchasePrice as number) || 0),
             purchaseValue: ((p.quantity as number) || 0) * ((p.purchasePrice as number) || 0),
             lowStock: ((p.quantity as number) || 0) <= ((p.lowStockThreshold as number) || 5),
           })),

@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
 
     // Total stock value - computed from already-fetched products
     const stockValue = products.reduce(
-      (sum: number, p: Record<string, unknown>) => sum + ((p.quantity as number) * (p.sellingPrice as number)),
+      (sum: number, p: Record<string, unknown>) => sum + ((p.quantity as number) * (p.purchasePrice as number)),
       0
     );
 
@@ -243,7 +243,7 @@ export async function GET(request: NextRequest) {
       const catName = cat ? (cat as Record<string, unknown>).name as string : 'Unknown';
       const existing = stockByCategory.get(catName) || { quantity: 0, value: 0 };
       existing.quantity += (p as Record<string, unknown>).quantity as number;
-      existing.value += ((p as Record<string, unknown>).quantity as number) * ((p as Record<string, unknown>).sellingPrice as number);
+      existing.value += ((p as Record<string, unknown>).quantity as number) * ((p as Record<string, unknown>).purchasePrice as number);
       stockByCategory.set(catName, existing);
     }
 

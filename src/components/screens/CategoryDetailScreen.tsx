@@ -79,7 +79,7 @@ export default function CategoryDetailScreen() {
 
   const totalItems = products.length;
   const lowStockCount = useMemo(() => products.filter((p) => p.quantity <= p.lowStockThreshold).length, [products]);
-  const totalValue = useMemo(() => products.reduce((sum, p) => sum + p.quantity * p.sellingPrice, 0), [products]);
+  const totalValue = useMemo(() => products.reduce((sum, p) => sum + p.quantity * p.purchasePrice, 0), [products]);
 
   const handleProductTap = useCallback((product: Product) => {
     setSelectedProductId(product.id);
