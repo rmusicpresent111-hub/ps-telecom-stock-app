@@ -623,11 +623,11 @@ export async function getExpenses(userId: string, options?: { period?: string; d
     throw new Error('Failed to fetch expenses');
   }
 
-  const expenses = (data || []).map(toCamelCase);
+  const expenses = (data || []).map(toCamelCase) as Record<string, unknown>[];
 
   const totalExpense = expenses.reduce((sum: number, e) => sum + ((e.amount as number) || 0), 0);
 
-  const byCategory = expenses.reduce((acc, e) => {
+  const byCategory = expenses.reduce((acc: Record<string, number>, e: Record<string, unknown>) => {
     const cat = (e.category as string) || 'other';
     if (!acc[cat]) acc[cat] = 0;
     acc[cat] += (e.amount as number) || 0;
@@ -1080,7 +1080,7 @@ export async function getDashboard(userId: string) {
     saleMap.set(dateStr, existing);
   }
 
-  const saleOverview = [];
+  const saleOverview: { date: string; label: string; sales: number; quantity: number }[] = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date(todayDate);
     d.setDate(d.getDate() - i);
@@ -1413,7 +1413,7 @@ export async function importBackup(userId: string, data: {
       ...toSnakeCase(cat as Record<string, unknown>),
       user_id: userId,
     }));
-    insertPromises.push(supabase.from('categories').insert(rows));
+    insertPromises.push((async () => { await supabase.from('categories').insert(rows); })());
   }
 
   if (data.products?.length) {
@@ -1421,7 +1421,7 @@ export async function importBackup(userId: string, data: {
       ...toSnakeCase(prod as Record<string, unknown>),
       user_id: userId,
     }));
-    insertPromises.push(supabase.from('products').insert(rows));
+    insertPromises.push((async () => { await supabase.from('products').insert(rows); })());
   }
 
   if (data.transactions?.length) {
@@ -1429,7 +1429,7 @@ export async function importBackup(userId: string, data: {
       ...toSnakeCase(txn as Record<string, unknown>),
       user_id: userId,
     }));
-    insertPromises.push(supabase.from('transactions').insert(rows));
+    insertPromises.push((async () => { await supabase.from('transactions').insert(rows); })());
   }
 
   if (data.expenses?.length) {
@@ -1437,7 +1437,7 @@ export async function importBackup(userId: string, data: {
       ...toSnakeCase(exp as Record<string, unknown>),
       user_id: userId,
     }));
-    insertPromises.push(supabase.from('expenses').insert(rows));
+    insertPromises.push((async () => { await supabase.from('expenses').insert(rows); })());
   }
 
   if (data.cashEntries?.length) {
@@ -1445,7 +1445,7 @@ export async function importBackup(userId: string, data: {
       ...toSnakeCase(entry as Record<string, unknown>),
       user_id: userId,
     }));
-    insertPromises.push(supabase.from('cash_entries').insert(rows));
+    insertPromises.push((async () => { await supabase.from('cash_entries').insert(rows); })());
   }
 
   await Promise.all(insertPromises);

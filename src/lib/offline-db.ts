@@ -8,7 +8,7 @@ import { openDB, type IDBPDatabase } from 'idb';
 const DB_NAME = 'ps-telecom-offline';
 const DB_VERSION = 4;
 
-interface OfflineDBSchema {
+export interface OfflineDBSchema {
   categories: {
     key: string;
     value: {

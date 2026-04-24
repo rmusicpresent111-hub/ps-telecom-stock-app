@@ -31,7 +31,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       const data = await login(email, password);
-      setUser(data.user as User);
+      setUser(data.user as unknown as User);
       navigateTo('dashboard');
       toast.success(t('success', lang));
     } catch (error) {

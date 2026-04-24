@@ -132,7 +132,7 @@ const categoryItemVariants = {
     opacity: 1,
     y: 0,
     scale: 1,
-    transition: { type: 'spring', stiffness: 260, damping: 20 },
+    transition: { type: 'spring' as const, stiffness: 260, damping: 20 },
   },
 };
 
@@ -218,13 +218,13 @@ export default function DashboardScreen() {
     isFetchingRef.current = true;
     try {
       if (!isBackground) setLoading(true);
-      const data = await getDashboard(user.id);
-      setStats(data.stats);
-      setLowStockProducts(data.lowStockProducts || []);
-      setSaleOverview(data.saleOverview || []);
-      setStockOverview(data.stockOverview || []);
-      if (data.categories?.length > 0) {
-        setCategories(data.categories);
+      const data = await getDashboard(user.id) as Record<string, unknown>;
+      setStats(data.stats as DashboardStats | null);
+      setLowStockProducts((data.lowStockProducts as Product[]) || []);
+      setSaleOverview((data.saleOverview as SaleOverviewItem[]) || []);
+      setStockOverview((data.stockOverview as StockOverviewItem[]) || []);
+      if ((data.categories as Category[] | undefined)?.length) {
+        setCategories(data.categories as Category[]);
       }
     } catch {
       if (!isBackground) toast.error(t('error', language));

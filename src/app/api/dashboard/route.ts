@@ -219,7 +219,7 @@ export async function GET(request: NextRequest) {
       saleMap.set(dateStr, existing);
     }
 
-    const saleOverview = [];
+    const saleOverview: { date: string; label: string; sales: number; quantity: number }[] = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(todayDate);
       d.setDate(d.getDate() - i);

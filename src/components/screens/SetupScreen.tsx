@@ -211,7 +211,7 @@ export default function SetupScreen() {
       const { error: settingsError } = await supabase.from('app_settings').select('id').limit(1);
       tables.app_settings = !settingsError;
 
-      setTableStatus(tables as TableStatus);
+      setTableStatus(tables as unknown as TableStatus);
 
       const allReady = Object.values(tables).every(v => v);
       if (allReady) {

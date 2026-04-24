@@ -43,7 +43,7 @@ const slideVariants = {
 export default function OnboardingScreen() {
   const [currentPage, setCurrentPage] = useState(0);
   const [direction, setDirection] = useState(0);
-  const { language, setHasSeenOnboarding, navigateTo } = useAppStore();
+  const { language, setHasSeenTutorial, navigateTo } = useAppStore();
   const lang = language as Language;
 
   const isLastPage = currentPage === pages.length - 1;
@@ -68,7 +68,7 @@ export default function OnboardingScreen() {
   };
 
   const handleFinish = () => {
-    setHasSeenOnboarding(true);
+    setHasSeenTutorial(true);
     navigateTo('language');
   };
 

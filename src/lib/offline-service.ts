@@ -19,6 +19,7 @@ import {
   offlinePendingDeletes,
 } from './offline-db';
 import { Category, Product, Transaction, Expense, CashEntry } from './types';
+import type { OfflineDBSchema } from './offline-db';
 
 // ============ CATEGORIES (Offline-First) ============
 
@@ -67,7 +68,7 @@ export async function createCategoryOffline(name: string, image: string, userId:
     ...category,
     _synced: 0,
     _dirty: Date.now(),
-  });
+  } as OfflineDBSchema['categories']['value']);
 
   if (isOnline()) {
     try {
@@ -77,9 +78,9 @@ export async function createCategoryOffline(name: string, image: string, userId:
         ...result.category,
         _synced: Date.now(),
         _dirty: 0,
-      });
+      } as OfflineDBSchema['categories']['value']);
       await offlineCategories.delete(id);
-      return result;
+      return { category: result.category as Category };
     } catch {
       // Keep local entry - will sync later
     }
@@ -156,7 +157,7 @@ export async function createProductOffline(productData: {
     ...product,
     _synced: 0,
     _dirty: Date.now(),
-  });
+  } as OfflineDBSchema['products']['value']);
 
   if (isOnline()) {
     try {
@@ -166,9 +167,9 @@ export async function createProductOffline(productData: {
         ...result.product,
         _synced: Date.now(),
         _dirty: 0,
-      });
+      } as OfflineDBSchema['products']['value']);
       await offlineProducts.delete(id);
-      return result;
+      return { product: result.product as unknown as Product };
     } catch {
       // Keep local - will sync later
     }
@@ -195,7 +196,7 @@ export async function updateProductOffline(id: string, updates: Partial<Product>
     ...updatedProduct,
     _synced: product._synced,
     _dirty: Date.now(),
-  });
+  } as OfflineDBSchema['products']['value']);
 
   if (isOnline()) {
     try {
@@ -206,8 +207,8 @@ export async function updateProductOffline(id: string, updates: Partial<Product>
         ...result.product,
         _synced: Date.now(),
         _dirty: 0,
-      });
-      return result;
+      } as OfflineDBSchema['products']['value']);
+      return { product: result.product as unknown as Product };
     } catch {
       // Keep local changes - will sync later
     }
@@ -316,7 +317,7 @@ export async function createTransactionOffline(transactionData: {
         ...result.transaction,
         _synced: Date.now(),
         _dirty: 0,
-      });
+      } as OfflineDBSchema['transactions']['value']);
       await offlineTransactions.delete(id);
       const serverProducts = await offlineProducts.getAll(transactionData.userId);
       const serverProduct = serverProducts.find(p => p.id === transactionData.productId);
@@ -328,14 +329,13 @@ export async function createTransactionOffline(transactionData: {
           _dirty: 0,
         });
       }
-      return result;
+      return { transaction: result.transaction as unknown as Transaction };
     } catch {
       // Keep local - will sync later
     }
   }
 
-  const { _synced, _dirty, ...txnData } = transaction;
-  return { transaction: txnData as unknown as Transaction };
+  return { transaction: transaction as unknown as Transaction };
 }
 
 export async function getTransactionsOffline(userId: string, options?: { type?: string; from?: string; to?: string }): Promise<Transaction[]> {
@@ -420,7 +420,7 @@ export async function getDashboardOffline(userId: string) {
       saleMap.set(t.date, existing);
     }
 
-    const saleOverview = [];
+    const saleOverview: { date: string; label: string; sales: number; quantity: number }[] = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
@@ -563,9 +563,9 @@ export async function createExpenseOffline(expenseData: {
         ...result.expense,
         _synced: Date.now(),
         _dirty: 0,
-      });
+      } as OfflineDBSchema['expenses']['value']);
       await offlineExpenses.delete(id);
-      return result;
+      return { expense: result.expense as unknown as Expense };
     } catch {
       // Keep local - will sync later
     }
@@ -604,8 +604,8 @@ export async function updateExpenseOffline(id: string, updates: { amount?: numbe
         ...result.expense,
         _synced: Date.now(),
         _dirty: 0,
-      });
-      return result;
+      } as OfflineDBSchema['expenses']['value']);
+      return { expense: result.expense as unknown as Expense };
     } catch {
       // Keep local changes
     }
@@ -786,8 +786,8 @@ export async function updateCashEntryOffline(id: string, updates: { handCash?: n
         ...result.entry,
         _synced: Date.now(),
         _dirty: 0,
-      });
-      return result;
+      } as OfflineDBSchema['cashEntries']['value']);
+      return { entry: result.entry as unknown as CashEntry };
     } catch {
       // Keep local
     }
@@ -1128,60 +1128,60 @@ export async function importBackupOffline(userId: string, backupData: {
   // Import categories
   if (backupData.categories?.length) {
     await offlineCategories.putBulk(
-      backupData.categories.map((cat: Record<string, unknown>) => ({
+      (backupData.categories as Record<string, unknown>[]).map((cat) => ({
         ...cat,
         userId,
         _synced: 0,
         _dirty: now,
-      }))
+      })) as OfflineDBSchema['categories']['value'][]
     );
   }
 
   // Import products
   if (backupData.products?.length) {
     await offlineProducts.putBulk(
-      backupData.products.map((prod: Record<string, unknown>) => ({
+      (backupData.products as Record<string, unknown>[]).map((prod) => ({
         ...prod,
         userId,
         _synced: 0,
         _dirty: now,
-      }))
+      })) as OfflineDBSchema['products']['value'][]
     );
   }
 
   // Import transactions
   if (backupData.transactions?.length) {
     await offlineTransactions.putBulk(
-      backupData.transactions.map((txn: Record<string, unknown>) => ({
+      (backupData.transactions as Record<string, unknown>[]).map((txn) => ({
         ...txn,
         userId,
         _synced: 0,
         _dirty: now,
-      }))
+      })) as OfflineDBSchema['transactions']['value'][]
     );
   }
 
   // Import expenses
   if (backupData.expenses?.length) {
     await offlineExpenses.putBulk(
-      backupData.expenses.map((exp: Record<string, unknown>) => ({
+      (backupData.expenses as Record<string, unknown>[]).map((exp) => ({
         ...exp,
         userId,
         _synced: 0,
         _dirty: now,
-      }))
+      })) as OfflineDBSchema['expenses']['value'][]
     );
   }
 
   // Import cash entries
   if (backupData.cashEntries?.length) {
     await offlineCashEntries.putBulk(
-      backupData.cashEntries.map((entry: Record<string, unknown>) => ({
+      (backupData.cashEntries as Record<string, unknown>[]).map((entry) => ({
         ...entry,
         userId,
         _synced: 0,
         _dirty: now,
-      }))
+      })) as OfflineDBSchema['cashEntries']['value'][]
     );
   }
 

@@ -46,7 +46,7 @@ export default function SignupScreen() {
     setIsLoading(true);
     try {
       const data = await signup(name, email, password, shopName);
-      setUser(data.user as UserType);
+      setUser(data.user as unknown as UserType);
       navigateTo('dashboard');
       toast.success(t('success', lang));
     } catch (error) {

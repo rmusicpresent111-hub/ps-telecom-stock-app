@@ -90,9 +90,9 @@ export default function DailyBookScreen() {
   const fetchCashEntries = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const data = await getCashEntriesOffline(user.id, { period });
-      setCashEntries((data.entries || []) as CashEntry[]);
-      setSummary(data.summary || { totalHandCash: 0, totalLiquidCash: 0, totalCash: 0 });
+      const data = await getCashEntriesOffline(user.id, { period }) as Record<string, unknown>;
+      setCashEntries((data.entries as CashEntry[] || []) as CashEntry[]);
+      setSummary((data.summary as { totalHandCash: number; totalLiquidCash: number; totalCash: number }) || { totalHandCash: 0, totalLiquidCash: 0, totalCash: 0 });
     } catch {
       // silent
     }
@@ -101,9 +101,9 @@ export default function DailyBookScreen() {
   const fetchExpenses = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const data = await getExpensesOffline(user.id, { period });
-      setExpenses((data.expenses || []) as Expense[]);
-      setExpenseSummary(data.summary || { totalExpense: 0, byCategory: {}, count: 0 });
+      const data = await getExpensesOffline(user.id, { period }) as Record<string, unknown>;
+      setExpenses((data.expenses as Expense[] || []) as Expense[]);
+      setExpenseSummary((data.summary as { totalExpense: number; byCategory: Record<string, number>; count: number }) || { totalExpense: 0, byCategory: {}, count: 0 });
     } catch {
       // silent
     }

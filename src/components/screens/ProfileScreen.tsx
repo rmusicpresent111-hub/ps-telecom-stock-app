@@ -7,6 +7,7 @@ import { getProfileOffline, updateProfileOffline, exportBackupOffline, importBac
 import { motion } from 'framer-motion';
 import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, LogOut, Receipt } from 'lucide-react';
 import { toast } from 'sonner';
+import type { User as UserType } from '@/lib/types';
 
 export default function ProfileScreen() {
   const {
@@ -25,7 +26,7 @@ export default function ProfileScreen() {
     try {
       const data = await getProfileOffline(user.id);
       if (data?.user) {
-        setUser(data.user);
+        setUser(data.user as unknown as UserType);
       }
     } catch {
       // Silently fail
@@ -42,7 +43,7 @@ export default function ProfileScreen() {
     try {
       const data = await updateProfileOffline(user.id, { name: editName.trim() });
       if (data?.user) {
-        setUser(data.user);
+        setUser(data.user as unknown as UserType);
       }
       toast.success(t('updated', language));
     } catch {

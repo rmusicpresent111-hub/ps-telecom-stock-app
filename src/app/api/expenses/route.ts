@@ -64,18 +64,18 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch expenses' }, { status: 500 });
     }
 
-    const expenses = (data || []).map(toCamelCase);
+    const expenses = (data || []).map(toCamelCase) as Record<string, unknown>[];
 
     // Calculate total
     const totalExpense = expenses.reduce((sum, e) => sum + ((e.amount as number) || 0), 0);
 
     // Group by category
-    const byCategory = expenses.reduce((acc, e) => {
+    const byCategory = expenses.reduce<Record<string, number>>((acc, e) => {
       const cat = (e.category as string) || 'other';
       if (!acc[cat]) acc[cat] = 0;
       acc[cat] += (e.amount as number) || 0;
       return acc;
-    }, {} as Record<string, number>);
+    }, {});
 
     return NextResponse.json({
       expenses,

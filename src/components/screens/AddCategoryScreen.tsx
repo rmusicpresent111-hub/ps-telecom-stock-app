@@ -47,7 +47,7 @@ const presetItemVariants = {
   show: {
     opacity: 1,
     scale: 1,
-    transition: { type: 'spring', stiffness: 300, damping: 22 },
+    transition: { type: 'spring' as const, stiffness: 300, damping: 22 },
   },
 };
 

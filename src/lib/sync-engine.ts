@@ -17,6 +17,7 @@ import {
   offlineMeta,
   offlinePendingDeletes,
   clearOfflineData,
+  type OfflineDBSchema,
 } from './offline-db';
 import { invalidateCache } from './cache';
 
@@ -83,7 +84,7 @@ export async function syncFromSupabase(userId: string): Promise<void> {
           _count: { products: productCountMap[(cat as Record<string, unknown>).id as string] || 0 },
           _synced: now,
           _dirty: 0,
-        }))
+        })) as OfflineDBSchema['categories']['value'][]
       );
     }
 
@@ -103,7 +104,7 @@ export async function syncFromSupabase(userId: string): Promise<void> {
             _synced: now,
             _dirty: 0,
           };
-        })
+        }) as OfflineDBSchema['products']['value'][]
       );
     }
 
@@ -128,7 +129,7 @@ export async function syncFromSupabase(userId: string): Promise<void> {
             _synced: now,
             _dirty: 0,
           };
-        })
+        }) as OfflineDBSchema['transactions']['value'][]
       );
     }
 
@@ -140,7 +141,7 @@ export async function syncFromSupabase(userId: string): Promise<void> {
           ...toCamelCase(exp),
           _synced: now,
           _dirty: 0,
-        }))
+        })) as OfflineDBSchema['expenses']['value'][]
       );
     }
 
@@ -152,7 +153,7 @@ export async function syncFromSupabase(userId: string): Promise<void> {
           ...toCamelCase(entry),
           _synced: now,
           _dirty: 0,
-        }))
+        })) as OfflineDBSchema['cashEntries']['value'][]
       );
     }
 
