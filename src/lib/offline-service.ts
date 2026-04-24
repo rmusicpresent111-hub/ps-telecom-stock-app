@@ -16,6 +16,7 @@ import {
   offlineTransactions,
   offlineExpenses,
   offlineCashEntries,
+  offlineMeta,
   offlinePendingDeletes,
 } from './offline-db';
 import { Category, Product, Transaction, Expense, CashEntry } from './types';
@@ -87,6 +88,71 @@ export async function createCategoryOffline(name: string, image: string, userId:
   }
 
   return { category: category as Category };
+}
+
+export async function updateCategoryOffline(id: string, updates: { name?: string; image?: string }, userId: string): Promise<{ category: Category }> {
+  const allCats = await offlineCategories.getAll(userId);
+  const existing = allCats.find(c => c.id === id);
+  if (!existing) throw new Error('Category not found');
+
+  const updated = {
+    ...existing,
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await offlineCategories.put({
+    ...updated,
+    _synced: existing._synced,
+    _dirty: Date.now(),
+  } as OfflineDBSchema['categories']['value']);
+
+  // Try to sync to Supabase immediately if online
+  if (isOnline()) {
+    try {
+      const { updateCategory } = await import('./supabase-service');
+      const result = await updateCategory(id, updates);
+      await offlineCategories.put({
+        ...result.category,
+        _synced: Date.now(),
+        _dirty: 0,
+      } as OfflineDBSchema['categories']['value']);
+      return { category: result.category as Category };
+    } catch {
+      // Keep local entry dirty - will sync later
+    }
+  }
+
+  const { _synced, _dirty, _count, ...categoryData } = updated;
+  return { category: categoryData as Category };
+}
+
+export async function deleteCategoryOffline(id: string, userId: string): Promise<{ message: string }> {
+  // Delete all products in this category (cascading delete)
+  const allProducts = await offlineProducts.getAll(userId);
+  const catProducts = allProducts.filter(p => p.categoryId === id);
+  for (const prod of catProducts) {
+    await deleteProductOffline(prod.id, userId);
+  }
+
+  // Delete the category from local IndexedDB
+  await offlineCategories.delete(id);
+
+  // Add to pending deletes for Supabase sync
+  await offlinePendingDeletes.add('categories', id, userId);
+
+  // Try to delete from Supabase immediately if online
+  if (isOnline()) {
+    try {
+      const { deleteCategory } = await import('./supabase-service');
+      await deleteCategory(id);
+      await offlinePendingDeletes.removeByItemId('categories', id);
+    } catch {
+      // Will retry on next sync
+    }
+  }
+
+  return { message: 'Category deleted successfully' };
 }
 
 // ============ PRODUCTS (Offline-First) ============
@@ -336,6 +402,45 @@ export async function createTransactionOffline(transactionData: {
   }
 
   return { transaction: transaction as unknown as Transaction };
+}
+
+export async function deleteTransactionOffline(id: string, userId: string): Promise<{ success: boolean }> {
+  const allTxns = await offlineTransactions.getAll(userId);
+  const txn = allTxns.find(t => t.id === id);
+
+  if (txn) {
+    // Reverse the stock change caused by this transaction
+    const allProducts = await offlineProducts.getAll(userId);
+    const product = allProducts.find(p => p.id === txn.productId);
+    if (product) {
+      const quantityChange = txn.type === 'STOCK_IN' ? -txn.quantity : txn.quantity;
+      await offlineProducts.put({
+        ...product,
+        quantity: Math.max(0, product.quantity + quantityChange),
+        _synced: product._synced,
+        _dirty: Date.now(),
+      } as OfflineDBSchema['products']['value']);
+    }
+  }
+
+  // Delete from local IndexedDB
+  await offlineTransactions.delete(id);
+
+  // Add to pending deletes for Supabase sync
+  await offlinePendingDeletes.add('transactions', id, userId);
+
+  // Try to delete from Supabase immediately if online
+  if (isOnline()) {
+    try {
+      const { deleteTransaction } = await import('./supabase-service');
+      await deleteTransaction(id);
+      await offlinePendingDeletes.removeByItemId('transactions', id);
+    } catch {
+      // Will retry on next sync
+    }
+  }
+
+  return { success: true };
 }
 
 export async function getTransactionsOffline(userId: string, options?: { type?: string; from?: string; to?: string }): Promise<Transaction[]> {
@@ -1054,37 +1159,101 @@ export async function getReportsOffline(userId: string, type: string, options?: 
 // ============ PROFILE (Offline-aware) ============
 
 export async function getProfileOffline(userId: string) {
-  // Profile data is kept in zustand store (persisted to localStorage)
-  // If online, try to fetch fresh data
+  // Try to get from IndexedDB first
+  const meta = await offlineMeta.get(`profile:${userId}`);
+  if (meta?.data) {
+    // Return cached profile from IndexedDB
+    if (isOnline()) {
+      try {
+        const { getProfile } = await import('./supabase-service');
+        const result = await getProfile(userId);
+        // Update IndexedDB cache
+        await offlineMeta.put({
+          key: `profile:${userId}`,
+          userId,
+          lastSync: Date.now(),
+          data: result,
+        });
+        return result;
+      } catch {
+        // Return cached profile
+        return meta.data;
+      }
+    }
+    return meta.data;
+  }
+
+  // No cached data - try Supabase if online
   if (isOnline()) {
     try {
       const { getProfile } = await import('./supabase-service');
-      return getProfile(userId);
+      const result = await getProfile(userId);
+      // Save to IndexedDB for future offline access
+      await offlineMeta.put({
+        key: `profile:${userId}`,
+        userId,
+        lastSync: Date.now(),
+        data: result,
+      });
+      return result;
     } catch {
-      // Return cached user from store
+      // Fall through
     }
   }
-  
-  // Return null - the calling code should use the cached user from store
+
+  // Return null - the calling code should use the cached user from zustand store
   return null;
 }
 
+// Track pending profile updates for offline sync
+let _pendingProfileUpdates: Map<string, { name?: string; shopName?: string; language?: string; theme?: string }> = new Map();
+
 export async function updateProfileOffline(id: string, updates: { name?: string; shopName?: string; language?: string; theme?: string }) {
-  // Profile updates go directly to Supabase if online
-  // If offline, we save locally and retry when online
+  // Try to update on Supabase if online
   if (isOnline()) {
     try {
       const { updateProfile } = await import('./supabase-service');
-      return updateProfile(id, updates);
+      const result = await updateProfile(id, updates);
+      // Update IndexedDB cache
+      await offlineMeta.put({
+        key: `profile:${id}`,
+        userId: id,
+        lastSync: Date.now(),
+        data: result,
+      });
+      // Clear any pending updates since we succeeded
+      _pendingProfileUpdates.delete(id);
+      return result;
     } catch {
       // Fall through to offline handling
     }
   }
-  
-  // Store the update for later sync
-  // The zustand store already has the updated values, so they persist
-  // We'll sync when coming back online
+
+  // Save pending profile update for later sync
+  const existing = _pendingProfileUpdates.get(id) || {};
+  _pendingProfileUpdates.set(id, { ...existing, ...updates });
+
+  // Update IndexedDB cache with new values
+  const meta = await offlineMeta.get(`profile:${id}`);
+  if (meta?.data) {
+    await offlineMeta.put({
+      key: `profile:${id}`,
+      userId: id,
+      lastSync: meta.lastSync,
+      data: { user: { ...(meta.data as { user: Record<string, unknown> }).user, ...updates } },
+    });
+  }
+
   return { user: { id, ...updates } };
+}
+
+// Get pending profile updates (used by sync engine)
+export function getPendingProfileUpdates(id: string) {
+  return _pendingProfileUpdates.get(id);
+}
+
+export function clearPendingProfileUpdates(id: string) {
+  _pendingProfileUpdates.delete(id);
 }
 
 // ============ BACKUP (Offline-aware) ============

@@ -341,6 +341,43 @@ export async function deleteProduct(id: string) {
   return { message: 'Product deleted successfully' };
 }
 
+export async function deleteTransaction(id: string) {
+  // First get the transaction to reverse stock change
+  const { data: txn } = await supabase
+    .from('transactions')
+    .select('product_id, type, quantity')
+    .eq('id', id)
+    .single();
+
+  if (txn) {
+    // Reverse the stock change on the product
+    const { data: product } = await supabase
+      .from('products')
+      .select('quantity, user_id')
+      .eq('id', txn.product_id)
+      .single();
+
+    if (product) {
+      const quantityChange = txn.type === 'STOCK_IN' ? -txn.quantity : txn.quantity;
+      await supabase
+        .from('products')
+        .update({ quantity: Math.max(0, product.quantity + quantityChange) })
+        .eq('id', txn.product_id);
+
+      const userId = product.user_id as string;
+      invalidateCache(cacheKeys.products(userId));
+      invalidateCache(cacheKeys.dashboard(userId));
+    }
+  }
+
+  const { error } = await supabase.from('transactions').delete().eq('id', id);
+  if (error) {
+    throw new Error('Failed to delete transaction');
+  }
+
+  return { success: true };
+}
+
 // ============ CATEGORIES ============
 
 export async function getCategories(userId: string) {
@@ -418,6 +455,47 @@ export async function createCategory(name: string, image: string, userId: string
   invalidateCache(cacheKeys.dashboard(userId));
 
   return { category };
+}
+
+export async function updateCategory(id: string, updates: { name?: string; image?: string }) {
+  const updateFields: Record<string, unknown> = {};
+  if (updates.name !== undefined) updateFields.name = updates.name;
+  if (updates.image !== undefined) updateFields.image = updates.image;
+  updateFields.updated_at = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from('categories')
+    .update(updateFields)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error('Failed to update category');
+  }
+
+  const category = {
+    ...toCamelCase(data),
+    _count: { products: 0 },
+  };
+
+  return { category };
+}
+
+export async function deleteCategory(id: string) {
+  // Delete related products and transactions first (cascading)
+  const { data: products } = await supabase.from('products').select('id').eq('category_id', id);
+  if (products) {
+    for (const p of products) {
+      await deleteProduct(p.id);
+    }
+  }
+
+  const { error } = await supabase.from('categories').delete().eq('id', id);
+  if (error) {
+    throw new Error('Failed to delete category');
+  }
+  return { message: 'Category deleted successfully' };
 }
 
 // ============ TRANSACTIONS ============

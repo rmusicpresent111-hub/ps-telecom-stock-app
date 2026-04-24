@@ -371,10 +371,29 @@ export async function syncAll(): Promise<void> {
   const userId = useAppStore.getState().user?.id;
   if (!userId || !isOnline()) return;
 
-  // First process pending deletes, then upload local changes, then download fresh data
+  // First process pending deletes, then upload local changes, then sync profile, then download fresh data
   await processPendingDeletes(userId);
   await syncToSupabase(userId);
+  await syncPendingProfile(userId);
   await syncFromSupabase(userId);
+}
+
+// ============ SYNC PENDING PROFILE UPDATES ============
+
+async function syncPendingProfile(userId: string): Promise<void> {
+  if (!userId || !isOnline()) return;
+
+  const { getPendingProfileUpdates, clearPendingProfileUpdates } = await import('./offline-service');
+  const pendingUpdates = getPendingProfileUpdates(userId);
+  if (pendingUpdates) {
+    try {
+      const { updateProfile } = await import('./supabase-service');
+      await updateProfile(userId, pendingUpdates);
+      clearPendingProfileUpdates(userId);
+    } catch (e) {
+      console.error('Failed to sync pending profile updates:', e);
+    }
+  }
 }
 
 // ============ AUTO-SYNC TIMER ============

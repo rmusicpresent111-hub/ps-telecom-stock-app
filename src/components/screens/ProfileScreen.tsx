@@ -24,7 +24,7 @@ export default function ProfileScreen() {
   const fetchProfile = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const data = await getProfileOffline(user.id);
+      const data = await getProfileOffline(user.id) as Record<string, unknown> | null;
       if (data?.user) {
         setUser(data.user as unknown as UserType);
       }
@@ -102,6 +102,8 @@ export default function ProfileScreen() {
         categories: backupData.categories || [],
         products: backupData.products || [],
         transactions: backupData.transactions || [],
+        expenses: backupData.expenses || [],
+        cashEntries: backupData.cashEntries || [],
       });
       toast.success(t('restore', language) + ' ✓');
     } catch (error) {
