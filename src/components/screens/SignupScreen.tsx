@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 import { signup } from '@/lib/supabase-service';
 
 export default function SignupScreen() {
-  const { language, setUser, navigateTo } = useAppStore();
+  const { language, setUser, navigateTo, resetNavigation } = useAppStore();
   const lang = language as Language;
 
   const [name, setName] = useState('');
@@ -47,7 +47,7 @@ export default function SignupScreen() {
     try {
       const data = await signup(name, email, password, shopName);
       setUser(data.user as unknown as UserType);
-      navigateTo('dashboard');
+      resetNavigation('dashboard');
       toast.success(t('success', lang));
     } catch (error) {
       toast.error(t('error', lang), { description: error instanceof Error ? error.message : 'Signup failed' });

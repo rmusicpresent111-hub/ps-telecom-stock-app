@@ -175,7 +175,7 @@ CREATE TRIGGER update_expenses_updated_at BEFORE UPDATE ON expenses FOR EACH ROW
 CREATE TRIGGER update_app_settings_updated_at BEFORE UPDATE ON app_settings FOR EACH ROW EXECUTE FUNCTION update_updated_at();`;
 
 export default function SetupScreen() {
-  const { navigateTo, hasSeenTutorial, isAuthenticated } = useAppStore();
+  const { navigateTo, resetNavigation, hasSeenTutorial, isAuthenticated } = useAppStore();
   const [tableStatus, setTableStatus] = useState<TableStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
@@ -258,11 +258,11 @@ export default function SetupScreen() {
 
   const handleContinue = () => {
     if (!hasSeenTutorial) {
-      navigateTo('welcome');
+      resetNavigation('welcome');
     } else if (isAuthenticated) {
-      navigateTo('dashboard');
+      resetNavigation('dashboard');
     } else {
-      navigateTo('login');
+      resetNavigation('login');
     }
   };
 

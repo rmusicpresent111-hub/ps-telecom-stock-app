@@ -128,6 +128,27 @@ export default function Home() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  // Handle Capacitor/Android hardware back button
+  useEffect(() => {
+    const handleCapacitorBack = (e: Event) => {
+      const state = useAppStore.getState();
+      if (state.currentScreen === 'dashboard') {
+        e.preventDefault();
+        setShowExitDialog(true);
+      } else if (state.previousScreens.length > 0) {
+        e.preventDefault();
+        state.goBack();
+      } else {
+        e.preventDefault();
+        state.resetNavigation('dashboard');
+      }
+    };
+
+    // Listen for Capacitor back button event
+    document.addEventListener('backbutton', handleCapacitorBack);
+    return () => document.removeEventListener('backbutton', handleCapacitorBack);
+  }, []);
+
   // Handle beforeunload for tab close
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -171,7 +192,7 @@ export default function Home() {
     title: language === 'bn' ? 'অ্যাপ থেকে বের হবেন?' : language === 'hi' ? 'ऐप से बाहर जाएं?' : 'Exit App?',
     desc: language === 'bn' ? 'আপনি কি নিশ্চিত PS TELECOM থেকে বের হতে চান?' : language === 'hi' ? 'क्या आप PS TELECOM से बाहर जाना चाहते हैं?' : 'Are you sure you want to exit PS TELECOM?',
     exitBtn: language === 'bn' ? 'বের হন' : language === 'hi' ? 'बाहर जाएं' : 'Exit',
-    cancelBtn: t('cancel', language),
+    continueBtn: language === 'bn' ? 'চালিয়ে যান' : language === 'hi' ? 'जारी रखें' : 'Continue',
   }), [language]);
 
   return (
@@ -233,7 +254,7 @@ export default function Home() {
                   onClick={handleExitCancel}
                   className="flex-1 glass-card py-3 text-sm font-semibold text-white/70 rounded-xl hover:bg-white/10 transition-colors"
                 >
-                  {exitTexts.cancelBtn}
+                  {exitTexts.continueBtn}
                 </button>
                 <button
                   onClick={handleExitConfirm}

@@ -197,6 +197,7 @@ export default function DashboardScreen() {
   const language = useAppStore(s => s.language);
   const shopName = useAppStore(s => s.shopName);
   const navigateTo = useAppStore(s => s.navigateTo);
+  const navigateToTab = useAppStore(s => s.navigateToTab);
   const setSelectedCategoryId = useAppStore(s => s.setSelectedCategoryId);
   const setSearchQuery = useAppStore(s => s.setSearchQuery);
   const searchQuery = useAppStore(s => s.searchQuery);
@@ -281,9 +282,9 @@ export default function DashboardScreen() {
 
   const handleSearchSubmit = useCallback(() => {
     if (searchQuery.trim()) {
-      navigateTo('product-list');
+      navigateToTab('product-list');
     }
-  }, [searchQuery, navigateTo]);
+  }, [searchQuery, navigateToTab]);
 
   // Memoize computed values
   const totalSaleAmount = useMemo(() => saleOverview.reduce((sum, d) => sum + d.sales, 0), [saleOverview]);
@@ -337,7 +338,7 @@ export default function DashboardScreen() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <button
-            onClick={() => navigateTo('profile')}
+            onClick={() => navigateToTab('profile')}
             className="p-2 rounded-full glass-card"
             aria-label="Profile"
           >
@@ -384,7 +385,7 @@ export default function DashboardScreen() {
         {lowStockProducts.length > 0 && (
           <div
             className="glass-card p-4 mb-6 border-orange-500/30"
-            onClick={() => navigateTo('product-list')}
+            onClick={() => navigateToTab('product-list')}
             role="button"
           >
             <div className="flex items-center gap-3">
