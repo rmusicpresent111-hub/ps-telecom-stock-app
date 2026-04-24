@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Check } from 'lucide-react';
+import { ArrowLeft, Check } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Language } from '@/lib/types';
@@ -21,16 +21,28 @@ const languageOptions: LanguageOption[] = [
 ];
 
 export default function LanguageScreen() {
-  const { language, setLanguage, navigateTo } = useAppStore();
+  const { language, setLanguage, navigateTo, goBack, isAuthenticated } = useAppStore();
   const [selected, setSelected] = useState<Language>(language);
 
   const handleContinue = () => {
     setLanguage(selected);
-    navigateTo('login');
+    if (isAuthenticated) {
+      // From Profile - go back to previous screen
+      goBack();
+    } else {
+      // From Onboarding - go to login
+      navigateTo('login');
+    }
   };
 
   return (
     <div className="animated-bg min-h-screen flex flex-col max-w-md mx-auto px-6 py-8">
+      {/* Back button - only show for authenticated users (accessed from Profile) */}
+      {isAuthenticated && (
+        <button onClick={goBack} className="p-2 rounded-full glass-card mb-4 self-start" aria-label="Back">
+          <ArrowLeft size={20} className="text-emerald-400" />
+        </button>
+      )}
       {/* Title */}
       <motion.div
         className="text-center mt-12 sm:mt-16 mb-10"

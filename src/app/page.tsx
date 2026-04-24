@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useState, useCallback, lazy, Suspense, useMemo } from 'react';
+import { useEffect, lazy, Suspense, useMemo } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Screen } from '@/lib/types';
-import { t } from '@/lib/i18n';
 import { LogOut, X } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
+import { useBackHandler } from '@/hooks/useBackHandler';
 
 // Lazy load ALL screen components - only loads what's needed
 const SplashScreen = lazy(() => import('@/components/screens/SplashScreen'));
@@ -82,9 +82,9 @@ export default function Home() {
   const theme = useAppStore(s => s.theme);
   const isAuthenticated = useAppStore(s => s.isAuthenticated);
   const language = useAppStore(s => s.language);
-  const goBack = useAppStore(s => s.goBack);
-  const previousScreens = useAppStore(s => s.previousScreens);
-  const [showExitDialog, setShowExitDialog] = useState(false);
+
+  // ✅ Navigation Stack + Back Handler (browser, Capacitor, in-app)
+  const { showExitDialog, handleExitConfirm, handleExitCancel } = useBackHandler();
 
   // Apply theme class to document
   useEffect(() => {
@@ -105,84 +105,6 @@ export default function Home() {
       useAppStore.getState().resetNavigation('dashboard');
     }
   }, [isAuthenticated, currentScreen]);
-
-  // Handle browser back button / popstate
-  useEffect(() => {
-    window.history.pushState({ appState: true }, '');
-
-    const handlePopState = () => {
-      const state = useAppStore.getState();
-      if (state.currentScreen === 'dashboard') {
-        window.history.pushState({ appState: true }, '');
-        setShowExitDialog(true);
-      } else if (state.previousScreens.length > 0) {
-        state.goBack();
-        window.history.pushState({ appState: true }, '');
-      } else {
-        state.resetNavigation('dashboard');
-        window.history.pushState({ appState: true }, '');
-      }
-    };
-
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
-  // Handle Capacitor/Android hardware back button
-  useEffect(() => {
-    const handleCapacitorBack = (e: Event) => {
-      const state = useAppStore.getState();
-      if (state.currentScreen === 'dashboard') {
-        e.preventDefault();
-        setShowExitDialog(true);
-      } else if (state.previousScreens.length > 0) {
-        e.preventDefault();
-        state.goBack();
-      } else {
-        e.preventDefault();
-        state.resetNavigation('dashboard');
-      }
-    };
-
-    // Listen for Capacitor back button event
-    document.addEventListener('backbutton', handleCapacitorBack);
-    return () => document.removeEventListener('backbutton', handleCapacitorBack);
-  }, []);
-
-  // Handle beforeunload for tab close
-  useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = '';
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, []);
-
-  const handleAppBack = useCallback(() => {
-    const state = useAppStore.getState();
-    if (state.currentScreen === 'dashboard') {
-      setShowExitDialog(true);
-    } else if (state.previousScreens.length > 0) {
-      state.goBack();
-    } else {
-      state.resetNavigation('dashboard');
-    }
-  }, []);
-
-  useEffect(() => {
-    (window as unknown as Record<string, unknown>).__appGoBack = handleAppBack;
-  }, [handleAppBack]);
-
-  const handleExitConfirm = useCallback(() => {
-    setShowExitDialog(false);
-    window.close();
-    window.location.href = 'about:blank';
-  }, []);
-
-  const handleExitCancel = useCallback(() => {
-    setShowExitDialog(false);
-  }, []);
 
   const CurrentScreenComponent = screenComponents[currentScreen] || SplashScreen;
   const showBottomNav = showBottomNavSet.has(currentScreen);
