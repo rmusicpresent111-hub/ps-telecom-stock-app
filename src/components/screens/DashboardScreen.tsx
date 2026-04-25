@@ -8,7 +8,7 @@ import { getDashboard } from '@/lib/offline-service';
 import { isOnline as checkOnline } from '@/lib/sync-engine';
 import { invalidateCache, cacheKeys } from '@/lib/cache';
 import { DashboardStats, Category, Product } from '@/lib/types';
-import { Search, Plus, Package, AlertTriangle, ArrowLeftRight, IndianRupee, User, ChevronRight, TrendingUp, BarChart3 } from 'lucide-react';
+import { Search, Plus, Package, AlertTriangle, ArrowLeftRight, IndianRupee, User, ChevronRight, TrendingUp, BarChart3, ArrowUpRight } from 'lucide-react';
 import { toast } from 'sonner';
 import dynamic from 'next/dynamic';
 
@@ -208,6 +208,7 @@ export default function DashboardScreen() {
   const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
   const [saleOverview, setSaleOverview] = useState<SaleOverviewItem[]>([]);
   const [stockOverview, setStockOverview] = useState<StockOverviewItem[]>([]);
+  const [todayProfit, setTodayProfit] = useState(0);
   const [loading, setLoading] = useState(true);
   const [isOffline, setIsOffline] = useState(!checkOnline());
   const isFetchingRef = useRef(false);
@@ -227,6 +228,24 @@ export default function DashboardScreen() {
       if ((data.categories as Category[] | undefined)?.length) {
         setCategories(data.categories as Category[]);
       }
+
+      // Calculate today's profit from transactions
+      // Profit = sellingPrice - purchasePrice per unit sold
+      const today = new Date().toISOString().split('T')[0];
+      const { getTransactionsOffline: getTxns, getProductsOffline: getProds } = await import('@/lib/offline-service');
+      const [todayTxns, allProducts] = await Promise.all([
+        getTxns(user.id, { from: today, to: today }),
+        getProds(user.id),
+      ]);
+      const sellTxns = (todayTxns || []).filter((tx: { type: string }) => tx.type === 'SELL');
+      const prodMap = new Map((allProducts || []).map((p: Product) => [p.id, p]));
+      let profit = 0;
+      for (const tx of sellTxns) {
+        const prod = prodMap.get(tx.productId);
+        const cost = (tx.quantity || 0) * (prod?.purchasePrice ?? 0);
+        profit += (tx.totalAmount || 0) - cost;
+      }
+      setTodayProfit(profit);
     } catch {
       if (!isBackground) toast.error(t('error', language));
     } finally {
@@ -380,6 +399,36 @@ export default function DashboardScreen() {
           <StatCard icon={ArrowLeftRight} label={labels.todayTransaction} value={statValues.todayTransactions} iconColor="text-emerald-400" className="stat-card-blue" />
           <StatCard icon={IndianRupee} label={labels.stockValue} value={statValues.stockValue} iconColor="text-emerald-600" className="stat-card-purple" />
         </div>
+
+        {/* Today's Profit Card */}
+        <button
+          onClick={() => navigateToTab('profit')}
+          className="glass-card w-full p-4 mb-6 flex items-center justify-between"
+          style={{
+            background: 'linear-gradient(135deg, rgba(74, 222, 128, 0.06), rgba(212, 168, 83, 0.04))',
+            border: '1px solid rgba(74, 222, 128, 0.15)',
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-green-500/15 flex items-center justify-center">
+              <TrendingUp size={20} className="text-green-400" />
+            </div>
+            <div className="text-left">
+              <p className="text-xs text-white/60">
+                {language === 'bn' ? "আজকের প্রফিট" : language === 'hi' ? "आज का लाभ" : "Today's Profit"}
+              </p>
+              <p className="text-lg font-bold text-green-400">
+                ₹{todayProfit.toLocaleString()}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 text-emerald-400/60">
+            <span className="text-xs">
+              {language === 'bn' ? 'বিস্তারিত' : language === 'hi' ? 'विवरण' : 'Details'}
+            </span>
+            <ChevronRight size={16} />
+          </div>
+        </button>
 
         {/* Low stock alert */}
         {lowStockProducts.length > 0 && (
