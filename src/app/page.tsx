@@ -90,6 +90,8 @@ export default function Home() {
   const { showExitDialog, handleExitConfirm, handleExitCancel, handleBack } = useBackHandler();
 
   // ✅ Listen for native Capacitor back button (dispatched by capacitor-init.ts)
+  // This is the ONLY path for native Android back button → handleBack()
+  // useBackHandler.ts does NOT register its own Capacitor listener to avoid double-firing
   useEffect(() => {
     const handleNativeBack = () => {
       console.log('[Page] Received app:back-button event from Capacitor bridge');

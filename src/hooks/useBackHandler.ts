@@ -20,11 +20,21 @@ interface BackHandlerResult {
 
 export function useBackHandler(): BackHandlerResult {
   const [showExitDialog, setShowExitDialog] = useState(false);
-  const listenerRegisteredRef = useRef(false);
-  const handleBackRef = useRef<() => void>(() => {});
+
+  // ✅ Debounce guard - prevents double-firing from multiple listeners
+  const lastBackTimeRef = useRef(0);
+  const DEBOUNCE_MS = 300;
 
   // The core back-navigation logic
   const handleBack = useCallback(() => {
+    // ✅ Debounce: ignore if called within DEBOUNCE_MS
+    const now = Date.now();
+    if (now - lastBackTimeRef.current < DEBOUNCE_MS) {
+      console.log('[BackHandler] Debounced - ignoring rapid back press');
+      return;
+    }
+    lastBackTimeRef.current = now;
+
     const state = useAppStore.getState();
     const { currentScreen, previousScreens } = state;
 
@@ -62,9 +72,6 @@ export function useBackHandler(): BackHandlerResult {
     state.resetNavigation('dashboard');
   }, []);
 
-  // Keep the ref updated so event listeners always use the latest version
-  handleBackRef.current = handleBack;
-
   // ===== 1. Browser popstate handler (PWA / web) =====
   useEffect(() => {
     // Push initial state so back button doesn't exit immediately
@@ -72,95 +79,32 @@ export function useBackHandler(): BackHandlerResult {
 
     const handlePopState = () => {
       console.log('[BackHandler] popstate event fired');
-      handleBackRef.current();
+      handleBack();
       // Re-push state to prevent actual navigation away
       window.history.pushState({ appState: true }, '');
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [handleBack]);
 
-  // ===== 2. Capacitor / Android hardware back button =====
-  useEffect(() => {
-    if (listenerRegisteredRef.current) return;
-
-    let cleanup: (() => void) | null = null;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const setupCapacitorBackButton = async () => {
-      try {
-        const { App } = await import('@capacitor/app');
-        console.log('[BackHandler] @capacitor/app imported successfully');
-
-        const handler = await App.addListener('backButton', () => {
-          console.log('[BackHandler] Capacitor backButton event fired');
-          handleBackRef.current();
-        });
-
-        listenerRegisteredRef.current = true;
-        console.log('[BackHandler] Capacitor backButton listener registered ✅');
-
-        cleanup = () => {
-          handler.remove();
-          listenerRegisteredRef.current = false;
-        };
-      } catch (err) {
-        console.warn('[BackHandler] @capacitor/app import failed, trying Cordova fallback:', err);
-
-        // Fallback: Cordova-style backbutton event
-        const handleCordovaBack = (e: Event) => {
-          e.preventDefault();
-          console.log('[BackHandler] Cordova backbutton event fired');
-          handleBackRef.current();
-        };
-
-        document.addEventListener('backbutton', handleCordovaBack, false);
-        cleanup = () => document.removeEventListener('backbutton', handleCordovaBack);
-
-        // Also retry Capacitor import after a delay (bridge might not be ready yet)
-        retryTimer = setTimeout(async () => {
-          try {
-            const { App } = await import('@capacitor/app');
-            const handler = await App.addListener('backButton', () => {
-              console.log('[BackHandler] Capacitor backButton (retry) event fired');
-              handleBackRef.current();
-            });
-            // Remove Cordova fallback since Capacitor is working now
-            document.removeEventListener('backbutton', handleCordovaBack);
-            listenerRegisteredRef.current = true;
-            console.log('[BackHandler] Capacitor backButton listener registered on retry ✅');
-            cleanup = () => {
-              handler.remove();
-              listenerRegisteredRef.current = false;
-            };
-          } catch {
-            console.warn('[BackHandler] Capacitor retry also failed, using Cordova fallback');
-          }
-        }, 3000);
-      }
-    };
-
-    setupCapacitorBackButton();
-
-    return () => {
-      cleanup?.();
-      if (retryTimer) clearTimeout(retryTimer);
-    };
-  }, []);
-
-  // ===== 3. Keyboard Escape key handler (testing in browser) =====
+  // ===== 2. Keyboard Escape key handler (testing in browser) =====
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         console.log('[BackHandler] Escape key pressed');
-        handleBackRef.current();
+        handleBack();
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [handleBack]);
+
+  // ===== NOTE: Capacitor back button is handled by capacitor-init.ts =====
+  // capacitor-init.ts registers the native back button listener and dispatches
+  // 'app:back-button' custom event, which page.tsx listens for and calls handleBack().
+  // This prevents double-firing from having two separate Capacitor listeners.
 
   // ===== Exit handlers =====
   const handleExitConfirm = useCallback(() => {
