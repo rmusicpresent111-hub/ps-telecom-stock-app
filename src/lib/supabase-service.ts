@@ -156,6 +156,7 @@ export async function deleteAccount(id: string) {
     supabase.from('categories').delete().eq('user_id', id),
     supabase.from('cash_entries').delete().eq('user_id', id),
     supabase.from('expenses').delete().eq('user_id', id),
+    supabase.from('service_transactions').delete().eq('user_id', id),
   ]);
 
   await supabase.from('users').delete().eq('id', id);
@@ -949,6 +950,101 @@ export async function deleteCashEntry(id: string) {
   }
 
   invalidateCache('cashEntries:');
+  return { success: true };
+}
+
+// ============ SERVICE TRANSACTIONS ============
+
+export async function getServiceTransactions(userId: string, options?: { categoryType?: string; from?: string; to?: string }) {
+  const optsKey = `${options?.categoryType || ''}:${options?.from || ''}:${options?.to || ''}`;
+  const key = cacheKeys.reports(userId, `service-txns:${optsKey}`);
+  const cached = getCached<{ serviceTransactions: unknown[] }>(key);
+  if (cached) return cached;
+
+  let query = supabase
+    .from('service_transactions')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (options?.categoryType) {
+    query = query.eq('category_type', options.categoryType);
+  }
+
+  if (options?.from) {
+    query = query.gte('date', options.from);
+  }
+
+  if (options?.to) {
+    query = query.lte('date', options.to);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error('Failed to fetch service transactions');
+  }
+
+  const serviceTransactions = (data || []).map(toCamelCase);
+  const result = { serviceTransactions };
+
+  setCache(key, result, cacheTTL.transactions);
+  return result;
+}
+
+export async function createServiceTransaction(data: {
+  categoryType: string;
+  transactionType: string;
+  amount: number;
+  purpose: string;
+  userId: string;
+}) {
+  if (!data.userId || !data.categoryType || !data.transactionType) {
+    throw new Error('userId, categoryType and transactionType are required');
+  }
+
+  const id = generateId();
+  const now = new Date().toISOString();
+
+  const newServiceTxn = {
+    id,
+    userId: data.userId,
+    categoryType: data.categoryType,
+    transactionType: data.transactionType,
+    amount: parseFloat(String(data.amount)) || 0,
+    purpose: data.purpose || '',
+    date: now.split('T')[0],
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const { data: insertedData, error } = await supabase
+    .from('service_transactions')
+    .insert(toSnakeCase(newServiceTxn))
+    .select('*')
+    .single();
+
+  if (error) {
+    throw new Error('Failed to create service transaction');
+  }
+
+  invalidateCache('reports:');
+  return { serviceTransaction: toCamelCase(insertedData) };
+}
+
+export async function deleteServiceTransaction(id: string) {
+  if (!id) throw new Error('id required');
+
+  const { error } = await supabase
+    .from('service_transactions')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    throw new Error('Failed to delete service transaction');
+  }
+
+  invalidateCache('reports:');
   return { success: true };
 }
 

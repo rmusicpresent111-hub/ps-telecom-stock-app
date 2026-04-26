@@ -21,7 +21,8 @@ export type Screen =
   | 'instant-sell'
   | 'add-category'
   | 'invoice'
-  | 'daily-book';
+  | 'daily-book'
+  | 'service-category';
 
 export type Language = 'bn' | 'en' | 'hi';
 
@@ -108,3 +109,18 @@ export interface Expense {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface ServiceTransaction {
+  id: string;
+  userId: string;
+  categoryType: 'repairing' | 'withdraw-deposit';
+  transactionType: 'income' | 'expense';
+  amount: number;
+  purpose: string;
+  date: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const SERVICE_CATEGORIES = ['Repairing', 'Withdraw/Deposit'] as const;
+export type ServiceCategoryType = 'repairing' | 'withdraw-deposit';

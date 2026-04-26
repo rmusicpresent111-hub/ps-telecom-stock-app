@@ -45,6 +45,10 @@ interface AppState {
   stockOperationType: 'STOCK_IN' | 'STOCK_OUT' | 'SELL' | null;
   setStockOperationType: (type: 'STOCK_IN' | 'STOCK_OUT' | 'SELL' | null) => void;
 
+  // Selected Service Category
+  selectedServiceCategory: string | null;
+  setSelectedServiceCategory: (cat: string | null) => void;
+
   // Data (cached from API)
   categories: Category[];
   setCategories: (cats: Category[]) => void;
@@ -122,6 +126,10 @@ export const useAppStore = create<AppState>()(
       // Stock operation
       stockOperationType: null,
       setStockOperationType: (type) => set({ stockOperationType: type }),
+
+      // Selected Service Category
+      selectedServiceCategory: null,
+      setSelectedServiceCategory: (cat) => set({ selectedServiceCategory: cat }),
 
       // Data
       categories: [],

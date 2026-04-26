@@ -8,7 +8,7 @@ import { getDashboard } from '@/lib/offline-service';
 import { isOnline as checkOnline } from '@/lib/sync-engine';
 import { invalidateCache, cacheKeys } from '@/lib/cache';
 import { DashboardStats, Category, Product } from '@/lib/types';
-import { Search, Plus, Package, AlertTriangle, ArrowLeftRight, IndianRupee, User, ChevronRight, TrendingUp, BarChart3, ArrowUpRight } from 'lucide-react';
+import { Search, Plus, Package, AlertTriangle, ArrowLeftRight, IndianRupee, User, ChevronRight, TrendingUp, BarChart3, ArrowUpRight, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
 import dynamic from 'next/dynamic';
 
@@ -199,6 +199,7 @@ export default function DashboardScreen() {
   const navigateTo = useAppStore(s => s.navigateTo);
   const navigateToTab = useAppStore(s => s.navigateToTab);
   const setSelectedCategoryId = useAppStore(s => s.setSelectedCategoryId);
+  const setSelectedServiceCategory = useAppStore(s => s.setSelectedServiceCategory);
   const setSearchQuery = useAppStore(s => s.setSearchQuery);
   const searchQuery = useAppStore(s => s.searchQuery);
   const categories = useAppStore(s => s.categories);
@@ -519,6 +520,62 @@ export default function DashboardScreen() {
               ))}
             </motion.div>
           )}
+        </div>
+
+        {/* Services Section */}
+        <div className="mt-8">
+          <div className="flex items-center gap-2 mb-4">
+            <Wrench size={18} className="text-emerald-400" />
+            <h2 className="text-lg font-bold">Services</h2>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <motion.button
+              whileHover={{ scale: 1.03, y: -2 }}
+              whileTap={{ scale: 0.97 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+              onClick={() => {
+                setSelectedServiceCategory('repairing');
+                navigateTo('service-category');
+              }}
+              className="glass-card p-4 flex flex-col items-center gap-3"
+              style={{
+                background: 'linear-gradient(135deg, rgba(212,168,83,0.08), rgba(180,140,60,0.04))',
+                border: '1px solid rgba(212,168,83,0.2)',
+              }}
+            >
+              <div className="w-14 h-14 rounded-full bg-emerald-500/15 flex items-center justify-center">
+                <span className="text-2xl">🔧</span>
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-semibold text-white/90">Repairing</p>
+                <p className="text-[10px] text-white/40">Track repair income & expenses</p>
+              </div>
+            </motion.button>
+
+            <motion.button
+              whileHover={{ scale: 1.03, y: -2 }}
+              whileTap={{ scale: 0.97 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+              onClick={() => {
+                setSelectedServiceCategory('withdraw-deposit');
+                navigateTo('service-category');
+              }}
+              className="glass-card p-4 flex flex-col items-center gap-3"
+              style={{
+                background: 'linear-gradient(135deg, rgba(74,222,128,0.08), rgba(34,197,94,0.04))',
+                border: '1px solid rgba(74,222,128,0.2)',
+              }}
+            >
+              <div className="w-14 h-14 rounded-full bg-green-500/15 flex items-center justify-center">
+                <span className="text-2xl">💰</span>
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-semibold text-white/90">Withdraw/Deposit</p>
+                <p className="text-[10px] text-white/40">Manage deposits & withdrawals</p>
+              </div>
+            </motion.button>
+          </div>
         </div>
 
         {/* Sale Overview Section */}

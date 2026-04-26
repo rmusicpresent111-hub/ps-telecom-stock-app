@@ -3,10 +3,10 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
-import { Product, Transaction } from '@/lib/types';
+import { Product, Transaction, ServiceTransaction } from '@/lib/types';
 import { TrendingUp, Calendar, ChevronDown, Package, IndianRupee, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { toast } from 'sonner';
-import { getTransactionsOffline, getProductsOffline } from '@/lib/offline-service';
+import { getTransactionsOffline, getProductsOffline, getServiceTransactionsOffline } from '@/lib/offline-service';
 import { motion, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
 
@@ -112,6 +112,7 @@ export default function ProfitScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [serviceTransactions, setServiceTransactions] = useState<ServiceTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAllProducts, setShowAllProducts] = useState(false);
 
@@ -119,12 +120,14 @@ export default function ProfitScreen() {
     if (!user?.id) return;
     try {
       setLoading(true);
-      const [txns, prods] = await Promise.all([
+      const [txns, prods, svcTxns] = await Promise.all([
         getTransactionsOffline(user.id),
         getProductsOffline(user.id),
+        getServiceTransactionsOffline(user.id),
       ]);
       setTransactions(txns || []);
       setProducts(prods || []);
+      setServiceTransactions(svcTxns || []);
     } catch {
       toast.error(t('error', language));
     } finally {
@@ -165,8 +168,19 @@ export default function ProfitScreen() {
       const cost = (t.quantity || 0) * (product?.purchasePrice ?? 0);
       profit += (t.totalAmount || 0) - cost;
     }
+    // Add service income and subtract service expense
+    const filteredServiceTxns = serviceTransactions.filter(
+      s => s.date >= dateRange.from && s.date <= dateRange.to
+    );
+    for (const s of filteredServiceTxns) {
+      if (s.transactionType === 'income') {
+        profit += s.amount || 0;
+      } else {
+        profit -= s.amount || 0;
+      }
+    }
     return profit;
-  }, [sellTransactions, productMap]);
+  }, [sellTransactions, productMap, serviceTransactions, dateRange]);
 
   const totalRevenue = useMemo(() => {
     return sellTransactions.reduce((sum, t) => sum + (t.totalAmount || 0), 0);
@@ -515,6 +529,108 @@ export default function ProfitScreen() {
             </div>
           )}
         </div>
+
+        {/* Service Income Breakdown */}
+        {!loading && serviceTransactions.length > 0 && (() => {
+          const filteredSvcTxns = serviceTransactions.filter(
+            s => s.date >= dateRange.from && s.date <= dateRange.to
+          );
+          const repairingIncome = filteredSvcTxns
+            .filter(s => s.categoryType === 'repairing' && s.transactionType === 'income')
+            .reduce((sum, s) => sum + (s.amount || 0), 0);
+          const repairingExpense = filteredSvcTxns
+            .filter(s => s.categoryType === 'repairing' && s.transactionType === 'expense')
+            .reduce((sum, s) => sum + (s.amount || 0), 0);
+          const wdIncome = filteredSvcTxns
+            .filter(s => s.categoryType === 'withdraw-deposit' && s.transactionType === 'income')
+            .reduce((sum, s) => sum + (s.amount || 0), 0);
+          const wdExpense = filteredSvcTxns
+            .filter(s => s.categoryType === 'withdraw-deposit' && s.transactionType === 'expense')
+            .reduce((sum, s) => sum + (s.amount || 0), 0);
+          const totalServiceIncome = repairingIncome + wdIncome;
+          const totalServiceExpense = repairingExpense + wdExpense;
+
+          if (totalServiceIncome === 0 && totalServiceExpense === 0) return null;
+
+          return (
+            <div className="mb-6">
+              <div className="flex items-center gap-2 mb-3">
+                <TrendingUp size={16} className="text-emerald-400" />
+                <h2 className="text-sm font-bold">
+                  {language === 'bn' ? 'সার্ভিস আয়' : language === 'hi' ? 'सेवा आय' : 'Service Income'}
+                </h2>
+              </div>
+              <div className="space-y-2">
+                {/* Repairing */}
+                <motion.div
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="glass-card p-4"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold">🔧 Repairing</span>
+                      </div>
+                      <div className="flex items-center gap-3 mt-1.5">
+                        <span className="text-[11px] text-green-400">
+                          {language === 'bn' ? 'আয়' : language === 'hi' ? 'आय' : 'Income'}: ₹{repairingIncome.toLocaleString()}
+                        </span>
+                        <span className="text-[11px] text-orange-400">
+                          {language === 'bn' ? 'খরচ' : language === 'hi' ? 'लागत' : 'Expense'}: ₹{repairingExpense.toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right flex items-center gap-1">
+                      {(repairingIncome - repairingExpense) >= 0 ? (
+                        <ArrowUpRight size={14} className="text-green-400" />
+                      ) : (
+                        <ArrowDownRight size={14} className="text-red-400" />
+                      )}
+                      <span className={`text-sm font-bold ${(repairingIncome - repairingExpense) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        ₹{(repairingIncome - repairingExpense).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                </motion.div>
+
+                {/* Withdraw/Deposit */}
+                <motion.div
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.05 }}
+                  className="glass-card p-4"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold">💰 Withdraw/Deposit</span>
+                      </div>
+                      <div className="flex items-center gap-3 mt-1.5">
+                        <span className="text-[11px] text-green-400">
+                          {language === 'bn' ? 'আয়' : language === 'hi' ? 'आय' : 'Income'}: ₹{wdIncome.toLocaleString()}
+                        </span>
+                        <span className="text-[11px] text-orange-400">
+                          {language === 'bn' ? 'খরচ' : language === 'hi' ? 'लागत' : 'Expense'}: ₹{wdExpense.toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right flex items-center gap-1">
+                      {(wdIncome - wdExpense) >= 0 ? (
+                        <ArrowUpRight size={14} className="text-green-400" />
+                      ) : (
+                        <ArrowDownRight size={14} className="text-red-400" />
+                      )}
+                      <span className={`text-sm font-bold ${(wdIncome - wdExpense) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        ₹{(wdIncome - wdExpense).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Summary */}
         {!loading && productProfits.length > 0 && (

@@ -14,6 +14,7 @@ import {
   offlineTransactions,
   offlineExpenses,
   offlineCashEntries,
+  offlineServiceTransactions,
   offlineMeta,
   offlinePendingDeletes,
   clearOfflineData,
@@ -58,12 +59,14 @@ export async function syncFromSupabase(userId: string): Promise<void> {
       transactionsResult,
       expensesResult,
       cashEntriesResult,
+      serviceTransactionsResult,
     ] = await Promise.all([
       supabase.from('categories').select('*').eq('user_id', userId),
       supabase.from('products').select('*, category:categories(*)').eq('user_id', userId),
       supabase.from('transactions').select('*, product:products(*)').eq('user_id', userId).order('created_at', { ascending: false }),
       supabase.from('expenses').select('*').eq('user_id', userId),
       supabase.from('cash_entries').select('*').eq('user_id', userId).order('date', { ascending: false }),
+      supabase.from('service_transactions').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
     ]);
 
     // Save categories to local
@@ -157,6 +160,18 @@ export async function syncFromSupabase(userId: string): Promise<void> {
       );
     }
 
+    // Save service transactions to local
+    if (serviceTransactionsResult.data) {
+      const now = Date.now();
+      await offlineServiceTransactions.putBulk(
+        serviceTransactionsResult.data.map((svc: Record<string, unknown>) => ({
+          ...toCamelCase(svc),
+          _synced: now,
+          _dirty: 0,
+        })) as OfflineDBSchema['serviceTransactions']['value'][]
+      );
+    }
+
     // Update sync timestamp
     await offlineMeta.setLastSync(userId, 'full-sync');
     
@@ -175,6 +190,7 @@ const STORE_TO_TABLE: Record<string, string> = {
   transactions: 'transactions',
   expenses: 'expenses',
   cashEntries: 'cash_entries',
+  serviceTransactions: 'service_transactions',
 };
 
 async function processPendingDeletes(userId: string): Promise<void> {
@@ -356,6 +372,31 @@ export async function syncToSupabase(userId: string): Promise<void> {
         await offlineCashEntries.put({ ...entry, _synced: Date.now(), _dirty: 0 });
       } catch (e) {
         console.error('Failed to sync cash entry:', entry.id, e);
+      }
+    }
+
+    // Upload dirty service transactions
+    const dirtyServiceTransactions = await offlineServiceTransactions.getDirty();
+    for (const svc of dirtyServiceTransactions) {
+      try {
+        const { _synced, _dirty, ...svcData } = svc;
+        const snakeData = toSnakeCase(svcData);
+        
+        const { data: existing } = await supabase
+          .from('service_transactions')
+          .select('id')
+          .eq('id', svc.id)
+          .single();
+        
+        if (existing) {
+          await supabase.from('service_transactions').update(snakeData).eq('id', svc.id);
+        } else {
+          await supabase.from('service_transactions').insert(snakeData);
+        }
+        
+        await offlineServiceTransactions.put({ ...svc, _synced: Date.now(), _dirty: 0 });
+      } catch (e) {
+        console.error('Failed to sync service transaction:', svc.id, e);
       }
     }
   } catch (error) {

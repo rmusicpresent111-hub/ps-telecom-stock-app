@@ -6,7 +6,7 @@
 import { openDB, type IDBPDatabase } from 'idb';
 
 const DB_NAME = 'ps-telecom-offline';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 export interface OfflineDBSchema {
   categories: {
@@ -115,6 +115,23 @@ export interface OfflineDBSchema {
     };
     indexes: { 'by-userId': string; 'by-storeName': string };
   };
+  serviceTransactions: {
+    key: string;
+    value: {
+      id: string;
+      userId: string;
+      categoryType: 'repairing' | 'withdraw-deposit';
+      transactionType: 'income' | 'expense';
+      amount: number;
+      purpose: string;
+      date: string;
+      createdAt: string;
+      updatedAt: string;
+      _synced: number;
+      _dirty: number;
+    };
+    indexes: { 'by-userId': string; 'by-categoryType': string; 'by-date': string; 'by-dirty': number };
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<OfflineDBSchema>> | null = null;
@@ -159,6 +176,13 @@ function getDB(): Promise<IDBPDatabase<OfflineDBSchema>> {
           const delStore = db.createObjectStore('pendingDeletes', { keyPath: 'id' });
           delStore.createIndex('by-userId', 'userId');
           delStore.createIndex('by-storeName', 'storeName');
+        }
+        if (!db.objectStoreNames.contains('serviceTransactions')) {
+          const svcStore = db.createObjectStore('serviceTransactions', { keyPath: 'id' });
+          svcStore.createIndex('by-userId', 'userId');
+          svcStore.createIndex('by-categoryType', 'categoryType');
+          svcStore.createIndex('by-date', 'date');
+          svcStore.createIndex('by-dirty', '_dirty');
         }
       },
     });
@@ -352,9 +376,31 @@ export const offlinePendingDeletes = {
 
 // ============ CLEAR ALL ============
 
+// ============ SERVICE TRANSACTIONS ============
+
+export const offlineServiceTransactions = {
+  getAll: (userId: string) => getAllByUser('serviceTransactions', userId),
+  put: (svc: OfflineDBSchema['serviceTransactions']['value']) => putItem('serviceTransactions', svc),
+  putBulk: (svcs: OfflineDBSchema['serviceTransactions']['value'][]) => putBulk('serviceTransactions', svcs),
+  delete: (id: string) => deleteItem('serviceTransactions', id),
+  getByCategoryType: async (userId: string, categoryType: string) => {
+    const db = await getDB();
+    const all = await db.getAllFromIndex('serviceTransactions', 'by-userId', userId);
+    return all.filter(s => s.categoryType === categoryType);
+  },
+  getByDateRange: async (userId: string, from: string, to: string) => {
+    const db = await getDB();
+    const all = await db.getAllFromIndex('serviceTransactions', 'by-userId', userId);
+    return all.filter(s => s.date >= from && s.date <= to);
+  },
+  getDirty: () => getDirtyItems('serviceTransactions'),
+};
+
+// ============ CLEAR ALL ============
+
 export async function clearOfflineData(userId: string): Promise<void> {
   const db = await getDB();
-  const stores: (keyof OfflineDBSchema)[] = ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'syncMeta', 'pendingDeletes'];
+  const stores: (keyof OfflineDBSchema)[] = ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'syncMeta', 'pendingDeletes', 'serviceTransactions'];
   for (const store of stores) {
     if (!db.objectStoreNames.contains(store)) continue;
     try {

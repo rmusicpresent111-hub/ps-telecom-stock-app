@@ -32,6 +32,7 @@ const ReportsScreen = lazy(() => import('@/components/screens/ReportsScreen'));
 const DailyBookScreen = lazy(() => import('@/components/screens/DailyBookScreen'));
 const WelcomeScreen = lazy(() => import('@/components/screens/WelcomeScreen'));
 const TutorialScreen = lazy(() => import('@/components/screens/TutorialScreen'));
+const ServiceCategoryScreen = lazy(() => import('@/components/screens/ServiceCategoryScreen'));
 
 const screenComponents: Record<Screen, React.ComponentType> = {
   splash: SplashScreen,
@@ -54,6 +55,7 @@ const screenComponents: Record<Screen, React.ComponentType> = {
   reports: ReportsScreen,
   'add-category': AddCategoryScreen,
   'daily-book': DailyBookScreen,
+  'service-category': ServiceCategoryScreen,
   invoice: DashboardScreen, // placeholder
   welcome: WelcomeScreen,
   tutorial: TutorialScreen,

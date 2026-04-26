@@ -16,10 +16,11 @@ import {
   offlineTransactions,
   offlineExpenses,
   offlineCashEntries,
+  offlineServiceTransactions,
   offlineMeta,
   offlinePendingDeletes,
 } from './offline-db';
-import { Category, Product, Transaction, Expense, CashEntry } from './types';
+import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType } from './types';
 import type { OfflineDBSchema } from './offline-db';
 
 // ============ CATEGORIES (Offline-First) ============
@@ -1203,6 +1204,105 @@ export async function getProfileOffline(userId: string) {
 
   // Return null - the calling code should use the cached user from zustand store
   return null;
+}
+
+// ============ SERVICE TRANSACTIONS (Offline-First) ============
+
+export async function getServiceTransactionsOffline(userId: string, options?: { categoryType?: ServiceCategoryType; from?: string; to?: string }): Promise<ServiceTransaction[]> {
+  try {
+    let localTxns = await offlineServiceTransactions.getAll(userId);
+
+    if (options?.categoryType) localTxns = localTxns.filter(t => t.categoryType === options.categoryType);
+    if (options?.from) localTxns = localTxns.filter(t => t.date >= options.from!);
+    if (options?.to) localTxns = localTxns.filter(t => t.date <= options.to!);
+
+    if (localTxns.length > 0 || !isOnline()) {
+      const txns = localTxns
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .map(({ _synced, _dirty, ...txn }) => txn as unknown as ServiceTransaction);
+      if (isOnline()) syncFromSupabase(userId).catch(() => {});
+      return txns;
+    }
+
+    if (isOnline()) {
+      const { getServiceTransactions } = await import('./supabase-service');
+      const result = await getServiceTransactions(userId, options);
+      return result.serviceTransactions as ServiceTransaction[];
+    }
+
+    return [];
+  } catch {
+    if (isOnline()) {
+      const { getServiceTransactions } = await import('./supabase-service');
+      const result = await getServiceTransactions(userId, options);
+      return result.serviceTransactions as ServiceTransaction[];
+    }
+    return [];
+  }
+}
+
+export async function createServiceTransactionOffline(data: {
+  categoryType: ServiceCategoryType;
+  transactionType: 'income' | 'expense';
+  amount: number;
+  purpose: string;
+  userId: string;
+}): Promise<{ serviceTransaction: ServiceTransaction }> {
+  const id = `local_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  const now = new Date().toISOString();
+
+  const serviceTransaction = {
+    id,
+    userId: data.userId,
+    categoryType: data.categoryType,
+    transactionType: data.transactionType,
+    amount: parseFloat(String(data.amount)) || 0,
+    purpose: data.purpose || '',
+    date: now.split('T')[0],
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await offlineServiceTransactions.put({
+    ...serviceTransaction,
+    _synced: 0,
+    _dirty: Date.now(),
+  });
+
+  if (isOnline()) {
+    try {
+      const { createServiceTransaction } = await import('./supabase-service');
+      const result = await createServiceTransaction(data);
+      await offlineServiceTransactions.put({
+        ...result.serviceTransaction,
+        _synced: Date.now(),
+        _dirty: 0,
+      } as OfflineDBSchema['serviceTransactions']['value']);
+      await offlineServiceTransactions.delete(id);
+      return { serviceTransaction: result.serviceTransaction as unknown as ServiceTransaction };
+    } catch {
+      // Keep local - will sync later
+    }
+  }
+
+  return { serviceTransaction: serviceTransaction as ServiceTransaction };
+}
+
+export async function deleteServiceTransactionOffline(id: string, userId: string): Promise<{ success: boolean }> {
+  await offlineServiceTransactions.delete(id);
+  await offlinePendingDeletes.add('serviceTransactions', id, userId);
+
+  if (isOnline()) {
+    try {
+      const { deleteServiceTransaction } = await import('./supabase-service');
+      await deleteServiceTransaction(id);
+      await offlinePendingDeletes.removeByItemId('serviceTransactions', id);
+    } catch {
+      // Will retry on next sync
+    }
+  }
+
+  return { success: true };
 }
 
 // Track pending profile updates for offline sync
