@@ -55,6 +55,24 @@ export default function AddProductScreen() {
       return;
     }
 
+    // Duplicate product name check (only when adding new product, not editing)
+    if (!isEditing) {
+      try {
+        const existingProducts = await getProductsOffline(user.id);
+        const isDuplicate = existingProducts?.some(
+          (p: Product) =>
+            p.categoryId === categoryId &&
+            p.name.trim().toLowerCase() === name.trim().toLowerCase()
+        );
+        if (isDuplicate) {
+          toast.error(t('duplicateProduct', language));
+          return;
+        }
+      } catch {
+        // If offline check fails, proceed (let server handle it)
+      }
+    }
+
     setLoading(true);
     try {
       if (isEditing && selectedProductId) {

@@ -176,6 +176,7 @@ type TranslationKeys = {
   netCash: string;
   cashIn: string;
   cashOut: string;
+  duplicateProduct: string;
 };
 
 const translations: Record<Language, TranslationKeys> = {
@@ -337,6 +338,7 @@ const translations: Record<Language, TranslationKeys> = {
     netCash: 'নেট ক্যাশ',
     cashIn: 'ক্যাশ ইন',
     cashOut: 'ক্যাশ আউট',
+    duplicateProduct: 'এই নামের প্রোডাক্ট এই ক্যাটেগরিতে আগেই আছে!',
   },
   en: {
     appName: 'PS TELECOM',
@@ -496,6 +498,7 @@ const translations: Record<Language, TranslationKeys> = {
     netCash: 'Net Cash',
     cashIn: 'Cash In',
     cashOut: 'Cash Out',
+    duplicateProduct: 'A product with this name already exists in this category!',
   },
   hi: {
     appName: 'PS TELECOM',
@@ -655,6 +658,7 @@ const translations: Record<Language, TranslationKeys> = {
     netCash: 'नेट कैश',
     cashIn: 'कैश इन',
     cashOut: 'कैश आउट',
+    duplicateProduct: 'इस नाम का प्रोडक्ट इस कैटेगरी में पहले से मौजूद है!',
   },
 };
 
