@@ -7,9 +7,10 @@ import {
   getBillingSettingsOffline, createBillOffline, getBillByIdOffline, deleteBillOffline,
 } from '@/lib/offline-service';
 import {
-  generateBillPdf, downloadBlob, sharePdfFile, buildBillMessage, whatsappUrl,
-  sendBillViaWhatsapp, shopInitials, formatMoney, formatDate, type GeneratedPdf,
+  generateBillPdf, downloadBlob, sendBillViaWhatsapp, shopInitials, formatMoney, formatDate,
+  type GeneratedPdf,
 } from '@/lib/bill-pdf';
+import { toastWhatsappResult } from '@/lib/share-toasts';
 import { BillingSettings, Bill, PaymentMethod } from '@/lib/types';
 import { ArrowLeft, FileText, Loader2, Trash2, Download, Share2, MessageCircle, ExternalLink, BadgeIndianRupee } from 'lucide-react';
 import { toast } from 'sonner';
@@ -94,6 +95,35 @@ export default function InvoiceScreen() {
     }
   }, [settings]);
 
+  // ---- Pre-generate the PDF the moment the bill screen shows ----
+  // Tapping "Send on WhatsApp" can then call navigator.share() INSTANTLY,
+  // while the tap's transient user activation is still fresh. If the share
+  // call happens after slow async work (PDF generation + imports), mobile
+  // browsers reject it with NotAllowedError and the PDF silently never
+  // reaches WhatsApp — that was the bug.
+  const pdfCacheRef = useRef<{ billId: string; pdf: GeneratedPdf } | null>(null);
+  useEffect(() => {
+    pdfCacheRef.current = null;
+    if (!bill || (mode !== 'success' && mode !== 'view')) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const pdf = await generateBillPdf(bill, {
+          signatureDataUrl: settings?.signatureDataUrl,
+          qrCodeDataUrl: settings?.qrCodeDataUrl,
+          upiId: settings?.upiId,
+          thankYouNote: settings?.thankYouNote,
+          termsText: settings?.termsText,
+          proprietorName: settings?.proprietorName,
+        });
+        if (!cancelled) pdfCacheRef.current = { billId: bill.id, pdf };
+      } catch {
+        // PDF generation problems surface when the user taps an action
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [bill, settings]);
+
   // ---- Live totals for create mode (mirror createBillOffline math) ----
   const totals = useMemo(() => {
     const qty = pendingBillData?.quantity ?? 0;
@@ -164,31 +194,28 @@ export default function InvoiceScreen() {
     }
   }, [settings, language]);
 
+  /** Cached PDF (instant share) or generate on demand. */
+  const getPdf = useCallback(async (targetBill: Bill): Promise<GeneratedPdf | null> => {
+    const cached = pdfCacheRef.current;
+    if (cached && cached.billId === targetBill.id) return cached.pdf;
+    return makePdf(targetBill);
+  }, [makePdf]);
+
   const handleWhatsApp = useCallback(async (targetBill: Bill) => {
-    const pdf = await makePdf(targetBill);
+    const pdf = await getPdf(targetBill);
     if (!pdf) return;
     // Preferred: native share sheet WITH the PDF file attached → user picks
     // WhatsApp + the customer chat. Fallback: download + wa.me text chat.
     const result = await sendBillViaWhatsapp(targetBill, pdf);
-    if (result === 'shared') toast.success(t('billSharedWithPdf', language));
-    else if (result === 'fallback') toast.success(t('shareWhatsappHint', language));
-    else toast.error(t('customerPhone', language) + ' ' + t('error', language));
-  }, [makePdf, language]);
+    toastWhatsappResult(result, language);
+  }, [getPdf, language]);
 
   const handleShare = useCallback(async (targetBill: Bill) => {
-    const pdf = await makePdf(targetBill);
+    const pdf = await getPdf(targetBill);
     if (!pdf) return;
-    const shared = await sharePdfFile(pdf.blob, pdf.fileName, buildBillMessage(targetBill));
-    if (!shared) {
-      downloadBlob(pdf.blob, pdf.fileName);
-      if (targetBill.customerMobile) {
-        window.open(whatsappUrl(targetBill.customerMobile, buildBillMessage(targetBill)), '_blank');
-        toast.success(t('shareWhatsappHint', language));
-      } else {
-        toast.success(t('downloadPdf', language));
-      }
-    }
-  }, [makePdf, language]);
+    const result = await sendBillViaWhatsapp(targetBill, pdf, { pdfNote: false });
+    toastWhatsappResult(result, language);
+  }, [getPdf, language]);
 
   const handleDownload = useCallback(async (targetBill: Bill) => {
     const pdf = await makePdf(targetBill);

@@ -318,3 +318,20 @@ Stage Summary:
 - Bill design (PDF + in-app preview) upgraded to premium gold-on-midnight certificate style with proprietor "Avijit Maity & Brother" featured under the shop name and above the signature
 - Proprietor name is editable in Profile → Billing Settings and frozen into each bill's snapshot
 - Lint clean, tsc clean, no console errors, HTTP 200
+
+---
+Task ID: 5
+Agent: Z.ai Code (main)
+Task: Fix "PDF never reaches WhatsApp" on mobile — native share must carry the real PDF file
+
+Work Log:
+- Root-caused: (1) handleWhatsApp awaited makePdf() then sendBillViaWhatsapp awaited a Capacitor dynamic import BEFORE navigator.share — the tap's transient user activation expired → NotAllowedError → silent fallback to download+wa.me text → PDF never attached. (2) canShare({files}) gate silently fell back (e.g. inside preview iframe). (3) window.open fallback could be popup-blocked.
+- Rewrote src/lib/bill-pdf.ts share engine: sharePdfFile now returns FileShareResult ('shared'|'cancelled'|'unsupported'|'blocked') and calls navigator.share({files}) as the FIRST statement (no await before it). Sync isNativeApp() via window.Capacitor.isNativePlatform() (window.Capacitor exists on web too — isNativePlatform() is the correct discriminator, verified in browser: false on web). Capacitor native path only for APK. Added isEmbeddedFrame(), openWhatsappChat() (window.open → location.href fallback), fallbackDownloadAndChat(); sendBillViaWhatsapp(bill, pdf, {pdfNote}) now returns 'shared'|'cancelled'|'iframe-blocked'|'fallback'|'no-mobile'.
+- src/lib/share-toasts.ts: toastWhatsappResult() maps results to toasts (shared→success, iframe-blocked→"Open in New Tab" warning, fallback→"PDF downloaded — attach with 📎" info, no-mobile→error).
+- i18n.ts: added pdfAttachManually + shareOpenInNewTab (bn/en/hi).
+- InvoiceScreen: PDF is now PRE-GENERATED and cached in a ref the moment the success/view screen shows (useEffect), so tapping "Send on WhatsApp" calls share instantly within the user gesture; getPdf() returns cache or regenerates; handleWhatsApp/handleShare use toastWhatsappResult.
+- HistoryScreen: whatsapp/share actions use the new engine + toastWhatsappResult.
+- Verified via agent-browser: desktop fallback path (download + wa.me chat opened with full bill text incl. proprietor, toast instruction shown); stubbed navigator.share to simulate mobile → share called instantly with real File (PS-TELECOM-PS-2610-0001.pdf, application/pdf, 18.9KB) + full bill text with "— PDF bill attached —"; History path same; success toast "Bill shared — PDF goes with it on WhatsApp ✓"; iPhone-14 viewport renders fine; lint + tsc clean; no console errors.
+
+Stage Summary:
+- On mobile browsers (HTTPS) tapping "Send on WhatsApp" now opens the native share sheet carrying the REAL PDF file + bill message → picking WhatsApp and the customer chat sends the PDF attached with the text. In embedded preview iframes the browser blocks sharing; the app now explicitly tells the user to tap "Open in New Tab" instead of failing silently. If a browser truly can't share files, PDF is auto-downloaded, the customer's WhatsApp chat opens, and a toast explains to attach the 📎 file. APK build uses @capacitor/share natively.

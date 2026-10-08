@@ -9,9 +9,9 @@ import { Clock, Search, FileText, MessageCircle, Share2, Trash2, Download, Loade
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  generateBillPdf, downloadBlob, sharePdfFile, buildBillMessage, whatsappUrl,
-  sendBillViaWhatsapp, formatMoney, formatDate,
+  generateBillPdf, downloadBlob, sendBillViaWhatsapp, formatMoney, formatDate,
 } from '@/lib/bill-pdf';
+import { toastWhatsappResult } from '@/lib/share-toasts';
 
 type FilterType = 'ALL' | 'STOCK_IN' | 'STOCK_OUT' | 'SELL';
 type ViewType = 'transactions' | 'bills';
@@ -223,22 +223,12 @@ export default function HistoryScreen() {
       if (action === 'whatsapp') {
         // Native share sheet WITH the PDF attached → WhatsApp; fallback: download + wa.me
         const result = await sendBillViaWhatsapp(bill, pdf);
-        if (result === 'shared') toast.success(t('billSharedWithPdf', language));
-        else if (result === 'fallback') toast.success(t('shareWhatsappHint', language));
-        else toast.error(t('customerPhone', language) + ' ' + t('error', language));
+        toastWhatsappResult(result, language);
         return;
       }
-      // share
-      const shared = await sharePdfFile(pdf.blob, pdf.fileName, buildBillMessage(bill));
-      if (!shared) {
-        downloadBlob(pdf.blob, pdf.fileName);
-        if (bill.customerMobile) {
-          window.open(whatsappUrl(bill.customerMobile, buildBillMessage(bill)), '_blank');
-          toast.success(t('shareWhatsappHint', language));
-        } else {
-          toast.success(t('downloadPdf', language));
-        }
-      }
+      // share — same engine, without the "PDF attached" note
+      const result = await sendBillViaWhatsapp(bill, pdf, { pdfNote: false });
+      toastWhatsappResult(result, language);
     } catch (error) {
       toast.error((error as Error).message || t('error', language));
     } finally {

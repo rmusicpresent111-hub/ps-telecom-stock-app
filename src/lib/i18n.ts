@@ -226,6 +226,8 @@ type TranslationKeys = {
   whatsappSend: string;
   downloadPdf: string;
   shareWhatsappHint: string;
+  pdfAttachManually: string;
+  shareOpenInNewTab: string;
   walkInCustomer: string;
   billed: string;
   makeBill: string;
@@ -444,6 +446,8 @@ const translations: Record<Language, TranslationKeys> = {
     whatsappSend: 'WhatsApp-এ পাঠান',
     downloadPdf: 'PDF ডাউনলোড',
     shareWhatsappHint: 'PDF ডাউনলোড হয়েছে — WhatsApp চ্যাটে সংযুক্ত করুন',
+    pdfAttachManually: 'PDF ডাউনলোড হয়েছে — WhatsApp চ্যাটে 📎 চেপে ফাইলটা সংযুক্ত করে পাঠান',
+    shareOpenInNewTab: 'শেয়ার করতে হলে আগে উপরের ডান কোণের "Open in New Tab" চেপে অ্যাপটা নিজস্ব ট্যাবে খুলুন, তারপর আবার চেষ্টা করুন',
     walkInCustomer: 'সাধারণ ক্রেতা',
     billed: 'বিল হয়েছে',
     makeBill: 'ই-বিল করুন',
@@ -660,6 +664,8 @@ const translations: Record<Language, TranslationKeys> = {
     whatsappSend: 'Send on WhatsApp',
     downloadPdf: 'Download PDF',
     shareWhatsappHint: 'PDF downloaded — attach it in the WhatsApp chat',
+    pdfAttachManually: 'PDF downloaded — open the WhatsApp chat and attach the file with 📎',
+    shareOpenInNewTab: 'To share, first tap "Open in New Tab" (top-right) so the app opens in its own tab, then try again',
     walkInCustomer: 'Walk-in Customer',
     billed: 'Billed',
     makeBill: 'Make e-Bill',
@@ -876,6 +882,8 @@ const translations: Record<Language, TranslationKeys> = {
     whatsappSend: 'WhatsApp पर भेजें',
     downloadPdf: 'PDF डाउनलोड',
     shareWhatsappHint: 'PDF डाउनलोड हो गया — WhatsApp चैट में जोड़ें',
+    pdfAttachManually: 'PDF डाउनलोड हो गया — WhatsApp चैट में 📎 दबाकर फाइल जोड़कर भेजें',
+    shareOpenInNewTab: 'शेयर करने के लिए पहले ऊपर दाईं ओर "Open in New Tab" दबाकर ऐप को अपने टैब में खोलें, फिर दोबारा कोशिश करें',
     walkInCustomer: 'सामान्य ग्राहक',
     billed: 'बिल बना',
     makeBill: 'ई-बिल बनाएं',
