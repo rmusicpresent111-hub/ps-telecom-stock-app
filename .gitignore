@@ -54,9 +54,6 @@ server.log
 /skills/
 
 # Database files
-*.db
-*.db-journal
-db/
 
 # Supabase
 .supabase/

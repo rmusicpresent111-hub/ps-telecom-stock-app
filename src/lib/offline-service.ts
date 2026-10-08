@@ -23,6 +23,45 @@ import {
 import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType } from './types';
 import type { OfflineDBSchema } from './offline-db';
 
+// ============ DATE HELPERS (local timezone — never use UTC for business days) ============
+
+/**
+ * Returns YYYY-MM-DD for a Date in LOCAL time.
+ * toISOString() uses UTC — for IST (UTC+5:30) sales between 00:00–05:30 local
+ * would land on the previous day. This helper fixes that class of bugs.
+ */
+export function localDateStr(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Resolves a reporting period to a [from, to] date range (local time).
+ * Mirrors the server-side getDateRange used by supabase-service.
+ */
+export function resolvePeriodRange(options?: { period?: string; date?: string; from?: string; to?: string }): { from: string; to: string } {
+  const now = new Date();
+  if (options?.from && options?.to) return { from: options.from, to: options.to };
+  if (options?.date) return { from: options.date, to: options.date };
+
+  const todayStr = localDateStr(now);
+  const period = options?.period || 'today';
+  if (period === 'week') {
+    const weekStart = new Date(now);
+    const day = weekStart.getDay();
+    const diff = weekStart.getDate() - day + (day === 0 ? -6 : 1); // Monday start
+    weekStart.setDate(diff);
+    return { from: localDateStr(weekStart), to: todayStr };
+  }
+  if (period === 'month') {
+    return { from: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`, to: todayStr };
+  }
+  // today (default) or any unknown period
+  return { from: todayStr, to: todayStr };
+}
+
 // ============ CATEGORIES (Offline-First) ============
 
 export async function getCategoriesOffline(userId: string): Promise<Category[]> {
@@ -289,12 +328,14 @@ export async function deleteProductOffline(id: string, userId: string): Promise<
   // Delete from local IndexedDB
   await offlineProducts.delete(id);
   
-  // Also delete related transactions locally
+  // Also delete related transactions locally. Keep/queue pending-delete entries so
+  // the server rows are deleted too — otherwise a failed product delete would let
+  // the server transactions re-download ("resurrect") on the next sync.
   const localTxns = await offlineTransactions.getAll(userId);
   const relatedTxns = localTxns.filter(t => t.productId === id);
   for (const txn of relatedTxns) {
     await offlineTransactions.delete(txn.id);
-    await offlinePendingDeletes.removeByItemId('transactions', txn.id);
+    await offlinePendingDeletes.add('transactions', txn.id, userId);
   }
   
   // Add to pending deletes for Supabase sync
@@ -348,7 +389,7 @@ export async function createTransactionOffline(transactionData: {
     quantity: transactionData.quantity,
     unitPrice: transactionData.unitPrice ?? 0,
     totalAmount: transactionData.totalAmount ?? 0,
-    date: transactionData.date || now.split('T')[0],
+    date: transactionData.date || localDateStr(),
     userId: transactionData.userId,
     createdAt: now,
     product: {
@@ -496,7 +537,7 @@ export async function getDashboardOffline(userId: string) {
       return result;
     }
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDateStr();
     const todayTxns = transactions.filter(t => t.date === today);
     
     const lowItems = products.filter(p => p.quantity <= p.lowStockThreshold).length;
@@ -515,7 +556,7 @@ export async function getDashboardOffline(userId: string) {
 
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-    const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0];
+    const sevenDaysAgoStr = localDateStr(sevenDaysAgo);
     
     const saleTxns = transactions.filter(t => t.type === 'SELL' && t.date >= sevenDaysAgoStr);
     const saleMap = new Map<string, { sales: number; quantity: number }>();
@@ -530,7 +571,7 @@ export async function getDashboardOffline(userId: string) {
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = localDateStr(d);
       const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' });
       const dayData = saleMap.get(dateStr) || { sales: 0, quantity: 0 };
       saleOverview.push({ date: dateStr, label: dayLabel, ...dayData });
@@ -598,8 +639,10 @@ export async function getExpensesOffline(userId: string, options?: { period?: st
   try {
     let localExpenses = await offlineExpenses.getAll(userId);
     
-    if (options?.from) localExpenses = localExpenses.filter(e => e.date >= options.from!);
-    if (options?.to) localExpenses = localExpenses.filter(e => e.date <= options.to!);
+    // Honor the reporting period exactly like the Supabase path does —
+    // otherwise the DailyBook "Today" tab would show all-time totals.
+    const { from, to } = resolvePeriodRange(options);
+    localExpenses = localExpenses.filter(e => e.date >= from && e.date <= to);
     if (options?.category) localExpenses = localExpenses.filter(e => e.category === options.category);
 
     if (localExpenses.length > 0 || !isOnline()) {
@@ -744,8 +787,9 @@ export async function getCashEntriesOffline(userId: string, options?: { period?:
   try {
     let localEntries = await offlineCashEntries.getAll(userId);
     
-    if (options?.from) localEntries = localEntries.filter(e => e.date >= options.from!);
-    if (options?.to) localEntries = localEntries.filter(e => e.date <= options.to!);
+    // Honor the reporting period exactly like the Supabase path does.
+    const { from, to } = resolvePeriodRange(options);
+    localEntries = localEntries.filter(e => e.date >= from && e.date <= to);
 
     if (localEntries.length > 0 || !isOnline()) {
       const entries = localEntries.map(({ _synced, _dirty, ...entry }) => entry as unknown as CashEntry);
@@ -1258,7 +1302,7 @@ export async function createServiceTransactionOffline(data: {
     transactionType: data.transactionType,
     amount: parseFloat(String(data.amount)) || 0,
     purpose: data.purpose || '',
-    date: now.split('T')[0],
+    date: localDateStr(),
     createdAt: now,
     updatedAt: now,
   };
@@ -1305,8 +1349,10 @@ export async function deleteServiceTransactionOffline(id: string, userId: string
   return { success: true };
 }
 
-// Track pending profile updates for offline sync
-let _pendingProfileUpdates: Map<string, { name?: string; shopName?: string; language?: string; theme?: string }> = new Map();
+// Track pending profile updates for offline sync.
+// Persisted in IndexedDB (syncMeta) so updates survive app restarts —
+// a RAM-only map lost offline edits forever.
+const PENDING_PROFILE_KEY = (id: string) => `pending-profile:${id}`;
 
 export async function updateProfileOffline(id: string, updates: { name?: string; shopName?: string; language?: string; theme?: string }) {
   // Try to update on Supabase if online
@@ -1322,50 +1368,63 @@ export async function updateProfileOffline(id: string, updates: { name?: string;
         data: result,
       });
       // Clear any pending updates since we succeeded
-      _pendingProfileUpdates.delete(id);
+      await offlineMeta.put({ key: PENDING_PROFILE_KEY(id), userId: id, lastSync: 0, data: null });
       return result;
     } catch {
       // Fall through to offline handling
     }
   }
 
-  // Save pending profile update for later sync
-  const existing = _pendingProfileUpdates.get(id) || {};
-  _pendingProfileUpdates.set(id, { ...existing, ...updates });
+  // Save pending profile update for later sync (durable across restarts)
+  const pendingMeta = await offlineMeta.get(PENDING_PROFILE_KEY(id));
+  const mergedPending = { ...((pendingMeta?.data as Record<string, unknown>) || {}), ...updates };
+  await offlineMeta.put({
+    key: PENDING_PROFILE_KEY(id),
+    userId: id,
+    lastSync: Date.now(),
+    data: mergedPending,
+  });
 
-  // Update IndexedDB cache with new values
+  // Update IndexedDB profile cache with new values
   const meta = await offlineMeta.get(`profile:${id}`);
+  let cachedUser: Record<string, unknown> | null = null;
   if (meta?.data) {
+    cachedUser = (meta.data as { user: Record<string, unknown> }).user || null;
     await offlineMeta.put({
       key: `profile:${id}`,
       userId: id,
       lastSync: meta.lastSync,
-      data: { user: { ...(meta.data as { user: Record<string, unknown> }).user, ...updates } },
+      data: { user: { ...cachedUser, ...updates } },
     });
   }
 
-  return { user: { id, ...updates } };
+  // Always return the FULL merged user — never a sparse { id, ...updates } object,
+  // which used to wipe email/shopName/role from the zustand store.
+  const mergedUser = { ...(cachedUser || {}), id, ...updates };
+  return { user: mergedUser };
 }
 
 // Get pending profile updates (used by sync engine)
-export function getPendingProfileUpdates(id: string) {
-  return _pendingProfileUpdates.get(id);
+export async function getPendingProfileUpdates(id: string): Promise<{ name?: string; shopName?: string; language?: string; theme?: string } | null> {
+  const meta = await offlineMeta.get(PENDING_PROFILE_KEY(id));
+  return (meta?.data as { name?: string; shopName?: string; language?: string; theme?: string }) || null;
 }
 
-export function clearPendingProfileUpdates(id: string) {
-  _pendingProfileUpdates.delete(id);
+export async function clearPendingProfileUpdates(id: string) {
+  await offlineMeta.put({ key: PENDING_PROFILE_KEY(id), userId: id, lastSync: 0, data: null });
 }
 
 // ============ BACKUP (Offline-aware) ============
 
 export async function exportBackupOffline(userId: string) {
   // Export from local data - always works offline!
-  const [localCategories, localProducts, localTransactions, localExpenses, localCashEntries] = await Promise.all([
+  const [localCategories, localProducts, localTransactions, localExpenses, localCashEntries, localServiceTxns] = await Promise.all([
     offlineCategories.getAll(userId),
     offlineProducts.getAll(userId),
     offlineTransactions.getAll(userId),
     offlineExpenses.getAll(userId),
     offlineCashEntries.getAll(userId),
+    offlineServiceTransactions.getAll(userId),
   ]);
 
   const categories = localCategories.map(({ _synced, _dirty, ...c }) => c);
@@ -1373,6 +1432,7 @@ export async function exportBackupOffline(userId: string) {
   const transactions = localTransactions.map(({ _synced, _dirty, product, ...t }) => t);
   const expenses = localExpenses.map(({ _synced, _dirty, ...e }) => e);
   const cashEntries = localCashEntries.map(({ _synced, _dirty, ...e }) => e);
+  const serviceTransactions = localServiceTxns.map(({ _synced, _dirty, ...s }) => s);
 
   return {
     categories,
@@ -1380,6 +1440,7 @@ export async function exportBackupOffline(userId: string) {
     transactions,
     expenses,
     cashEntries,
+    serviceTransactions,
     exportedAt: new Date().toISOString(),
   };
 }
@@ -1390,14 +1451,50 @@ export async function importBackupOffline(userId: string, backupData: {
   transactions: unknown[];
   expenses?: unknown[];
   cashEntries?: unknown[];
+  serviceTransactions?: unknown[];
 }) {
-  // Import to local IndexedDB first
+  // Import to local IndexedDB first.
   const now = Date.now();
 
+  // Validate rows: every row MUST have an id — malformed backups used to be
+  // written straight into IndexedDB and then synced to Supabase.
+  const asRows = (rows: unknown[]): Record<string, unknown>[] => {
+    if (!Array.isArray(rows)) return [];
+    return rows.filter((r): r is Record<string, unknown> =>
+      !!r && typeof r === 'object' && typeof (r as Record<string, unknown>).id === 'string' && (r as Record<string, unknown>).id !== ''
+    );
+  };
+
+  const categories = asRows(backupData.categories || []);
+  const products = asRows(backupData.products || []);
+  const transactions = asRows(backupData.transactions || []);
+  const expenses = asRows(backupData.expenses || []);
+  const cashEntries = asRows(backupData.cashEntries || []);
+  const serviceTransactions = asRows(backupData.serviceTransactions || []);
+
+  if (categories.length === 0 && products.length === 0 && transactions.length === 0 && expenses.length === 0 && cashEntries.length === 0 && serviceTransactions.length === 0) {
+    throw new Error('Backup file contains no valid data');
+  }
+
+  // REPLACE semantics (matches the server import): clear existing stores first so
+  // stale local-only rows can't survive a restore and re-upload via sync.
+  const allLocalCats = await offlineCategories.getAll(userId);
+  const allLocalProducts = await offlineProducts.getAll(userId);
+  const allLocalTxns = await offlineTransactions.getAll(userId);
+  const allLocalExpenses = await offlineExpenses.getAll(userId);
+  const allLocalCash = await offlineCashEntries.getAll(userId);
+  const allLocalSvc = await offlineServiceTransactions.getAll(userId);
+  for (const c of allLocalCats) await offlineCategories.delete(c.id);
+  for (const p of allLocalProducts) await offlineProducts.delete(p.id);
+  for (const t of allLocalTxns) await offlineTransactions.delete(t.id);
+  for (const e of allLocalExpenses) await offlineExpenses.delete(e.id);
+  for (const e of allLocalCash) await offlineCashEntries.delete(e.id);
+  for (const s of allLocalSvc) await offlineServiceTransactions.delete(s.id);
+
   // Import categories
-  if (backupData.categories?.length) {
+  if (categories.length) {
     await offlineCategories.putBulk(
-      (backupData.categories as Record<string, unknown>[]).map((cat) => ({
+      categories.map((cat) => ({
         ...cat,
         userId,
         _synced: 0,
@@ -1407,9 +1504,9 @@ export async function importBackupOffline(userId: string, backupData: {
   }
 
   // Import products
-  if (backupData.products?.length) {
+  if (products.length) {
     await offlineProducts.putBulk(
-      (backupData.products as Record<string, unknown>[]).map((prod) => ({
+      products.map((prod) => ({
         ...prod,
         userId,
         _synced: 0,
@@ -1419,9 +1516,9 @@ export async function importBackupOffline(userId: string, backupData: {
   }
 
   // Import transactions
-  if (backupData.transactions?.length) {
+  if (transactions.length) {
     await offlineTransactions.putBulk(
-      (backupData.transactions as Record<string, unknown>[]).map((txn) => ({
+      transactions.map((txn) => ({
         ...txn,
         userId,
         _synced: 0,
@@ -1431,9 +1528,9 @@ export async function importBackupOffline(userId: string, backupData: {
   }
 
   // Import expenses
-  if (backupData.expenses?.length) {
+  if (expenses.length) {
     await offlineExpenses.putBulk(
-      (backupData.expenses as Record<string, unknown>[]).map((exp) => ({
+      expenses.map((exp) => ({
         ...exp,
         userId,
         _synced: 0,
@@ -1443,9 +1540,9 @@ export async function importBackupOffline(userId: string, backupData: {
   }
 
   // Import cash entries
-  if (backupData.cashEntries?.length) {
+  if (cashEntries.length) {
     await offlineCashEntries.putBulk(
-      (backupData.cashEntries as Record<string, unknown>[]).map((entry) => ({
+      cashEntries.map((entry) => ({
         ...entry,
         userId,
         _synced: 0,
@@ -1454,11 +1551,23 @@ export async function importBackupOffline(userId: string, backupData: {
     );
   }
 
+  // Import service transactions
+  if (serviceTransactions.length) {
+    await offlineServiceTransactions.putBulk(
+      serviceTransactions.map((svc) => ({
+        ...svc,
+        userId,
+        _synced: 0,
+        _dirty: now,
+      })) as OfflineDBSchema['serviceTransactions']['value'][]
+    );
+  }
+
   // Try to sync to Supabase if online
   if (isOnline()) {
     try {
       const { importBackup } = await import('./supabase-service');
-      await importBackup(userId, backupData);
+      await importBackup(userId, { categories, products, transactions, expenses, cashEntries, serviceTransactions });
       // Mark all as synced
       await syncFromSupabase(userId);
     } catch {
@@ -1472,12 +1581,36 @@ export async function importBackupOffline(userId: string, backupData: {
 // ============ RESET DATA (Offline) ============
 
 export async function resetDataOffline(userId: string) {
+  // Queue server-side deletes for every row BEFORE clearing local data.
+  // Previously, resetting while offline cleared only the local copy — the next
+  // sync happily re-downloaded everything ("reset" silently undone).
+  const [cats, prods, txns, exps, cash, svc] = await Promise.all([
+    offlineCategories.getAll(userId),
+    offlineProducts.getAll(userId),
+    offlineTransactions.getAll(userId),
+    offlineExpenses.getAll(userId),
+    offlineCashEntries.getAll(userId),
+    offlineServiceTransactions.getAll(userId),
+  ]);
+  for (const c of cats) await offlinePendingDeletes.add('categories', c.id, userId);
+  for (const p of prods) await offlinePendingDeletes.add('products', p.id, userId);
+  for (const t of txns) await offlinePendingDeletes.add('transactions', t.id, userId);
+  for (const e of exps) await offlinePendingDeletes.add('expenses', e.id, userId);
+  for (const e of cash) await offlinePendingDeletes.add('cashEntries', e.id, userId);
+  for (const s of svc) await offlinePendingDeletes.add('serviceTransactions', s.id, userId);
+
   const { clearOfflineData } = await import('./offline-db');
   await clearOfflineData(userId);
   
   if (isOnline()) {
-    const { resetData } = await import('./supabase-service');
-    await resetData(userId);
+    try {
+      const { resetData } = await import('./supabase-service');
+      await resetData(userId);
+      // Server reset succeeded — the queued deletes are now redundant
+      await offlinePendingDeletes.clearForUser(userId);
+    } catch {
+      // Server reset failed — queued deletes will clean up on the next sync
+    }
   }
   
   return { message: 'All data reset successfully' };

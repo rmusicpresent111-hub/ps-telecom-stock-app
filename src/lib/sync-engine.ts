@@ -1,13 +1,19 @@
 /**
  * Sync Engine - Automatic two-way sync between Supabase and local IndexedDB
- * 
+ *
  * Strategy:
  * 1. READ: Always read from local IndexedDB first (instant). Then fetch from Supabase in background and update local.
  * 2. WRITE: Save to local IndexedDB immediately (instant). Mark as "dirty". Upload to Supabase in background.
  * 3. AUTO-SYNC: Periodic sync every 30s when online, plus sync on online event.
+ *
+ * Safety rules:
+ * - All syncs are serialized through a mutex (no concurrent syncs clobbering each other).
+ * - Every Supabase write checks { error } — items stay dirty until the server confirms.
+ * - Downloads never overwrite locally-dirty (unsynced) rows.
+ * - Transaction uploads apply stock deltas only when the server quantity doesn't already match local.
  */
 
-import { supabase, generateId, toCamelCase, toSnakeCase } from './supabase';
+import { supabase, toCamelCase, toSnakeCase } from './supabase';
 import {
   offlineCategories,
   offlineProducts,
@@ -39,16 +45,27 @@ if (typeof window !== 'undefined') {
     // Notify UI
     window.dispatchEvent(new CustomEvent('app:online-status', { detail: true }));
   });
-  
+
   window.addEventListener('offline', () => {
     _isOnline = false;
     window.dispatchEvent(new CustomEvent('app:online-status', { detail: false }));
   });
 }
 
+// ============ SYNC MUTEX (prevents concurrent syncs) ============
+
+let _syncChain: Promise<unknown> = Promise.resolve();
+
+function withSyncLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = _syncChain.then(fn, fn);
+  // Keep the chain alive even if this run fails
+  _syncChain = run.catch(() => undefined);
+  return run;
+}
+
 // ============ FULL SYNC (Download all from Supabase → Local) ============
 
-export async function syncFromSupabase(userId: string): Promise<void> {
+async function doSyncFromSupabase(userId: string): Promise<void> {
   if (!userId || !isOnline()) return;
 
   try {
@@ -69,6 +86,24 @@ export async function syncFromSupabase(userId: string): Promise<void> {
       supabase.from('service_transactions').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
     ]);
 
+    // Locally-dirty rows must NEVER be overwritten by a download —
+    // they still hold unsynced edits that syncToSupabase will upload later.
+    const [
+      dirtyCatIds,
+      dirtyProdIds,
+      dirtyTxnIds,
+      dirtyExpIds,
+      dirtyCashIds,
+      dirtySvcIds,
+    ] = await Promise.all([
+      offlineCategories.getDirty().then(items => new Set(items.map(i => i.id))),
+      offlineProducts.getDirty().then(items => new Set(items.map(i => i.id))),
+      offlineTransactions.getDirty().then(items => new Set(items.map(i => i.id))),
+      offlineExpenses.getDirty().then(items => new Set(items.map(i => i.id))),
+      offlineCashEntries.getDirty().then(items => new Set(items.map(i => i.id))),
+      offlineServiceTransactions.getDirty().then(items => new Set(items.map(i => i.id))),
+    ]);
+
     // Save categories to local
     if (categoriesResult.data) {
       const now = Date.now();
@@ -80,22 +115,24 @@ export async function syncFromSupabase(userId: string): Promise<void> {
           if (catId) productCountMap[catId] = (productCountMap[catId] || 0) + 1;
         }
       }
-      
-      await offlineCategories.putBulk(
-        categoriesResult.data.map((cat: Record<string, unknown>) => ({
+
+      const rows = (categoriesResult.data as Record<string, unknown>[])
+        .filter(cat => !dirtyCatIds.has(cat.id as string))
+        .map((cat: Record<string, unknown>) => ({
           ...toCamelCase(cat),
-          _count: { products: productCountMap[(cat as Record<string, unknown>).id as string] || 0 },
+          _count: { products: productCountMap[cat.id as string] || 0 },
           _synced: now,
           _dirty: 0,
-        })) as OfflineDBSchema['categories']['value'][]
-      );
+        })) as OfflineDBSchema['categories']['value'][];
+      if (rows.length > 0) await offlineCategories.putBulk(rows);
     }
 
     // Save products to local
     if (productsResult.data) {
       const now = Date.now();
-      await offlineProducts.putBulk(
-        productsResult.data.map((prod: Record<string, unknown>) => {
+      const rows = (productsResult.data as Record<string, unknown>[])
+        .filter(prod => !dirtyProdIds.has(prod.id as string))
+        .map((prod: Record<string, unknown>) => {
           const { category, ...productFields } = prod as Record<string, unknown>;
           const camelProduct = toCamelCase(productFields as Record<string, unknown>);
           if (category && typeof category === 'object') {
@@ -107,15 +144,16 @@ export async function syncFromSupabase(userId: string): Promise<void> {
             _synced: now,
             _dirty: 0,
           };
-        }) as OfflineDBSchema['products']['value'][]
-      );
+        }) as OfflineDBSchema['products']['value'][];
+      if (rows.length > 0) await offlineProducts.putBulk(rows);
     }
 
     // Save transactions to local
     if (transactionsResult.data) {
       const now = Date.now();
-      await offlineTransactions.putBulk(
-        transactionsResult.data.map((txn: Record<string, unknown>) => {
+      const rows = (transactionsResult.data as Record<string, unknown>[])
+        .filter(txn => !dirtyTxnIds.has(txn.id as string))
+        .map((txn: Record<string, unknown>) => {
           const { product, ...txnFields } = txn as Record<string, unknown>;
           const camelTxn = toCamelCase(txnFields);
           if (product && typeof product === 'object') {
@@ -132,49 +170,52 @@ export async function syncFromSupabase(userId: string): Promise<void> {
             _synced: now,
             _dirty: 0,
           };
-        }) as OfflineDBSchema['transactions']['value'][]
-      );
+        }) as OfflineDBSchema['transactions']['value'][];
+      if (rows.length > 0) await offlineTransactions.putBulk(rows);
     }
 
     // Save expenses to local
     if (expensesResult.data) {
       const now = Date.now();
-      await offlineExpenses.putBulk(
-        expensesResult.data.map((exp: Record<string, unknown>) => ({
+      const rows = (expensesResult.data as Record<string, unknown>[])
+        .filter(exp => !dirtyExpIds.has(exp.id as string))
+        .map((exp: Record<string, unknown>) => ({
           ...toCamelCase(exp),
           _synced: now,
           _dirty: 0,
-        })) as OfflineDBSchema['expenses']['value'][]
-      );
+        })) as OfflineDBSchema['expenses']['value'][];
+      if (rows.length > 0) await offlineExpenses.putBulk(rows);
     }
 
     // Save cash entries to local
     if (cashEntriesResult.data) {
       const now = Date.now();
-      await offlineCashEntries.putBulk(
-        cashEntriesResult.data.map((entry: Record<string, unknown>) => ({
+      const rows = (cashEntriesResult.data as Record<string, unknown>[])
+        .filter(entry => !dirtyCashIds.has(entry.id as string))
+        .map((entry: Record<string, unknown>) => ({
           ...toCamelCase(entry),
           _synced: now,
           _dirty: 0,
-        })) as OfflineDBSchema['cashEntries']['value'][]
-      );
+        })) as OfflineDBSchema['cashEntries']['value'][];
+      if (rows.length > 0) await offlineCashEntries.putBulk(rows);
     }
 
     // Save service transactions to local
     if (serviceTransactionsResult.data) {
       const now = Date.now();
-      await offlineServiceTransactions.putBulk(
-        serviceTransactionsResult.data.map((svc: Record<string, unknown>) => ({
+      const rows = (serviceTransactionsResult.data as Record<string, unknown>[])
+        .filter(svc => !dirtySvcIds.has(svc.id as string))
+        .map((svc: Record<string, unknown>) => ({
           ...toCamelCase(svc),
           _synced: now,
           _dirty: 0,
-        })) as OfflineDBSchema['serviceTransactions']['value'][]
-      );
+        })) as OfflineDBSchema['serviceTransactions']['value'][];
+      if (rows.length > 0) await offlineServiceTransactions.putBulk(rows);
     }
 
     // Update sync timestamp
     await offlineMeta.setLastSync(userId, 'full-sync');
-    
+
     // Invalidate memory cache so UI picks up fresh data
     invalidateCache();
   } catch (error) {
@@ -197,7 +238,7 @@ async function processPendingDeletes(userId: string): Promise<void> {
   if (!userId || !isOnline()) return;
 
   const pendingDeletes = await offlinePendingDeletes.getAll(userId);
-  
+
   for (const item of pendingDeletes) {
     try {
       const tableName = STORE_TO_TABLE[item.storeName];
@@ -205,12 +246,12 @@ async function processPendingDeletes(userId: string): Promise<void> {
         await offlinePendingDeletes.remove(item.id);
         continue;
       }
-      
+
       const { error } = await supabase
         .from(tableName)
         .delete()
         .eq('id', item.itemId);
-      
+
       if (!error) {
         await offlinePendingDeletes.remove(item.id);
       }
@@ -221,184 +262,155 @@ async function processPendingDeletes(userId: string): Promise<void> {
   }
 }
 
+// ============ GENERIC DIRTY UPLOAD HELPERS ============
+
+async function upsertDirtyItems<K extends 'categories' | 'products' | 'expenses' | 'cashEntries' | 'serviceTransactions'>(
+  items: OfflineDBSchema[K]['value'][],
+  tableName: string,
+  put: (item: OfflineDBSchema[K]['value']) => Promise<void>
+): Promise<void> {
+  for (const item of items) {
+    try {
+      const { _synced: _s, _dirty: _d, ...itemData } = item as (OfflineDBSchema[K]['value'] & { _synced: number; _dirty: number });
+      const snakeData = toSnakeCase(itemData as unknown as Record<string, unknown>);
+
+      const { data: existing, error: existErr } = await supabase
+        .from(tableName)
+        .select('id')
+        .eq('id', item.id)
+        .maybeSingle();
+      if (existErr) throw existErr;
+
+      const { error } = existing
+        ? await supabase.from(tableName).update(snakeData).eq('id', item.id)
+        : await supabase.from(tableName).insert(snakeData);
+      if (error) throw error;
+
+      // Only mark synced after the server confirmed the write
+      await put(item as OfflineDBSchema[K]['value']);
+    } catch (e) {
+      console.error(`Failed to sync ${tableName} item:`, item.id, e);
+      // Item stays dirty — it will retry on the next sync
+    }
+  }
+}
+
 // ============ UPLOAD DIRTY ITEMS (Local → Supabase) ============
 
-export async function syncToSupabase(userId: string): Promise<void> {
+async function doSyncToSupabase(userId: string): Promise<void> {
   if (!userId || !isOnline()) return;
 
   try {
     // Upload dirty categories
-    const dirtyCategories = await offlineCategories.getDirty();
-    for (const cat of dirtyCategories) {
-      try {
-        const { _synced, _dirty, _count, ...catData } = cat;
-        const snakeData = toSnakeCase(catData);
-        
-        // Check if exists on Supabase
-        const { data: existing } = await supabase
-          .from('categories')
-          .select('id')
-          .eq('id', cat.id)
-          .single();
-        
-        if (existing) {
-          await supabase.from('categories').update(snakeData).eq('id', cat.id);
-        } else {
-          await supabase.from('categories').insert(snakeData);
-        }
-        
-        // Mark as synced
-        await offlineCategories.put({ ...cat, _synced: Date.now(), _dirty: 0 });
-      } catch (e) {
-        console.error('Failed to sync category:', cat.id, e);
-      }
-    }
+    await upsertDirtyItems(
+      await offlineCategories.getDirty(),
+      'categories',
+      async (cat) => { await offlineCategories.put({ ...(cat as OfflineDBSchema['categories']['value']), _synced: Date.now(), _dirty: 0 }); }
+    );
 
     // Upload dirty products
-    const dirtyProducts = await offlineProducts.getDirty();
-    for (const prod of dirtyProducts) {
-      try {
-        const { _synced, _dirty, category, ...prodData } = prod;
-        const snakeData = toSnakeCase(prodData);
-        
-        const { data: existing } = await supabase
-          .from('products')
-          .select('id')
-          .eq('id', prod.id)
-          .single();
-        
-        if (existing) {
-          await supabase.from('products').update(snakeData).eq('id', prod.id);
-        } else {
-          await supabase.from('products').insert(snakeData);
-        }
-        
-        await offlineProducts.put({ ...prod, _synced: Date.now(), _dirty: 0 });
-      } catch (e) {
-        console.error('Failed to sync product:', prod.id, e);
-      }
-    }
+    await upsertDirtyItems(
+      await offlineProducts.getDirty(),
+      'products',
+      async (prod) => { await offlineProducts.put({ ...(prod as OfflineDBSchema['products']['value']), _synced: Date.now(), _dirty: 0 }); }
+    );
 
     // Upload dirty transactions (these are the most critical!)
     const dirtyTransactions = await offlineTransactions.getDirty();
     for (const txn of dirtyTransactions) {
       try {
-        const { _synced, _dirty, product, ...txnData } = txn;
-        const snakeData = toSnakeCase(txnData);
-        
-        // For transactions, we need to handle the stock update too
-        const { data: existing } = await supabase
+        const { _synced: _s, _dirty: _d, product: _p, ...txnData } = txn as OfflineDBSchema['transactions']['value'];
+        const snakeData = toSnakeCase(txnData as unknown as Record<string, unknown>);
+
+        const { data: existing, error: existErr } = await supabase
           .from('transactions')
           .select('id')
           .eq('id', txn.id)
-          .single();
-        
+          .maybeSingle();
+        if (existErr) throw existErr;
+
         if (!existing) {
-          // New transaction - need to update product stock on Supabase
-          const { data: productData } = await supabase
+          // New transaction — make sure the parent product exists on the server first
+          const { data: serverProd, error: prodErr } = await supabase
             .from('products')
             .select('quantity')
             .eq('id', txn.productId)
-            .single();
-          
-          if (productData) {
-            const quantityChange = txn.type === 'STOCK_IN' ? txn.quantity : -txn.quantity;
-            
-            // Insert transaction
-            const { error: insertError } = await supabase
-              .from('transactions')
-              .insert(snakeData);
-            
-            if (!insertError) {
-              // Update product quantity
-              await supabase
+            .maybeSingle();
+          if (prodErr) throw prodErr;
+
+          if (!serverProd) {
+            // Product was never uploaded (e.g. created fully offline) — upload it now
+            const localProducts = await offlineProducts.getAll(txn.userId);
+            const localProd = localProducts.find(p => p.id === txn.productId);
+            if (localProd) {
+              const { _synced: _ps, _dirty: _pd, category: _pc, ...prodData } = localProd;
+              const { error: insProdErr } = await supabase
                 .from('products')
-                .update({ quantity: productData.quantity + quantityChange })
-                .eq('id', txn.productId);
+                .insert(toSnakeCase(prodData as unknown as Record<string, unknown>));
+              if (insProdErr) throw insProdErr;
+            } else {
+              // Orphan transaction: product doesn't exist locally or remotely.
+              // Mark synced to avoid an infinite retry loop (data was already applied locally).
+              console.warn('Orphan transaction skipped (product missing everywhere):', txn.id);
+              await offlineTransactions.put({ ...txn, _synced: Date.now(), _dirty: 0 });
+              continue;
             }
           }
+
+          // Insert the transaction
+          const { error: insertError } = await supabase
+            .from('transactions')
+            .insert(snakeData);
+          if (insertError) throw insertError;
+
+          // Apply the stock delta ONLY if the server quantity doesn't already reflect
+          // the local quantity (products uploaded dirty carry their absolute quantity,
+          // so the delta was already included — applying it again would double-count).
+          const { data: prodAfter } = await supabase
+            .from('products')
+            .select('quantity')
+            .eq('id', txn.productId)
+            .maybeSingle();
+          const localProductsAfter = await offlineProducts.getAll(txn.userId);
+          const localProdAfter = localProductsAfter.find(p => p.id === txn.productId);
+          if (prodAfter && localProdAfter && prodAfter.quantity !== localProdAfter.quantity) {
+            const quantityChange = txn.type === 'STOCK_IN' ? txn.quantity : -txn.quantity;
+            const { error: qtyErr } = await supabase
+              .from('products')
+              .update({ quantity: prodAfter.quantity + quantityChange })
+              .eq('id', txn.productId);
+            if (qtyErr) console.error('Failed to update product quantity on server:', txn.productId, qtyErr);
+          }
         }
-        
+
+        // Mark synced only after confirmed success
         await offlineTransactions.put({ ...txn, _synced: Date.now(), _dirty: 0 });
       } catch (e) {
         console.error('Failed to sync transaction:', txn.id, e);
+        // Transaction stays dirty — will retry on next sync
       }
     }
 
     // Upload dirty expenses
-    const dirtyExpenses = await offlineExpenses.getDirty();
-    for (const exp of dirtyExpenses) {
-      try {
-        const { _synced, _dirty, ...expData } = exp;
-        const snakeData = toSnakeCase(expData);
-        
-        const { data: existing } = await supabase
-          .from('expenses')
-          .select('id')
-          .eq('id', exp.id)
-          .single();
-        
-        if (existing) {
-          await supabase.from('expenses').update(snakeData).eq('id', exp.id);
-        } else {
-          await supabase.from('expenses').insert(snakeData);
-        }
-        
-        await offlineExpenses.put({ ...exp, _synced: Date.now(), _dirty: 0 });
-      } catch (e) {
-        console.error('Failed to sync expense:', exp.id, e);
-      }
-    }
+    await upsertDirtyItems(
+      await offlineExpenses.getDirty(),
+      'expenses',
+      async (exp) => { await offlineExpenses.put({ ...(exp as OfflineDBSchema['expenses']['value']), _synced: Date.now(), _dirty: 0 }); }
+    );
 
     // Upload dirty cash entries
-    const dirtyCashEntries = await offlineCashEntries.getDirty();
-    for (const entry of dirtyCashEntries) {
-      try {
-        const { _synced, _dirty, ...entryData } = entry;
-        const snakeData = toSnakeCase(entryData);
-        
-        const { data: existing } = await supabase
-          .from('cash_entries')
-          .select('id')
-          .eq('id', entry.id)
-          .single();
-        
-        if (existing) {
-          await supabase.from('cash_entries').update(snakeData).eq('id', entry.id);
-        } else {
-          await supabase.from('cash_entries').insert(snakeData);
-        }
-        
-        await offlineCashEntries.put({ ...entry, _synced: Date.now(), _dirty: 0 });
-      } catch (e) {
-        console.error('Failed to sync cash entry:', entry.id, e);
-      }
-    }
+    await upsertDirtyItems(
+      await offlineCashEntries.getDirty(),
+      'cash_entries',
+      async (entry) => { await offlineCashEntries.put({ ...(entry as OfflineDBSchema['cashEntries']['value']), _synced: Date.now(), _dirty: 0 }); }
+    );
 
     // Upload dirty service transactions
-    const dirtyServiceTransactions = await offlineServiceTransactions.getDirty();
-    for (const svc of dirtyServiceTransactions) {
-      try {
-        const { _synced, _dirty, ...svcData } = svc;
-        const snakeData = toSnakeCase(svcData);
-        
-        const { data: existing } = await supabase
-          .from('service_transactions')
-          .select('id')
-          .eq('id', svc.id)
-          .single();
-        
-        if (existing) {
-          await supabase.from('service_transactions').update(snakeData).eq('id', svc.id);
-        } else {
-          await supabase.from('service_transactions').insert(snakeData);
-        }
-        
-        await offlineServiceTransactions.put({ ...svc, _synced: Date.now(), _dirty: 0 });
-      } catch (e) {
-        console.error('Failed to sync service transaction:', svc.id, e);
-      }
-    }
+    await upsertDirtyItems(
+      await offlineServiceTransactions.getDirty(),
+      'service_transactions',
+      async (svc) => { await offlineServiceTransactions.put({ ...(svc as OfflineDBSchema['serviceTransactions']['value']), _synced: Date.now(), _dirty: 0 }); }
+    );
   } catch (error) {
     console.error('Sync to Supabase failed:', error);
   }
@@ -407,16 +419,28 @@ export async function syncToSupabase(userId: string): Promise<void> {
 // ============ SYNC ALL ============
 
 export async function syncAll(): Promise<void> {
-  // Get current user from store
-  const { useAppStore } = await import('@/store/appStore');
-  const userId = useAppStore.getState().user?.id;
-  if (!userId || !isOnline()) return;
+  return withSyncLock(async () => {
+    // Get current user from store
+    const { useAppStore } = await import('@/store/appStore');
+    const userId = useAppStore.getState().user?.id;
+    if (!userId || !isOnline()) return;
 
-  // First process pending deletes, then upload local changes, then sync profile, then download fresh data
-  await processPendingDeletes(userId);
-  await syncToSupabase(userId);
-  await syncPendingProfile(userId);
-  await syncFromSupabase(userId);
+    // First process pending deletes, then upload local changes, then sync profile, then download fresh data
+    await processPendingDeletes(userId);
+    await doSyncToSupabase(userId);
+    await syncPendingProfile(userId);
+    await doSyncFromSupabase(userId);
+  });
+}
+
+// Public wrappers — serialized so concurrent callers (30s interval, online event,
+// background syncs fired by offline-service getters) can never interleave.
+export function syncFromSupabase(userId: string): Promise<void> {
+  return withSyncLock(() => doSyncFromSupabase(userId));
+}
+
+export function syncToSupabase(userId: string): Promise<void> {
+  return withSyncLock(() => doSyncToSupabase(userId));
 }
 
 // ============ SYNC PENDING PROFILE UPDATES ============
@@ -425,12 +449,12 @@ async function syncPendingProfile(userId: string): Promise<void> {
   if (!userId || !isOnline()) return;
 
   const { getPendingProfileUpdates, clearPendingProfileUpdates } = await import('./offline-service');
-  const pendingUpdates = getPendingProfileUpdates(userId);
+  const pendingUpdates = await getPendingProfileUpdates(userId);
   if (pendingUpdates) {
     try {
       const { updateProfile } = await import('./supabase-service');
       await updateProfile(userId, pendingUpdates);
-      clearPendingProfileUpdates(userId);
+      await clearPendingProfileUpdates(userId);
     } catch (e) {
       console.error('Failed to sync pending profile updates:', e);
     }
@@ -443,10 +467,10 @@ let syncInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startAutoSync(intervalMs = 30000): void {
   if (syncInterval) return; // Already running
-  
+
   // Initial sync
   syncAll().catch(console.error);
-  
+
   // Periodic sync
   syncInterval = setInterval(() => {
     if (isOnline()) {

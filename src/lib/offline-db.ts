@@ -140,7 +140,6 @@ function getDB(): Promise<IDBPDatabase<OfflineDBSchema>> {
   if (!dbPromise) {
     dbPromise = openDB<OfflineDBSchema>(DB_NAME, DB_VERSION, {
       upgrade(db, oldVersion) {
-        // Create stores if they don't exist
         if (!db.objectStoreNames.contains('categories')) {
           const catStore = db.createObjectStore('categories', { keyPath: 'id' });
           catStore.createIndex('by-userId', 'userId');
@@ -185,6 +184,11 @@ function getDB(): Promise<IDBPDatabase<OfflineDBSchema>> {
           svcStore.createIndex('by-dirty', '_dirty');
         }
       },
+    }).catch((err) => {
+      // Don't cache a rejected promise forever (private mode, quota, corruption) —
+      // allow the next call to retry opening the database.
+      dbPromise = null;
+      throw err;
     });
   }
   return dbPromise;
