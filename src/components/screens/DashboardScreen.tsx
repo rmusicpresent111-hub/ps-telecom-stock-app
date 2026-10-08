@@ -224,6 +224,10 @@ export default function DashboardScreen() {
       setStockOverview((data.stockOverview as StockOverviewItem[]) || []);
       if ((data.categories as Category[] | undefined)?.length) {
         setCategories(data.categories as Category[]);
+      } else {
+        // Empty DB (fresh account or after Reset All Data / restore) must also
+        // reach the store — otherwise stale categories keep rendering.
+        setCategories([]);
       }
 
       // Calculate today's profit from transactions

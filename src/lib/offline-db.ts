@@ -415,22 +415,37 @@ export const offlineBills = {
 
 export async function clearOfflineData(userId: string): Promise<void> {
   const db = await getDB();
-  const stores: (keyof OfflineDBSchema)[] = ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'syncMeta', 'pendingDeletes', 'serviceTransactions', 'bills'];
-  for (const store of stores) {
-    if (!db.objectStoreNames.contains(store)) continue;
-    try {
-      const all = await db.getAllFromIndex(store, 'by-userId', userId);
-      const tx = db.transaction(store, 'readwrite');
-      for (const item of all) {
-        await tx.store.delete((item as { id: string }).id);
+  const userStores = (
+    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'syncMeta', 'pendingDeletes', 'serviceTransactions', 'bills'] as const
+  ).filter(s => db.objectStoreNames.contains(s));
+  const txStores: (keyof OfflineDBSchema)[] = [...userStores];
+  if (db.objectStoreNames.contains('billingSettings')) txStores.push('billingSettings');
+  if (txStores.length === 0) return; // nothing to wipe (fresh/unknown DB)
+
+  // ONE transaction across every store: Reset All Data either wipes ALL of the
+  // user's rows or NONE of them (previously each store was a separate tx and
+  // errors were silently swallowed, so a partial reset could go unnoticed).
+  const tx = db.transaction(txStores, 'readwrite');
+
+  for (const store of userStores) {
+    const os = tx.objectStore(store);
+    if (os.indexNames.contains('by-userId')) {
+      const keys = await os.index('by-userId').getAllKeys(userId);
+      for (const key of keys) void os.delete(key);
+    } else {
+      // Defensive fallback for a hypothetical legacy store without the index.
+      const rows = await os.getAll();
+      for (const row of rows) {
+        if ((row as { userId?: string }).userId === userId) {
+          void os.delete((row as { id: string }).id);
+        }
       }
-      await tx.done;
-    } catch {
-      // Store might not have by-userId index
     }
   }
+
   // billingSettings is keyed by userId directly (no index)
-  if (db.objectStoreNames.contains('billingSettings')) {
-    await db.delete('billingSettings', userId);
-  }
+  void tx.objectStore('billingSettings').delete(userId);
+
+  // Rejects (and rolls back everything) on any failure — the caller surfaces it.
+  await tx.done;
 }

@@ -9,12 +9,12 @@ import { registerBackModal } from '@/lib/modal-back';
 import { motion } from 'framer-motion';
 import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, LogOut, Receipt, ReceiptText, CloudUpload, Lock } from 'lucide-react';
 import { toast } from 'sonner';
-import type { User as UserType } from '@/lib/types';
+import type { User as UserType, Category } from '@/lib/types';
 
 export default function ProfileScreen() {
   const {
     user, language, setLanguage, theme, setTheme,
-    setUser, navigateTo, logout: storeLogout,
+    setUser, navigateTo, logout: storeLogout, setCategories,
   } = useAppStore();
 
   const [editName, setEditName] = useState('');
@@ -175,6 +175,15 @@ export default function ProfileScreen() {
         bills: arr('bills'),
         billingSettings: backupData.billingSettings,
       });
+      // Refresh the UI-side category cache from the imported rows (Add Product's
+      // select reads the store — it must not show pre-restore categories).
+      if (Array.isArray(backupData.categories)) {
+        setCategories(
+          (backupData.categories as Record<string, unknown>[])
+            .filter(c => !!c && typeof c.id === 'string' && typeof c.name === 'string')
+            .map(c => c as unknown as Category)
+        );
+      }
       toast.success(t('restore', language) + ' ✓');
       setShowRestoreDialog(false);
       setPendingRestore(null);
@@ -193,6 +202,9 @@ export default function ProfileScreen() {
     setLoading(true);
     try {
       await resetDataOffline(user.id);
+      // Clear the UI-side category cache too, so the dashboard/product screens
+      // immediately reflect the empty DB instead of stale rows.
+      setCategories([]);
       toast.success(t('deleted', language));
       setShowResetDialog(false);
       setResetPassword('');

@@ -192,6 +192,7 @@ export interface D1QueryResult {
 }
 
 const CF_DIRECT_BASE = 'https://api.cloudflare.com/client/v4';
+const QUERY_TIMEOUT_MS = 30_000; // parity with the server-side proxy timeout
 
 /**
  * Executes one SQL statement.
@@ -222,8 +223,11 @@ async function d1Query(
     url = '/api/cloud/d1';
   }
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), QUERY_TIMEOUT_MS);
+
   try {
-    const res = await fetch(url, { method: 'POST', headers, body });
+    const res = await fetch(url, { method: 'POST', headers, body, signal: controller.signal });
     let payload: D1QueryResult | null = null;
     let text: string | null = null;
     try {
@@ -239,7 +243,17 @@ async function d1Query(
     }
     return payload;
   } catch (e) {
-    return { ok: false, error: (e as Error).message || 'Network error' };
+    const err = e as Error;
+    return {
+      ok: false,
+      error:
+        err.name === 'AbortError'
+          ? 'Cloudflare request timed out'
+          : err.message || 'Network error',
+    };
+  } finally {
+    // Never leave a stray 30s abort timer behind, even when fetch throws.
+    clearTimeout(timer);
   }
 }
 
@@ -476,9 +490,18 @@ export async function ensureD1Schema(creds: D1Credentials): Promise<D1QueryResul
  * `product` snapshot column. CREATE TABLE IF NOT EXISTS cannot add columns to
  * an existing table, so the ALTER is attempted separately and a "duplicate
  * column" failure is ignored — any other failure surfaces on the next INSERT.
+ *
+ * The outcome is remembered per session so a backup does not burn one doomed
+ * query every single run (a duplicate-column failure also means the column
+ * already exists — safe to cache).
  */
+let productColumnVerified = false;
 async function ensureProductColumn(creds: D1Credentials): Promise<void> {
-  await d1Query(creds, `ALTER TABLE ps_transactions ADD COLUMN product TEXT DEFAULT ''`);
+  if (productColumnVerified) return;
+  const res = await d1Query(creds, `ALTER TABLE ps_transactions ADD COLUMN product TEXT DEFAULT ''`);
+  if (res.ok || /duplicate column/i.test(res.error || '')) {
+    productColumnVerified = true;
+  }
 }
 
 // ============ TABLE MAPPINGS (camelCase local ↔ snake_case cloud) ============

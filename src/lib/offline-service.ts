@@ -229,19 +229,22 @@ export async function updateProductOffline(id: string, updates: Partial<Product>
 
 export async function deleteProductOffline(id: string, userId: string): Promise<{ message: string }> {
   // Ownership check — a product must never be deleted by a different account
-  // on a shared device.
+  // on a shared device. The cascade (related transactions + the product) runs
+  // in ONE IndexedDB transaction so a crash can never leave the product deleted
+  // but its transactions orphaned, or the other way around.
   const db = await getOfflineDB();
-  const product = await db.get('products', id);
+  const tx = db.transaction(['products', 'transactions'], 'readwrite');
+  const product = await tx.objectStore('products').get(id);
   if (!product || (userId && product.userId !== userId)) throw new Error('Not found');
 
   // Delete related transactions first (cascade)
-  const localTxns = await offlineTransactions.getAll(userId);
-  const relatedTxns = localTxns.filter(t => t.productId === id);
-  for (const txn of relatedTxns) {
-    await offlineTransactions.delete(txn.id);
+  const localTxns = await tx.objectStore('transactions').index('by-userId').getAll(userId);
+  for (const txn of localTxns) {
+    if (txn.productId === id) void tx.objectStore('transactions').delete(txn.id);
   }
 
-  await offlineProducts.delete(id);
+  void tx.objectStore('products').delete(id);
+  await tx.done;
   return { message: 'Product deleted successfully' };
 }
 
@@ -282,6 +285,12 @@ export async function createTransactionOffline(transactionData: {
   // Validate BEFORE writing anything — a readwrite tx with no writes commits empty.
   const product = await productsStore.get(transactionData.productId);
   if (!product) {
+    throw new Error('Product not found');
+  }
+  // Ownership check — a second account on a shared device must never be able
+  // to move stock on (or write transactions against) someone else's product.
+  // Generic message, same as the not-found case (no enumeration).
+  if (product.userId !== transactionData.userId) {
     throw new Error('Product not found');
   }
 
@@ -958,21 +967,37 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, num));
 }
 
-/** Generates the next sequential bill number: PREFIX-YYMM-0001 */
-async function nextBillNumber(userId: string, prefix: string): Promise<string> {
-  const bills = await offlineBills.getAll(userId);
+/**
+ * Generates the next sequential bill number: PREFIX-YYMM-0001.
+ * Runs against rows already fetched inside the SAME transaction that will save
+ * the new bill (no read-then-write race), and skips any number that is already
+ * taken (e.g. numbers that arrived via a restore/import) so duplicates are
+ * impossible.
+ */
+function nextBillNumberFromRows(
+  bills: OfflineDBSchema['bills']['value'][],
+  prefix: string
+): string {
   const now = new Date();
   const yy = String(now.getFullYear()).slice(-2);
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const monthPrefix = `${prefix}-${yy}${mm}-`;
   let maxSeq = 0;
+  const taken = new Set<string>();
   for (const b of bills) {
     if (typeof b.billNumber === 'string' && b.billNumber.startsWith(monthPrefix)) {
+      taken.add(b.billNumber);
       const seq = parseInt(b.billNumber.slice(monthPrefix.length), 10);
       if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
     }
   }
-  return `${monthPrefix}${String(maxSeq + 1).padStart(4, '0')}`;
+  let seq = maxSeq + 1;
+  let candidate = `${monthPrefix}${String(seq).padStart(4, '0')}`;
+  while (taken.has(candidate)) {
+    seq += 1;
+    candidate = `${monthPrefix}${String(seq).padStart(4, '0')}`;
+  }
+  return candidate;
 }
 
 export async function createBillOffline(data: {
@@ -1020,13 +1045,21 @@ export async function createBillOffline(data: {
   paidAmount = round2(Math.min(paidAmount, total));
   const dueAmount = round2(total - paidAmount);
 
-  // Guard: one bill per stock-out/sell transaction — prevents accidental duplicates
-  const existingBills = await offlineBills.getAll(data.userId);
+  const now = new Date().toISOString();
+
+  // Atomic bill creation: the duplicate-transaction guard, the bill-number
+  // allocation and the save run inside ONE IndexedDB transaction, so a
+  // double-tap or racing call can never mint two bills for one stock-out
+  // transaction or allocate the same number twice.
+  const db = await getOfflineDB();
+  const tx = db.transaction('bills', 'readwrite');
+  const billsOs = tx.objectStore('bills');
+  const existingBills = await billsOs.index('by-userId').getAll(data.userId);
+
   const dupe = existingBills.find(b => b.transactionId === data.transactionId);
   if (dupe) throw new Error('A bill already exists for this transaction');
 
-  const now = new Date().toISOString();
-  const billNumber = await nextBillNumber(data.userId, settings.billPrefix.trim() || 'PS');
+  const billNumber = nextBillNumberFromRows(existingBills, settings.billPrefix.trim() || 'PS');
 
   const bill: OfflineDBSchema['bills']['value'] = {
     id: generateRecordId(),
@@ -1068,7 +1101,9 @@ export async function createBillOffline(data: {
     updatedAt: now,
   };
 
-  await offlineBills.put(bill);
+  void billsOs.put(bill);
+  await tx.done;
+
   return { bill: bill as unknown as Bill };
 }
 
@@ -1153,6 +1188,7 @@ export async function importBackupOffline(userId: string, backupData: {
   billingSettings?: unknown;
 }) {
   const now = Date.now();
+  const nowIso = new Date().toISOString();
 
   // ---- Numeric coercion helpers (same clamps the create* functions use) ----
   const toNum = (v: unknown): number => {
@@ -1173,6 +1209,17 @@ export async function importBackupOffline(userId: string, backupData: {
   };
   const hasName = (row: Record<string, unknown>): boolean =>
     typeof row.name === 'string' && row.name.trim() !== '';
+  /** A hand-edited backup with date: 20251012 (number) would crash every
+   *  localeCompare()/date filter later — force date-ish fields to strings. */
+  const isoStr = (v: unknown): string => (typeof v === 'string' ? v : v == null ? '' : String(v));
+  /** Normalizes any date-ish field that is PRESENT in the row to a string. */
+  const fixDates = (row: Record<string, unknown>): Record<string, unknown> => {
+    const out: Record<string, unknown> = { ...row };
+    if (out.date !== undefined) out.date = isoStr(out.date);
+    if (out.createdAt !== undefined) out.createdAt = isoStr(out.createdAt);
+    if (out.updatedAt !== undefined) out.updatedAt = isoStr(out.updatedAt);
+    return out;
+  };
 
   // Validate rows: every row MUST have an id — malformed backups must never
   // be written into IndexedDB.
@@ -1194,95 +1241,102 @@ export async function importBackupOffline(userId: string, backupData: {
     ? backupData.billingSettings as Record<string, unknown>
     : null;
 
-  if (categories.length === 0 && products.length === 0 && transactions.length === 0 && expenses.length === 0 && cashEntries.length === 0 && serviceTransactions.length === 0 && bills.length === 0) {
+  if (categories.length === 0 && products.length === 0 && transactions.length === 0 && expenses.length === 0 && cashEntries.length === 0 && serviceTransactions.length === 0 && bills.length === 0 && !billingSettings) {
+    // A settings-only backup (fresh shop, no rows yet) is legitimate — only
+    // reject a file that has literally nothing usable.
     throw new Error('Backup file contains no valid data');
   }
 
-  // REPLACE semantics: clear existing stores first so stale rows can't survive a restore.
-  const [allLocalCats, allLocalProducts, allLocalTxns, allLocalExpenses, allLocalCash, allLocalSvc, allLocalBills] = await Promise.all([
-    offlineCategories.getAll(userId),
-    offlineProducts.getAll(userId),
-    offlineTransactions.getAll(userId),
-    offlineExpenses.getAll(userId),
-    offlineCashEntries.getAll(userId),
-    offlineServiceTransactions.getAll(userId),
-    offlineBills.getAll(userId),
-  ]);
-  await Promise.all([
-    ...allLocalCats.map(c => offlineCategories.delete(c.id)),
-    ...allLocalProducts.map(p => offlineProducts.delete(p.id)),
-    ...allLocalTxns.map(t => offlineTransactions.delete(t.id)),
-    ...allLocalExpenses.map(e => offlineExpenses.delete(e.id)),
-    ...allLocalCash.map(e => offlineCashEntries.delete(e.id)),
-    ...allLocalSvc.map(s => offlineServiceTransactions.delete(s.id)),
-    ...allLocalBills.map(b => offlineBills.delete(b.id)),
-  ]);
+  // ---- REPLACE semantics, ATOMICALLY ----
+  // The old rows and the imported rows swap inside ONE IndexedDB transaction
+  // spanning every store: a crash or quota error mid-restore can never leave
+  // the device half-wiped or half-imported. (Previously the wipe and the write
+  // ran in separate transactions — a failure in between destroyed local data.)
 
-  if (categories.length) {
-    await offlineCategories.putBulk(
-      categories.map((cat) => ({ ...cat, userId, _synced: now, _dirty: 0 })) as OfflineDBSchema['categories']['value'][]
-    );
+  // 1. Prepare all validated + coerced rows first (pure data, no I/O) so the
+  //    transaction itself stays short.
+  const catRows: OfflineDBSchema['categories']['value'][] = categories.map(
+    (cat) => ({ ...fixDates(cat), userId, _synced: now, _dirty: 0 }) as OfflineDBSchema['categories']['value']
+  );
+  const prodRows: OfflineDBSchema['products']['value'][] = products.map(
+    (prod) => coerce({ ...fixDates(prod), userId, _synced: now, _dirty: 0 }, {
+      quantity: 'int',
+      purchasePrice: 'num',
+      sellingPrice: 'num',
+      lowStockThreshold: 'int',
+    }) as OfflineDBSchema['products']['value']
+  );
+  const txnRows: OfflineDBSchema['transactions']['value'][] = transactions.map(
+    (txn) => coerce({ ...fixDates(txn), date: isoStr(txn.date), userId, _synced: now, _dirty: 0 }, {
+      quantity: 'int',
+      unitPrice: 'num',
+      totalAmount: 'num',
+    }) as OfflineDBSchema['transactions']['value']
+  );
+  const expRows: OfflineDBSchema['expenses']['value'][] = expenses.map(
+    (exp) => coerce({ ...fixDates(exp), date: isoStr(exp.date), userId, _synced: now, _dirty: 0 }, { amount: 'num' }) as OfflineDBSchema['expenses']['value']
+  );
+  const cashRows: OfflineDBSchema['cashEntries']['value'][] = cashEntries.map(
+    (entry) => coerce({ ...fixDates(entry), date: isoStr(entry.date), userId, _synced: now, _dirty: 0 }, {
+      handCash: 'num',
+      liquidCash: 'num',
+    }) as OfflineDBSchema['cashEntries']['value']
+  );
+  const svcRows: OfflineDBSchema['serviceTransactions']['value'][] = serviceTransactions.map(
+    (svc) => coerce({ ...fixDates(svc), date: isoStr(svc.date), userId, _synced: now, _dirty: 0 }, { amount: 'num' }) as OfflineDBSchema['serviceTransactions']['value']
+  );
+  const billRows: OfflineDBSchema['bills']['value'][] = bills.map(
+    (bill) => coerce({
+      ...fixDates(bill),
+      date: isoStr(bill.date),
+      userId,
+      createdAt: isoStr(bill.createdAt) || nowIso,
+      updatedAt: isoStr(bill.updatedAt) || nowIso,
+    }, {
+      subtotal: 'num',
+      discountValue: 'num',
+      discountAmount: 'num',
+      gstRate: 'num',
+      gstAmount: 'num',
+      total: 'num',
+      paidAmount: 'num',
+      dueAmount: 'num',
+    }) as OfflineDBSchema['bills']['value']
+  );
+
+  // 2. One readwrite transaction across ALL stores: wipe this user's rows,
+  //    write the imported ones, swap billingSettings — all or nothing.
+  const db = await getOfflineDB();
+  const tx = db.transaction(
+    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills', 'billingSettings'],
+    'readwrite'
+  );
+
+  for (const store of ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills'] as const) {
+    const os = tx.objectStore(store);
+    const keys = await os.index('by-userId').getAllKeys(userId);
+    for (const key of keys) void os.delete(key);
   }
-  if (products.length) {
-    await offlineProducts.putBulk(
-      products.map((prod) => coerce({ ...prod, userId, _synced: now, _dirty: 0 }, {
-        quantity: 'int',
-        purchasePrice: 'num',
-        sellingPrice: 'num',
-        lowStockThreshold: 'int',
-      })) as OfflineDBSchema['products']['value'][]
-    );
-  }
-  if (transactions.length) {
-    await offlineTransactions.putBulk(
-      transactions.map((txn) => coerce({ ...txn, userId, _synced: now, _dirty: 0 }, {
-        quantity: 'int',
-        unitPrice: 'num',
-        totalAmount: 'num',
-      })) as OfflineDBSchema['transactions']['value'][]
-    );
-  }
-  if (expenses.length) {
-    await offlineExpenses.putBulk(
-      expenses.map((exp) => coerce({ ...exp, userId, _synced: now, _dirty: 0 }, { amount: 'num' })) as OfflineDBSchema['expenses']['value'][]
-    );
-  }
-  if (cashEntries.length) {
-    await offlineCashEntries.putBulk(
-      cashEntries.map((entry) => coerce({ ...entry, userId, _synced: now, _dirty: 0 }, {
-        handCash: 'num',
-        liquidCash: 'num',
-      })) as OfflineDBSchema['cashEntries']['value'][]
-    );
-  }
-  if (serviceTransactions.length) {
-    await offlineServiceTransactions.putBulk(
-      serviceTransactions.map((svc) => coerce({ ...svc, userId, _synced: now, _dirty: 0 }, { amount: 'num' })) as OfflineDBSchema['serviceTransactions']['value'][]
-    );
-  }
-  if (bills.length) {
-    await offlineBills.putBulk(
-      bills.map((bill) => coerce({ ...bill, userId, createdAt: bill.createdAt || new Date().toISOString(), updatedAt: bill.updatedAt || new Date().toISOString() }, {
-        subtotal: 'num',
-        discountValue: 'num',
-        discountAmount: 'num',
-        gstRate: 'num',
-        gstAmount: 'num',
-        total: 'num',
-        paidAmount: 'num',
-        dueAmount: 'num',
-      })) as OfflineDBSchema['bills']['value'][]
-    );
-  }
+
+  for (const row of catRows) void tx.objectStore('categories').put(row);
+  for (const row of prodRows) void tx.objectStore('products').put(row);
+  for (const row of txnRows) void tx.objectStore('transactions').put(row);
+  for (const row of expRows) void tx.objectStore('expenses').put(row);
+  for (const row of cashRows) void tx.objectStore('cashEntries').put(row);
+  for (const row of svcRows) void tx.objectStore('serviceTransactions').put(row);
+  for (const row of billRows) void tx.objectStore('bills').put(row);
+
   if (billingSettings) {
-    const db = await getOfflineDB();
-    await db.put('billingSettings', {
+    void tx.objectStore('billingSettings').put({
       ...DEFAULT_BILLING_SETTINGS,
       ...billingSettings,
       userId,
-      updatedAt: new Date().toISOString(),
+      updatedAt: nowIso,
     } as OfflineDBSchema['billingSettings']['value']);
   }
+
+  // Commits everything or nothing — any failed request rejects and rolls back.
+  await tx.done;
 
   return { message: 'Backup imported successfully' };
 }

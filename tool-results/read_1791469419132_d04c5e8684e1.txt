@@ -1,0 +1,1024 @@
+     1→/**
+     2→ * Cloudflare D1 cloud-backup engine (client side).
+     3→ *
+     4→ * Stores a faithful copy of the local (IndexedDB) shop data in the user's OWN
+     5→ * Cloudflare D1 database. On the web it talks through the /api/cloud/d1 proxy
+     6→ * route; inside the native APK (Capacitor) there is no Next.js server, so it
+     7→ * calls api.cloudflare.com directly with the same JSON body.
+     8→ *
+     9→ * Design:
+    10→ *  - Backup  = DELETE user rows on cloud + INSERT all local rows (full replace).
+    11→ *  - Restore = SELECT all cloud rows + importBackupOffline() (full local replace).
+    12→ *  - Every row keeps its original `userId` in the cloud, and a meta row records
+    13→ *    which account made the backup — so restore works even on a brand-new phone
+    14→ *    with a fresh account (rows are remapped to the current user on import).
+    15→ *  - Crash safety: the meta row is written with "_incomplete": true BEFORE any
+    16→ *    destructive step and only overwritten with real counts at the very end —
+    17→ *    a backup interrupted mid-way can never be restored as if it were complete.
+    18→ *  - Credentials are stored per user (ps-d1-creds:<userId>), so two accounts on
+    19→ *    one device never share Cloudflare access. Legacy shared keys are migrated
+    20→ *    on first read.
+    21→ */
+    22→
+    23→import { exportBackupOffline, importBackupOffline } from './offline-service';
+    24→
+    25→// ============ CREDENTIALS (localStorage, per user) ============
+    26→
+    27→export interface D1Credentials {
+    28→  accountId: string;
+    29→  databaseId: string;
+    30→  apiToken: string;
+    31→}
+    32→
+    33→export interface CloudMeta {
+    34→  backedUpAt: string;
+    35→  userEmail: string;
+    36→  shopName: string;
+    37→  totalRows: number;
+    38→}
+    39→
+    40→// Legacy (pre per-user) keys — still read for migration, always cleared.
+    41→const CREDS_KEY_LEGACY = 'ps-d1-creds';
+    42→const LAST_BACKUP_KEY_LEGACY = 'ps-d1-last-backup';
+    43→const credsKey = (userId: string) => `ps-d1-creds:${userId}`;
+    44→const lastBackupKey = (userId: string) => `ps-d1-last-backup:${userId}`;
+    45→
+    46→function parseCreds(raw: string | null): D1Credentials | null {
+    47→  if (!raw) return null;
+    48→  try {
+    49→    const c = JSON.parse(raw) as Partial<D1Credentials>;
+    50→    if (c.accountId && c.databaseId && c.apiToken) {
+    51→      return { accountId: c.accountId, databaseId: c.databaseId, apiToken: c.apiToken };
+    52→    }
+    53→  } catch {
+    54→    // Corrupted record — treat as missing.
+    55→  }
+    56→  return null;
+    57→}
+    58→
+    59→/**
+    60→ * Reads the D1 credentials for a user.
+    61→ * - With userId: reads the per-user key first; if absent, falls back to the
+    62→ *   legacy shared key and MIGRATES it (writes the per-user key, deletes the
+    63→ *   legacy key + legacy last-backup marker).
+    64→ * - Without userId: reads only the legacy shared key (best effort).
+    65→ */
+    66→export function getD1Credentials(userId?: string): D1Credentials | null {
+    67→  if (userId) {
+    68→    const own = parseCreds(safeGet(credsKey(userId)));
+    69→    if (own) return own;
+    70→
+    71→    // Legacy fallback + one-time migration
+    72→    const legacy = parseCreds(safeGet(CREDS_KEY_LEGACY));
+    73→    if (legacy) {
+    74→      try {
+    75→        localStorage.setItem(credsKey(userId), JSON.stringify(legacy));
+    76→        localStorage.removeItem(CREDS_KEY_LEGACY);
+    77→        const legacyBackup = safeGet(LAST_BACKUP_KEY_LEGACY);
+    78→        if (legacyBackup) {
+    79→          localStorage.setItem(lastBackupKey(userId), legacyBackup);
+    80→          localStorage.removeItem(LAST_BACKUP_KEY_LEGACY);
+    81→        }
+    82→      } catch {
+    83→        // Migration is best-effort; the legacy record stays readable.
+    84→      }
+    85→      return legacy;
+    86→    }
+    87→    return null;
+    88→  }
+    89→  return parseCreds(safeGet(CREDS_KEY_LEGACY));
+    90→}
+    91→
+    92→export function saveD1Credentials(creds: D1Credentials, userId: string): void {
+    93→  try {
+    94→    localStorage.setItem(credsKey(userId), JSON.stringify(creds));
+    95→  } catch {
+    96→    // Storage full/blocked — nothing sensible to do here.
+    97→  }
+    98→}
+    99→
+   100→/** Clears this user's credentials (and always removes the legacy shared keys). */
+   101→export function clearD1Credentials(userId?: string): void {
+   102→  try {
+   103→    if (userId) {
+   104→      localStorage.removeItem(credsKey(userId));
+   105→      localStorage.removeItem(lastBackupKey(userId));
+   106→    }
+   107→    localStorage.removeItem(CREDS_KEY_LEGACY);
+   108→    localStorage.removeItem(LAST_BACKUP_KEY_LEGACY);
+   109→  } catch {
+   110→    // Ignore storage failures on cleanup.
+   111→  }
+   112→}
+   113→
+   114→function safeGet(key: string): string | null {
+   115→  try {
+   116→    return localStorage.getItem(key);
+   117→  } catch {
+   118→    return null;
+   119→  }
+   120→}
+   121→
+   122→function parseLastBackup(raw: string | null, userId: string): number {
+   123→  if (!raw) return 0;
+   124→  try {
+   125→    const v = JSON.parse(raw) as { userId?: string; at?: number };
+   126→    return v && typeof v.at === 'number' && (!v.userId || v.userId === userId) ? v.at : 0;
+   127→  } catch {
+   128→    return 0;
+   129→  }
+   130→}
+   131→
+   132→/** Timestamp (ms) of the last successful cloud backup by this user (0 = never). */
+   133→export function getD1LastBackup(userId: string): number {
+   134→  const own = safeGet(lastBackupKey(userId));
+   135→  if (own) return parseLastBackup(own, userId);
+   136→  // Legacy fallback + one-time migration.
+   137→  const legacy = safeGet(LAST_BACKUP_KEY_LEGACY);
+   138→  if (legacy) {
+   139→    try {
+   140→      localStorage.setItem(lastBackupKey(userId), legacy);
+   141→      localStorage.removeItem(LAST_BACKUP_KEY_LEGACY);
+   142→    } catch {
+   143→      // Ignore.
+   144→    }
+   145→    return parseLastBackup(legacy, userId);
+   146→  }
+   147→  return 0;
+   148→}
+   149→
+   150→function setD1LastBackup(userId: string): void {
+   151→  try {
+   152→    localStorage.setItem(lastBackupKey(userId), JSON.stringify({ userId, at: Date.now() }));
+   153→  } catch {
+   154→    // Ignore.
+   155→  }
+   156→}
+   157→
+   158→// ============ NATIVE (APK) DETECTION ============
+   159→
+   160→let nativeCheck: Promise<boolean> | null = null;
+   161→
+   162→/**
+   163→ * True when running inside a native Capacitor shell (the Android APK).
+   164→ * Detected lazily via a dynamic import so the web bundle stays unchanged and
+   165→ * SSR never touches the module.
+   166→ */
+   167→function isNativeCapacitor(): Promise<boolean> {
+   168→  if (!nativeCheck) {
+   169→    nativeCheck = (async () => {
+   170→      try {
+   171→        const mod = (await import('@capacitor/core')) as {
+   172→          Capacitor?: { isNativePlatform?: () => boolean };
+   173→        };
+   174→        return typeof mod.Capacitor?.isNativePlatform === 'function'
+   175→          ? mod.Capacitor.isNativePlatform()
+   176→          : false;
+   177→      } catch {
+   178→        return false; // @capacitor/core unavailable → plain web.
+   179→      }
+   180→    })();
+   181→  }
+   182→  return nativeCheck;
+   183→}
+   184→
+   185→// ============ LOW-LEVEL QUERY ============
+   186→
+   187→export interface D1QueryResult {
+   188→  ok: boolean;
+   189→  rows?: Record<string, unknown>[];
+   190→  changes?: number;
+   191→  error?: string;
+   192→}
+   193→
+   194→const CF_DIRECT_BASE = 'https://api.cloudflare.com/client/v4';
+   195→
+   196→/**
+   197→ * Executes one SQL statement.
+   198→ *
+   199→ * Transport:
+   200→ *  - Web: POSTs to the same-origin /api/cloud/d1 proxy (no CORS, creds relayed
+   201→ *    per request, never stored server-side).
+   202→ *  - Native APK: the Next.js server does not exist inside the app bundle, so
+   203→ *    the proxy route is unreachable — the query goes straight to the official
+   204→ *    Cloudflare REST API instead (same body shape, Bearer token auth).
+   205→ */
+   206→async function d1Query(
+   207→  creds: D1Credentials,
+   208→  sql: string,
+   209→  params?: unknown[]
+   210→): Promise<D1QueryResult> {
+   211→  const native = await isNativeCapacitor();
+   212→  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+   213→  let url: string;
+   214→  let body: string;
+   215→
+   216→  if (native) {
+   217→    headers.Authorization = `Bearer ${creds.apiToken}`;
+   218→    body = JSON.stringify(params && params.length > 0 ? { sql, params } : { sql });
+   219→    url = `${CF_DIRECT_BASE}/accounts/${encodeURIComponent(creds.accountId)}/d1/database/${encodeURIComponent(creds.databaseId)}/query`;
+   220→  } else {
+   221→    body = JSON.stringify({ ...creds, sql, params });
+   222→    url = '/api/cloud/d1';
+   223→  }
+   224→
+   225→  try {
+   226→    const res = await fetch(url, { method: 'POST', headers, body });
+   227→    let payload: D1QueryResult | null = null;
+   228→    let text: string | null = null;
+   229→    try {
+   230→      text = await res.text();
+   231→      payload = JSON.parse(text) as D1QueryResult;
+   232→    } catch {
+   233→      payload = null;
+   234→    }
+   235→    if (!res.ok || !payload || typeof payload.ok !== 'boolean') {
+   236→      // Native mode returns the RAW Cloudflare response — normalize it here.
+   237→      if (native && text) return normalizeCloudflareResponse(text, res.status);
+   238→      return { ok: false, error: payload?.error || `Request failed (HTTP ${res.status})` };
+   239→    }
+   240→    return payload;
+   241→  } catch (e) {
+   242→    return { ok: false, error: (e as Error).message || 'Network error' };
+   243→  }
+   244→}
+   245→
+   246→/**
+   247→ * Normalizes a raw Cloudflare /query response (used only on the native path,
+   248→ * where there is no server-side proxy to do it). Mirrors the proxy's mapping.
+   249→ */
+   250→function normalizeCloudflareResponse(text: string, status: number): D1QueryResult {
+   251→  let parsed: {
+   252→    success?: boolean;
+   253→    errors?: { message?: string }[];
+   254→    result?: unknown;
+   255→  } | null = null;
+   256→  try {
+   257→    parsed = JSON.parse(text);
+   258→  } catch {
+   259→    parsed = null;
+   260→  }
+   261→  if (!parsed || parsed.success === false) {
+   262→    const cfMsg = parsed?.errors?.[0]?.message;
+   263→    return {
+   264→      ok: false,
+   265→      error: cfMsg || (text.length < 400 ? text : `Cloudflare API returned HTTP ${status}`),
+   266→    };
+   267→  }
+   268→  const resultArr = Array.isArray(parsed.result) ? parsed.result : [parsed.result];
+   269→  const rows: Record<string, unknown>[] = [];
+   270→  let changes = 0;
+   271→  for (const r of resultArr) {
+   272→    const rr = r as { results?: unknown[]; meta?: { changes?: number } } | null;
+   273→    if (rr && Array.isArray(rr.results)) {
+   274→      for (const row of rr.results) {
+   275→        if (row && typeof row === 'object') rows.push(row as Record<string, unknown>);
+   276→      }
+   277→    }
+   278→    if (rr?.meta && typeof rr.meta.changes === 'number') changes += rr.meta.changes;
+   279→  }
+   280→  return { ok: true, rows, changes };
+   281→}
+   282→
+   283→/**
+   284→ * Executes several statements. Multi-statement SQL is sent in one call; if the
+   285→ * endpoint refuses it, every statement is retried individually so the feature
+   286→ * works with both behaviours.
+   287→ */
+   288→async function runStatements(
+   289→  creds: D1Credentials,
+   290→  statements: string[]
+   291→): Promise<D1QueryResult> {
+   292→  if (statements.length === 0) return { ok: true, rows: [] };
+   293→  const joined = statements.join(';\n');
+   294→  const first = await d1Query(creds, joined);
+   295→  if (first.ok) return first;
+   296→  if (statements.length === 1) return first;
+   297→  // Fallback: one statement per request
+   298→  for (const stmt of statements) {
+   299→    const r = await d1Query(creds, stmt);
+   300→    if (!r.ok) return r;
+   301→  }
+   302→  return { ok: true, rows: [] };
+   303→}
+   304→
+   305→// ============ SQL VALUE ESCAPING ============
+   306→
+   307→/** Strips NUL bytes and unpaired UTF-16 surrogates (corrupt through JSON/UTF-8). */
+   308→function sanitizeText(s: string): string {
+   309→  let out = '';
+   310→  for (let i = 0; i < s.length; i++) {
+   311→    const c = s.charCodeAt(i);
+   312→    if (c === 0) continue;
+   313→    if (c >= 0xd800 && c <= 0xdbff) {
+   314→      const next = i + 1 < s.length ? s.charCodeAt(i + 1) : 0;
+   315→      if (next >= 0xdc00 && next <= 0xdfff) {
+   316→        out += s[i] + s[i + 1];
+   317→        i++;
+   318→      }
+   319→      // lone high surrogate → dropped
+   320→    } else if (c >= 0xdc00 && c <= 0xdfff) {
+   321→      // lone low surrogate → dropped
+   322→    } else {
+   323→      out += s[i];
+   324→    }
+   325→  }
+   326→  return out;
+   327→}
+   328→
+   329→/** Escapes a JS value as a SQLite literal (numbers/NULL unquoted, strings quoted). */
+   330→function sqlVal(v: unknown): string {
+   331→  if (v === null || v === undefined) return 'NULL';
+   332→  const t = typeof v;
+   333→  if (t === 'number') {
+   334→    const n = v as number;
+   335→    return Number.isFinite(n) ? String(n) : 'NULL';
+   336→  }
+   337→  if (t === 'boolean') return v ? '1' : '0';
+   338→  const s = t === 'string' ? (v as string) : JSON.stringify(v);
+   339→  return `'${sanitizeText(s).replace(/'/g, "''")}'`;
+   340→}
+   341→
+   342→// ============ SCHEMA ============
+   343→
+   344→export const D1_SCHEMA_STATEMENTS: string[] = [
+   345→  `CREATE TABLE IF NOT EXISTS ps_categories (
+   346→    id TEXT PRIMARY KEY,
+   347→    user_id TEXT NOT NULL,
+   348→    name TEXT NOT NULL,
+   349→    image TEXT DEFAULT '',
+   350→    created_at TEXT DEFAULT '',
+   351→    updated_at TEXT DEFAULT ''
+   352→  )`,
+   353→  `CREATE TABLE IF NOT EXISTS ps_products (
+   354→    id TEXT PRIMARY KEY,
+   355→    user_id TEXT NOT NULL,
+   356→    category_id TEXT DEFAULT '',
+   357→    name TEXT NOT NULL,
+   358→    quantity INTEGER DEFAULT 0,
+   359→    box_number TEXT DEFAULT '',
+   360→    purchase_price REAL DEFAULT 0,
+   361→    selling_price REAL DEFAULT 0,
+   362→    low_stock_threshold INTEGER DEFAULT 0,
+   363→    created_at TEXT DEFAULT '',
+   364→    updated_at TEXT DEFAULT ''
+   365→  )`,
+   366→  `CREATE TABLE IF NOT EXISTS ps_transactions (
+   367→    id TEXT PRIMARY KEY,
+   368→    user_id TEXT NOT NULL,
+   369→    product_id TEXT DEFAULT '',
+   370→    type TEXT DEFAULT 'STOCK_IN',
+   371→    quantity INTEGER DEFAULT 0,
+   372→    unit_price REAL DEFAULT 0,
+   373→    total_amount REAL DEFAULT 0,
+   374→    product TEXT DEFAULT '',
+   375→    date TEXT DEFAULT '',
+   376→    created_at TEXT DEFAULT ''
+   377→  )`,
+   378→  `CREATE TABLE IF NOT EXISTS ps_expenses (
+   379→    id TEXT PRIMARY KEY,
+   380→    user_id TEXT NOT NULL,
+   381→    date TEXT DEFAULT '',
+   382→    amount REAL DEFAULT 0,
+   383→    category TEXT DEFAULT '',
+   384→    description TEXT DEFAULT '',
+   385→    created_at TEXT DEFAULT '',
+   386→    updated_at TEXT DEFAULT ''
+   387→  )`,
+   388→  `CREATE TABLE IF NOT EXISTS ps_cash_entries (
+   389→    id TEXT PRIMARY KEY,
+   390→    user_id TEXT NOT NULL,
+   391→    date TEXT DEFAULT '',
+   392→    hand_cash REAL DEFAULT 0,
+   393→    liquid_cash REAL DEFAULT 0,
+   394→    note TEXT DEFAULT '',
+   395→    created_at TEXT DEFAULT '',
+   396→    updated_at TEXT DEFAULT ''
+   397→  )`,
+   398→  `CREATE TABLE IF NOT EXISTS ps_service_transactions (
+   399→    id TEXT PRIMARY KEY,
+   400→    user_id TEXT NOT NULL,
+   401→    category_type TEXT DEFAULT 'repairing',
+   402→    transaction_type TEXT DEFAULT 'income',
+   403→    amount REAL DEFAULT 0,
+   404→    purpose TEXT DEFAULT '',
+   405→    date TEXT DEFAULT '',
+   406→    created_at TEXT DEFAULT '',
+   407→    updated_at TEXT DEFAULT ''
+   408→  )`,
+   409→  `CREATE TABLE IF NOT EXISTS ps_bills (
+   410→    id TEXT PRIMARY KEY,
+   411→    user_id TEXT NOT NULL,
+   412→    bill_number TEXT DEFAULT '',
+   413→    customer_name TEXT DEFAULT '',
+   414→    customer_mobile TEXT DEFAULT '',
+   415→    items TEXT DEFAULT '[]',
+   416→    subtotal REAL DEFAULT 0,
+   417→    discount_value REAL DEFAULT 0,
+   418→    discount_type TEXT DEFAULT 'amount',
+   419→    discount_amount REAL DEFAULT 0,
+   420→    gst_enabled INTEGER DEFAULT 0,
+   421→    gst_rate REAL DEFAULT 0,
+   422→    gst_amount REAL DEFAULT 0,
+   423→    total REAL DEFAULT 0,
+   424→    payment_method TEXT DEFAULT 'cash',
+   425→    paid_amount REAL DEFAULT 0,
+   426→    due_amount REAL DEFAULT 0,
+   427→    note TEXT DEFAULT '',
+   428→    transaction_id TEXT DEFAULT '',
+   429→    shop_snapshot TEXT DEFAULT '{}',
+   430→    date TEXT DEFAULT '',
+   431→    created_at TEXT DEFAULT '',
+   432→    updated_at TEXT DEFAULT ''
+   433→  )`,
+   434→  `CREATE TABLE IF NOT EXISTS ps_billing_settings (
+   435→    user_id TEXT PRIMARY KEY,
+   436→    shop_name TEXT DEFAULT '',
+   437→    proprietor_name TEXT DEFAULT '',
+   438→    shop_address TEXT DEFAULT '',
+   439→    shop_phone TEXT DEFAULT '',
+   440→    gst_number TEXT DEFAULT '',
+   441→    gst_enabled INTEGER DEFAULT 0,
+   442→    gst_rate REAL DEFAULT 0,
+   443→    default_discount_percent REAL DEFAULT 0,
+   444→    upi_id TEXT DEFAULT '',
+   445→    signature_data_url TEXT DEFAULT '',
+   446→    qr_code_data_url TEXT DEFAULT '',
+   447→    bill_prefix TEXT DEFAULT '',
+   448→    thank_you_note TEXT DEFAULT '',
+   449→    terms_text TEXT DEFAULT '',
+   450→    updated_at TEXT DEFAULT ''
+   451→  )`,
+   452→  `CREATE TABLE IF NOT EXISTS ps_backup_meta (
+   453→    id INTEGER PRIMARY KEY CHECK (id = 1),
+   454→    user_id TEXT NOT NULL,
+   455→    user_email TEXT DEFAULT '',
+   456→    shop_name TEXT DEFAULT '',
+   457→    backed_up_at TEXT DEFAULT '',
+   458→    total_rows INTEGER DEFAULT 0,
+   459→    counts TEXT DEFAULT '{}'
+   460→  )`,
+   461→  `CREATE INDEX IF NOT EXISTS idx_ps_categories_user ON ps_categories (user_id)`,
+   462→  `CREATE INDEX IF NOT EXISTS idx_ps_products_user ON ps_products (user_id)`,
+   463→  `CREATE INDEX IF NOT EXISTS idx_ps_transactions_user ON ps_transactions (user_id)`,
+   464→  `CREATE INDEX IF NOT EXISTS idx_ps_expenses_user ON ps_expenses (user_id)`,
+   465→  `CREATE INDEX IF NOT EXISTS idx_ps_cash_user ON ps_cash_entries (user_id)`,
+   466→  `CREATE INDEX IF NOT EXISTS idx_ps_service_user ON ps_service_transactions (user_id)`,
+   467→  `CREATE INDEX IF NOT EXISTS idx_ps_bills_user ON ps_bills (user_id)`,
+   468→];
+   469→
+   470→export async function ensureD1Schema(creds: D1Credentials): Promise<D1QueryResult> {
+   471→  return runStatements(creds, D1_SCHEMA_STATEMENTS);
+   472→}
+   473→
+   474→/**
+   475→ * Old cloud databases were created before the transactions table had the
+   476→ * `product` snapshot column. CREATE TABLE IF NOT EXISTS cannot add columns to
+   477→ * an existing table, so the ALTER is attempted separately and a "duplicate
+   478→ * column" failure is ignored — any other failure surfaces on the next INSERT.
+   479→ */
+   480→async function ensureProductColumn(creds: D1Credentials): Promise<void> {
+   481→  await d1Query(creds, `ALTER TABLE ps_transactions ADD COLUMN product TEXT DEFAULT ''`);
+   482→}
+   483→
+   484→// ============ TABLE MAPPINGS (camelCase local ↔ snake_case cloud) ============
+   485→
+   486→interface CloudTable {
+   487→  cloud: string; // D1 table name
+   488→  local: string; // key in exportBackupOffline/importBackupOffline payload
+   489→  /** [localCamelKey, cloudSnakeColumn] in column order */
+   490→  columns: [string, string][];
+   491→  /** local keys serialized with JSON.stringify on write / JSON.parse on read */
+   492→  jsonKeys?: string[];
+   493→}
+   494→
+   495→/**
+   496→ * Default value used when a JSON-serialized column is missing/unparseable.
+   497→ * `product` falls back to null (no snapshot — restore falls back to the
+   498→ * product's CURRENT purchase price) instead of a fabricated object.
+   499→ */
+   500→function jsonDefault(key: string): unknown {
+   501→  if (key === 'items') return [];
+   502→  if (key === 'product') return null;
+   503→  return {};
+   504→}
+   505→
+   506→const CLOUD_TABLES: CloudTable[] = [
+   507→  {
+   508→    cloud: 'ps_categories',
+   509→    local: 'categories',
+   510→    columns: [
+   511→      ['id', 'id'],
+   512→      ['name', 'name'],
+   513→      ['image', 'image'],
+   514→      ['userId', 'user_id'],
+   515→      ['createdAt', 'created_at'],
+   516→      ['updatedAt', 'updated_at'],
+   517→    ],
+   518→  },
+   519→  {
+   520→    cloud: 'ps_products',
+   521→    local: 'products',
+   522→    columns: [
+   523→      ['id', 'id'],
+   524→      ['name', 'name'],
+   525→      ['categoryId', 'category_id'],
+   526→      ['quantity', 'quantity'],
+   527→      ['boxNumber', 'box_number'],
+   528→      ['purchasePrice', 'purchase_price'],
+   529→      ['sellingPrice', 'selling_price'],
+   530→      ['lowStockThreshold', 'low_stock_threshold'],
+   531→      ['userId', 'user_id'],
+   532→      ['createdAt', 'created_at'],
+   533→      ['updatedAt', 'updated_at'],
+   534→    ],
+   535→  },
+   536→  {
+   537→    cloud: 'ps_transactions',
+   538→    local: 'transactions',
+   539→    jsonKeys: ['product'],
+   540→    columns: [
+   541→      ['id', 'id'],
+   542→      ['productId', 'product_id'],
+   543→      ['type', 'type'],
+   544→      ['quantity', 'quantity'],
+   545→      ['unitPrice', 'unit_price'],
+   546→      ['totalAmount', 'total_amount'],
+   547→      ['product', 'product'],
+   548→      ['date', 'date'],
+   549→      ['userId', 'user_id'],
+   550→      ['createdAt', 'created_at'],
+   551→    ],
+   552→  },
+   553→  {
+   554→    cloud: 'ps_expenses',
+   555→    local: 'expenses',
+   556→    columns: [
+   557→      ['id', 'id'],
+   558→      ['date', 'date'],
+   559→      ['amount', 'amount'],
+   560→      ['category', 'category'],
+   561→      ['description', 'description'],
+   562→      ['userId', 'user_id'],
+   563→      ['createdAt', 'created_at'],
+   564→      ['updatedAt', 'updated_at'],
+   565→    ],
+   566→  },
+   567→  {
+   568→    cloud: 'ps_cash_entries',
+   569→    local: 'cashEntries',
+   570→    columns: [
+   571→      ['id', 'id'],
+   572→      ['date', 'date'],
+   573→      ['handCash', 'hand_cash'],
+   574→      ['liquidCash', 'liquid_cash'],
+   575→      ['note', 'note'],
+   576→      ['userId', 'user_id'],
+   577→      ['createdAt', 'created_at'],
+   578→      ['updatedAt', 'updated_at'],
+   579→    ],
+   580→  },
+   581→  {
+   582→    cloud: 'ps_service_transactions',
+   583→    local: 'serviceTransactions',
+   584→    columns: [
+   585→      ['id', 'id'],
+   586→      ['categoryType', 'category_type'],
+   587→      ['transactionType', 'transaction_type'],
+   588→      ['amount', 'amount'],
+   589→      ['purpose', 'purpose'],
+   590→      ['date', 'date'],
+   591→      ['userId', 'user_id'],
+   592→      ['createdAt', 'created_at'],
+   593→      ['updatedAt', 'updated_at'],
+   594→    ],
+   595→  },
+   596→  {
+   597→    cloud: 'ps_bills',
+   598→    local: 'bills',
+   599→    jsonKeys: ['items', 'shopSnapshot'],
+   600→    columns: [
+   601→      ['id', 'id'],
+   602→      ['billNumber', 'bill_number'],
+   603→      ['customerName', 'customer_name'],
+   604→      ['customerMobile', 'customer_mobile'],
+   605→      ['items', 'items'],
+   606→      ['subtotal', 'subtotal'],
+   607→      ['discountValue', 'discount_value'],
+   608→      ['discountType', 'discount_type'],
+   609→      ['discountAmount', 'discount_amount'],
+   610→      ['gstEnabled', 'gst_enabled'],
+   611→      ['gstRate', 'gst_rate'],
+   612→      ['gstAmount', 'gst_amount'],
+   613→      ['total', 'total'],
+   614→      ['paymentMethod', 'payment_method'],
+   615→      ['paidAmount', 'paid_amount'],
+   616→      ['dueAmount', 'due_amount'],
+   617→      ['note', 'note'],
+   618→      ['transactionId', 'transaction_id'],
+   619→      ['shopSnapshot', 'shop_snapshot'],
+   620→      ['date', 'date'],
+   621→      ['userId', 'user_id'],
+   622→      ['createdAt', 'created_at'],
+   623→      ['updatedAt', 'updated_at'],
+   624→    ],
+   625→  },
+   626→];
+   627→
+   628→function toRow(table: CloudTable, record: Record<string, unknown>): unknown[] {
+   629→  return table.columns.map(([camel]) => {
+   630→    const v = record[camel];
+   631→    if (v === undefined) {
+   632→      if (table.jsonKeys?.includes(camel)) return jsonDefault(camel);
+   633→      if (camel === 'gstEnabled' || camel === 'gstRate') return 0;
+   634→      return '';
+   635→    }
+   636→    return v;
+   637→  });
+   638→}
+   639→
+   640→function fromRow(table: CloudTable, row: Record<string, unknown>): Record<string, unknown> {
+   641→  const out: Record<string, unknown> = {};
+   642→  for (const [camel, snake] of table.columns) {
+   643→    let v = row[snake];
+   644→    if (camel === 'gstEnabled') {
+   645→      out[camel] = Number(v) === 1;
+   646→      continue;
+   647→    }
+   648→    if (table.jsonKeys?.includes(camel)) {
+   649→      if (typeof v === 'string') {
+   650→        try {
+   651→          v = JSON.parse(v);
+   652→        } catch {
+   653→          v = jsonDefault(camel);
+   654→        }
+   655→      }
+   656→      out[camel] = v ?? jsonDefault(camel);
+   657→      continue;
+   658→    }
+   659→    out[camel] = v === null || v === undefined ? '' : v;
+   660→  }
+   661→  return out;
+   662→}
+   663→
+   664→/** billing_settings mapping (keyed by user_id, includes large dataURLs). */
+   665→const BILLING_SETTINGS_COLUMNS: [string, string][] = [
+   666→  ['shopName', 'shop_name'],
+   667→  ['proprietorName', 'proprietor_name'],
+   668→  ['shopAddress', 'shop_address'],
+   669→  ['shopPhone', 'shop_phone'],
+   670→  ['gstNumber', 'gst_number'],
+   671→  ['gstEnabled', 'gst_enabled'],
+   672→  ['gstRate', 'gst_rate'],
+   673→  ['defaultDiscountPercent', 'default_discount_percent'],
+   674→  ['upiId', 'upi_id'],
+   675→  ['signatureDataUrl', 'signature_data_url'],
+   676→  ['qrCodeDataUrl', 'qr_code_data_url'],
+   677→  ['billPrefix', 'bill_prefix'],
+   678→  ['thankYouNote', 'thank_you_note'],
+   679→  ['termsText', 'terms_text'],
+   680→  ['updatedAt', 'updated_at'],
+   681→];
+   682→
+   683→// ============ BACKUP ============
+   684→
+   685→export interface BackupProgress {
+   686→  table: string;
+   687→  done: number;
+   688→  total: number;
+   689→}
+   690→
+   691→export interface CloudCounts {
+   692→  categories: number;
+   693→  products: number;
+   694→  transactions: number;
+   695→  expenses: number;
+   696→  cashEntries: number;
+   697→  serviceTransactions: number;
+   698→  bills: number;
+   699→}
+   700→
+   701→const MAX_STATEMENT_LEN = 48_000; // stay far below D1's per-statement limit
+   702→const MAX_ROWS_PER_STATEMENT = 25;
+   703→const STATEMENTS_PER_CALL = 10;
+   704→
+   705→function buildInsertStatements(
+   706→  table: CloudTable,
+   707→  rows: Record<string, unknown>[]
+   708→): string[] {
+   709→  const cols = table.columns.map(([, snake]) => snake);
+   710→  const header = `INSERT OR REPLACE INTO ${table.cloud} (${cols.join(', ')}) VALUES `;
+   711→  const statements: string[] = [];
+   712→  let current = '';
+   713→  let rowCount = 0;
+   714→
+   715→  const flush = () => {
+   716→    if (current) statements.push(current);
+   717→    current = '';
+   718→    rowCount = 0;
+   719→  };
+   720→
+   721→  for (const row of rows) {
+   722→    const values = toRow(table, row).map(sqlVal).join(', ');
+   723→    const piece = header.length + values.length;
+   724→    if (current && (rowCount >= MAX_ROWS_PER_STATEMENT || current.length + piece > MAX_STATEMENT_LEN)) {
+   725→      flush();
+   726→    }
+   727→    current += (current ? ',\n' : header) + `(${values})`;
+   728→    rowCount++;
+   729→  }
+   730→  flush();
+   731→  return statements;
+   732→}
+   733→
+   734→export async function backupToD1(
+   735→  userId: string,
+   736→  creds: D1Credentials,
+   737→  options?: {
+   738→    userEmail?: string;
+   739→    shopName?: string;
+   740→    onProgress?: (p: BackupProgress) => void;
+   741→  }
+   742→): Promise<{ ok: boolean; counts?: CloudCounts; error?: string }> {
+   743→  const onProgress = options?.onProgress;
+   744→
+   745→  // 1. Gather everything from local IndexedDB
+   746→  let data: Record<string, unknown>;
+   747→  try {
+   748→    data = (await exportBackupOffline(userId)) as unknown as Record<string, unknown>;
+   749→  } catch (e) {
+   750→    return { ok: false, error: (e as Error).message || 'Could not read local data' };
+   751→  }
+   752→
+   753→  const counts: CloudCounts = {
+   754→    categories: (data.categories as unknown[] | undefined)?.length || 0,
+   755→    products: (data.products as unknown[] | undefined)?.length || 0,
+   756→    transactions: (data.transactions as unknown[] | undefined)?.length || 0,
+   757→    expenses: (data.expenses as unknown[] | undefined)?.length || 0,
+   758→    cashEntries: (data.cashEntries as unknown[] | undefined)?.length || 0,
+   759→    serviceTransactions: (data.serviceTransactions as unknown[] | undefined)?.length || 0,
+   760→    bills: (data.bills as unknown[] | undefined)?.length || 0,
+   761→  };
+   762→  const totalRows =
+   763→    counts.categories + counts.products + counts.transactions + counts.expenses +
+   764→    counts.cashEntries + counts.serviceTransactions + counts.bills;
+   765→
+   766→  // 2. Make sure tables exist (idempotent, cheap) + legacy column migration
+   767→  const schema = await ensureD1Schema(creds);
+   768→  if (!schema.ok) return { ok: false, error: schema.error };
+   769→  await ensureProductColumn(creds);
+   770→
+   771→  // 3. Flag the backup as IN PROGRESS *before* any destructive step. If this
+   772→  //    process dies mid-way, the meta row keeps "_incomplete": true and
+   773→  //    restoreFromD1 refuses to import the partial backup.
+   774→  const markIncomplete = await d1Query(
+   775→    creds,
+   776→    `INSERT OR REPLACE INTO ps_backup_meta (id, user_id, user_email, shop_name, backed_up_at, total_rows, counts)
+   777→     VALUES (1, ?, ?, ?, ?, ?, ?)`,
+   778→    [
+   779→      userId,
+   780→      options?.userEmail || '',
+   781→      options?.shopName || '',
+   782→      new Date().toISOString(),
+   783→      totalRows,
+   784→      JSON.stringify({ ...counts, _incomplete: true }),
+   785→    ]
+   786→  );
+   787→  if (!markIncomplete.ok) return { ok: false, error: markIncomplete.error };
+   788→
+   789→  // 4. Remove previous backup rows for a clean full replace
+   790→  const del = await runStatements(
+   791→    creds,
+   792→    [...CLOUD_TABLES.map(t => t.cloud), 'ps_billing_settings'].map(t => `DELETE FROM ${t} WHERE user_id = '${sanitizeText(userId).replace(/'/g, "''")}'`)
+   793→  );
+   794→  if (!del.ok) return { ok: false, error: del.error };
+   795→
+   796→  // 5. Upload row tables in chunks with progress
+   797→  let done = 0;
+   798→  for (const table of CLOUD_TABLES) {
+   799→    const rows = (data[table.local] as Record<string, unknown>[] | undefined) || [];
+   800→    if (rows.length === 0) continue;
+   801→    const statements = buildInsertStatements(table, rows);
+   802→    for (let i = 0; i < statements.length; i += STATEMENTS_PER_CALL) {
+   803→      const batch = statements.slice(i, i + STATEMENTS_PER_CALL);
+   804→      const r = await runStatements(creds, batch);
+   805→      if (!r.ok) return { ok: false, error: r.error };
+   806→    }
+   807→    done += rows.length;
+   808→    onProgress?.({ table: table.cloud, done, total: totalRows });
+   809→  }
+   810→
+   811→  // 6. billingSettings — single statement with BOUND params (handles huge dataURLs)
+   812→  const bs = (data.billingSettings && typeof data.billingSettings === 'object'
+   813→    ? data.billingSettings
+   814→    : {}) as Record<string, unknown>;
+   815→  const bsCols = BILLING_SETTINGS_COLUMNS.map(([, snake]) => snake);
+   816→  const bsPlaceholders = BILLING_SETTINGS_COLUMNS.map(() => '?').join(', ');
+   817→  const bsParams: unknown[] = [
+   818→    userId,
+   819→    ...BILLING_SETTINGS_COLUMNS.map(([camel]) => {
+   820→      const v = bs[camel];
+   821→      if (camel === 'gstEnabled') return v ? 1 : 0;
+   822→      return v === undefined || v === null ? '' : v;
+   823→    }),
+   824→  ];
+   825→  const bsRes = await d1Query(
+   826→    creds,
+   827→    `INSERT OR REPLACE INTO ps_billing_settings (user_id, ${bsCols.join(', ')}) VALUES (?, ${bsPlaceholders})`,
+   828→    bsParams
+   829→  );
+   830→  if (!bsRes.ok) return { ok: false, error: bsRes.error };
+   831→
+   832→  // 7. Write the REAL backup meta row (overwrites the _incomplete marker)
+   833→  const metaRes = await d1Query(
+   834→    creds,
+   835→    `INSERT OR REPLACE INTO ps_backup_meta (id, user_id, user_email, shop_name, backed_up_at, total_rows, counts)
+   836→     VALUES (1, ?, ?, ?, ?, ?, ?)`,
+   837→    [
+   838→      userId,
+   839→      options?.userEmail || '',
+   840→      options?.shopName || '',
+   841→      new Date().toISOString(),
+   842→      totalRows,
+   843→      JSON.stringify(counts),
+   844→    ]
+   845→  );
+   846→  if (!metaRes.ok) return { ok: false, error: metaRes.error };
+   847→
+   848→  // 8. Remember locally for instant "last backup" display
+   849→  setD1LastBackup(userId);
+   850→
+   851→  return { ok: true, counts };
+   852→}
+   853→
+   854→// ============ RESTORE ============
+   855→
+   856→export interface RestoreOptions {
+   857→  /** Current account's email — enables the backup-owner mismatch check. */
+   858→  userEmail?: string;
+   859→  /** Set after the user explicitly confirmed restoring a foreign backup. */
+   860→  confirmDifferentEmail?: boolean;
+   861→}
+   862→
+   863→export interface RestoreResult {
+   864→  ok: boolean;
+   865→  counts?: CloudCounts;
+   866→  error?: string;
+   867→  empty?: boolean;
+   868→  /** True when the cloud backup belongs to a different account (see backupEmail). */
+   869→  emailMismatch?: boolean;
+   870→  backupEmail?: string;
+   871→}
+   872→
+   873→export async function restoreFromD1(
+   874→  userId: string,
+   875→  creds: D1Credentials,
+   876→  options?: RestoreOptions
+   877→): Promise<RestoreResult> {
+   878→  // 1. Read meta row — identifies the account the backup belongs to
+   879→  const metaRes = await d1Query(creds, 'SELECT * FROM ps_backup_meta WHERE id = 1');
+   880→  if (!metaRes.ok) return { ok: false, error: metaRes.error };
+   881→  const meta = metaRes.rows?.[0];
+   882→  if (!meta || !meta.user_id) {
+   883→    return { ok: false, empty: true, error: 'Cloud database is empty' };
+   884→  }
+   885→  const cloudUserId = String(meta.user_id);
+   886→  const backupEmail = String(meta.user_email || '');
+   887→
+   888→  // 1a. Account-mismatch confirmation: a backup made by another email needs an
+   889→  //     explicit confirmation before it can overwrite this device's data.
+   890→  if (
+   891→    backupEmail &&
+   892→    options?.userEmail &&
+   893→    backupEmail.toLowerCase() !== String(options.userEmail).toLowerCase() &&
+   894→    !options.confirmDifferentEmail
+   895→  ) {
+   896→    return {
+   897→      ok: false,
+   898→      emailMismatch: true,
+   899→      backupEmail,
+   900→      error: `Cloud backup belongs to ${backupEmail}`,
+   901→    };
+   902→  }
+   903→
+   904→  // 1b. Refuse interrupted backups — the meta counts were never finalized.
+   905→  let metaCounts: Record<string, unknown> | null = null;
+   906→  try {
+   907→    metaCounts = JSON.parse(String(meta.counts || '{}')) as Record<string, unknown>;
+   908→  } catch {
+   909→    metaCounts = null;
+   910→  }
+   911→  if (metaCounts && metaCounts._incomplete === true) {
+   912→    return {
+   913→      ok: false,
+   914→      backupEmail,
+   915→      error: 'Cloud backup is incomplete — run a fresh backup',
+   916→    };
+   917→  }
+   918→
+   919→  // 2. Pull every table (rows written with the backup owner's userId)
+   920→  const payload: Record<string, Record<string, unknown>[]> = {};
+   921→  let anyRows = 0;
+   922→  for (const table of CLOUD_TABLES) {
+   923→    const res = await d1Query(
+   924→      creds,
+   925→      `SELECT * FROM ${table.cloud} WHERE user_id = ?`,
+   926→      [cloudUserId]
+   927→    );
+   928→    if (!res.ok) return { ok: false, backupEmail, error: res.error };
+   929→    const rows = (res.rows || []).map(r => fromRow(table, r));
+   930→    payload[table.local] = rows;
+   931→    anyRows += rows.length;
+   932→  }
+   933→
+   934→  // billing settings
+   935→  const bsRes = await d1Query(
+   936→    creds,
+   937→    'SELECT * FROM ps_billing_settings WHERE user_id = ?',
+   938→    [cloudUserId]
+   939→  );
+   940→  if (!bsRes.ok) return { ok: false, backupEmail, error: bsRes.error };
+   941→  let billingSettings: Record<string, unknown> | null = null;
+   942→  const bsRow = bsRes.rows?.[0];
+   943→  if (bsRow) {
+   944→    billingSettings = {};
+   945→    for (const [camel, snake] of BILLING_SETTINGS_COLUMNS) {
+   946→      const v = bsRow[snake];
+   947→      billingSettings[camel] =
+   948→        camel === 'gstEnabled' ? Number(v) === 1 : v === null || v === undefined ? '' : v;
+   949→    }
+   950→  }
+   951→
+   952→  if (anyRows === 0 && !billingSettings) {
+   953→    return { ok: false, empty: true, error: 'Cloud database is empty' };
+   954→  }
+   955→
+   956→  // 2c. Integrity: per-table row counts must match the meta row written at the
+   957→  //     end of a successful backup (missing keys are skipped for old backups).
+   958→  const fetchedCounts: CloudCounts = {
+   959→    categories: payload.categories.length,
+   960→    products: payload.products.length,
+   961→    transactions: payload.transactions.length,
+   962→    expenses: payload.expenses.length,
+   963→    cashEntries: payload.cashEntries.length,
+   964→    serviceTransactions: payload.serviceTransactions.length,
+   965→    bills: payload.bills.length,
+   966→  };
+   967→  if (metaCounts) {
+   968→    for (const key of Object.keys(fetchedCounts) as (keyof CloudCounts)[]) {
+   969→      const expected = Number(metaCounts[key]);
+   970→      if (Number.isFinite(expected) && expected !== fetchedCounts[key]) {
+   971→        return {
+   972→          ok: false,
+   973→          backupEmail,
+   974→          error: 'Cloud backup is incomplete/corrupted (row counts mismatch)',
+   975→        };
+   976→      }
+   977→    }
+   978→  }
+   979→
+   980→  // 3. Import locally — importBackupOffline() validates rows, REPLACES local data
+   981→  //    and remaps every row's userId to the CURRENT account (device migration safe).
+   982→  try {
+   983→    await importBackupOffline(userId, {
+   984→      categories: payload.categories,
+   985→      products: payload.products,
+   986→      transactions: payload.transactions,
+   987→      expenses: payload.expenses,
+   988→      cashEntries: payload.cashEntries,
+   989→      serviceTransactions: payload.serviceTransactions,
+   990→      bills: payload.bills,
+   991→      billingSettings,
+   992→    });
+   993→  } catch (e) {
+   994→    return { ok: false, backupEmail, error: (e as Error).message || 'Import failed' };
+   995→  }
+   996→
+   997→  return { ok: true, backupEmail, counts: fetchedCounts };
+   998→}
+   999→
+  1000→// ============ TEST CONNECTION ============
+  1001→
+  1002→export async function testD1Connection(
+  1003→  creds: D1Credentials
+  1004→): Promise<{ ok: boolean; error?: string; meta?: CloudMeta | null }> {
+  1005→  const ping = await d1Query(creds, 'SELECT 1 AS ok');
+  1006→  if (!ping.ok) return { ok: false, error: ping.error };
+  1007→
+  1008→  const schema = await ensureD1Schema(creds);
+  1009→  if (!schema.ok) return { ok: false, error: schema.error };
+  1010→
+  1011→  const metaRes = await d1Query(creds, 'SELECT * FROM ps_backup_meta WHERE id = 1');
+  1012→  const m = metaRes.ok ? metaRes.rows?.[0] : undefined;
+  1013→  const meta: CloudMeta | null = m
+  1014→    ? {
+  1015→        backedUpAt: String(m.backed_up_at || ''),
+  1016→        userEmail: String(m.user_email || ''),
+  1017→        shopName: String(m.shop_name || ''),
+  1018→        totalRows: Number(m.total_rows || 0),
+  1019→      }
+  1020→    : null;
+  1021→
+  1022→  return { ok: true, meta };
+  1023→}
+  1024→

@@ -1,3 +1,72 @@
+     1→---
+     2→Task ID: 1
+     3→Agent: Main Agent
+     4→Task: App Performance Optimization - Complete overhaul
+     5→
+     6→Work Log:
+     7→- Analyzed entire codebase and identified critical performance bottlenecks
+     8→- Fixed Dashboard API route: replaced 20+ sequential Supabase queries with 7 parallel queries
+     9→  - Changed 7 separate day-by-day queries to single 7-day range query
+    10→  - Changed N per-category queries to client-side computation from already-fetched data
+    11→  - Added server-side response cache with 60s TTL
+    12→  - Added HTTP Cache-Control headers (max-age=30, stale-while-revalidate=60)
+    13→- Increased cache TTLs: Dashboard 20→60s, Products 25→60s, Categories 60→120s, Transactions 15→30s, Reports 30→60s
+    14→- Optimized page.tsx: faster transitions (0.15→0.1s), Set for O(1) bottom nav lookup, memoized exit dialog strings
+    15→- Optimized BottomNav: individual store selectors, memoized NavItem components
+    16→- Optimized DashboardScreen: stale-while-revalidate pattern, background refresh on focus, memoized StatCard, ref-based fetch guard
+    17→- Added CSS performance hints: `contain: layout style` on glass-card/animated-bg, `will-change: transform` on interactive elements
+    18→- Added Cache-Control headers to all API routes (transactions, products, categories, reports)
+    19→- Fixed missing `resetData` function in supabase-service.ts that was causing 500 errors
+    20→- Verified all changes pass lint and the app runs correctly
+    21→
+    22→Stage Summary:
+    23→- Dashboard API went from 20+ sequential DB queries to 7 parallel queries (~3-5x faster)
+    24→- Cache TTLs 2-3x longer, reducing redundant API calls
+    25→- Added stale-while-revalidate pattern for instant UI updates
+    26→- Added server-side caching for dashboard responses
+    27→- Added CSS containment and will-change hints for better rendering performance
+    28→- Fixed critical bug (missing resetData function)
+    29→
+    30→---
+    31→Task ID: 2
+    32→Agent: Main Agent
+    33→Task: Complete offline-first architecture - All Supabase data auto-saved to device for offline use
+    34→
+    35→Work Log:
+    36→- Added `pendingDeletes` store to IndexedDB (offline-db.ts) for tracking local deletions that need to be synced to Supabase
+    37→  - Bumped DB_VERSION from 3 to 4
+    38→  - Added `offlinePendingDeletes` helper with add/getAll/getByStore/remove/removeByItemId/clearForUser methods
+    39→- Added ALL missing offline-first functions to offline-service.ts:
+    40→  - `deleteProductOffline` - deletes from IndexedDB + adds to pendingDeletes queue
+    41→  - `createExpenseOffline` - saves locally first, uploads to Supabase if online
+    42→  - `updateExpenseOffline` - updates locally + marks dirty, syncs to Supabase if online
+    43→  - `deleteExpenseOffline` - deletes locally + adds to pendingDeletes queue
+    44→  - `upsertCashEntryOffline` - creates or updates cash entry locally first
+    45→  - `updateCashEntryOffline` - updates locally + marks dirty
+    46→  - `deleteCashEntryOffline` - deletes locally + adds to pendingDeletes queue
+    47→  - `getReportsOffline` - computes reports from local IndexedDB data (stock-value, daily, monthly, category)
+    48→  - `getProfileOffline` - tries Supabase online, returns null for offline (uses zustand cache)
+    49→  - `updateProfileOffline` - tries Supabase if online, saves locally otherwise
+    50→  - `exportBackupOffline` - exports from local IndexedDB data (always works offline!)
+    51→  - `importBackupOffline` - imports to local IndexedDB first, syncs to Supabase later
+    52→- Updated sync-engine.ts to handle pending deletes:
+    53→  - Added `processPendingDeletes` function that processes the delete queue before uploading dirty items
+    54→  - Integrated into `syncAll()` flow: processPendingDeletes → syncToSupabase → syncFromSupabase
+    55→- Migrated ALL screens from supabase-service to offline-service:
+    56→  - AddProductScreen: createProduct → createProductOffline, updateProduct → updateProductOffline
+    57→  - ProductDetailScreen: deleteProduct → deleteProductOffline
+    58→  - DailyBookScreen: all expense/cash CRUD operations migrated to offline versions
+    59→  - ProfileScreen: getProfile, updateProfile, exportBackup, importBackup, resetData all migrated
+    60→  - ReportsScreen: getReports → getReportsOffline
+    61→  - ProfitScreen: getReports → getReportsOffline
+    62→  - SplashScreen: getProfile → getProfileOffline with offline fallback (allows dashboard access even when offline)
+    63→- Only LoginScreen and SignupScreen still use supabase-service directly (auth requires online access)
+    64→- Fixed `getDashboard` export alias for backward compatibility with DashboardScreen import
+    65→- All changes pass lint and the app runs correctly (HTTP 200)
+    66→
+    67→Stage Summary:
+    68→- Complete offline-first architecture now covers ALL data operations (CRUD for categories, products, transactions, expenses, cash entries)
+    69→- Reports can be computed entirely from local IndexedDB data
     70→- Backup/restore works offline using local data
     71→- Delete operations tracked in pendingDeletes queue and synced to Supabase when back online
     72→- Auto-sync runs every 30 seconds when online + triggers on online event
@@ -298,5 +367,56 @@
    367→- App now has real cloud database backup via the user's OWN Cloudflare D1 (free tier SQLite): Profile → Cloud Backup → paste Account ID + Database ID + API Token → Save & Test → Backup/Restore with progress and safety dialogs.
    368→- Data model fully typed in D1 (8 tables + meta), escape-safe (apostrophes/emoji/dataURLs), restore works even on a lost phone (meta row identifies backup owner; rows remap to the new account on import).
    369→- API route is the only server piece; credentials never stored server-side; works on web AND in the APK (same-origin /api/cloud/d1 fetch from the WebView).
-
-[showing lines 70-369 of 371; use offset=370 with limit to continue reading]
+   370→- lint + tsc clean; app on port 3000 hitting the REAL Cloudflare API (mock available via mini-services/d1-mock: `cd mini-services/d1-mock && bun run dev` + start dev with CLOUDFLARE_API_BASE=http://127.0.0.1:3030/client/v4).
+   371→
+   372→---
+   373→Task ID: 3 (a+b+c)
+   374→Agent: Z.ai Code (main) + full-stack-developer (lib fixes)
+   375→Task: Stack-based back navigation (previous page → home → exit dialog) + full app security/bug/dead-code audit & fixes
+   376→
+   377→Work Log:
+   378→- NAVIGATION: useBackHandler.ts rewritten to stack-based back: (1) in-screen modal open → close it via new modal-back registry; (2) navigation history → store.goBack() (previous page); (3) empty history (bottom-nav tab) → dashboard; (4) dashboard → Exit/Continue dialog; (5) exit dialog open → back closes it. Auth-flow screens (splash/welcome/tutorial/login/signup/forgot-password) + onboarding language screen ignore back. appStore.navigateTo: no-op guard when target === current screen (prevents dead back-presses) + stack depth cap (25).
+   379→- NEW src/lib/modal-back.ts: registerBackModal(close)/closeTopBackModal() — hardware/browser/Escape back now closes the topmost open dialog (Android standard) instead of navigating beneath it. Wired into: StockOperationScreen (confirm dialog + e-Bill prompt), ProductDetailScreen (delete), HistoryScreen (bill delete), DailyBookScreen (delete), ServiceCategoryScreen (delete), CloudSyncScreen (restore dialogs), ProfileScreen (its dialogs).
+   380→- AUDIT: 3 parallel Explore agents (security / bugs+dead-code / screens consistency) produced full reports.
+   381→- SECURITY FIXES (lib, by full-stack agent): local-auth.ts PBKDF2 (310k iter) replacing single-pass SHA-256 with transparent legacy-hash migration on login + per-email failed-login backoff (30s→…→1h after 5 fails/15min) + no-enumeration messages; /api/cloud/d1 route: same-origin gate, per-IP 30 req/min rate limit (429 + Retry-After), SQL cap 4MB→1MB, params type validation, clearTimeout in finally; cloud-d1.ts: per-user credential keys (ps-d1-creds:<userId> with legacy migration), _incomplete backup marker written BEFORE the destructive DELETE (restore refuses incomplete/corrupt backups via marker + per-table count verification vs meta), restore email-mismatch confirmation flow (restoreFromD1 returns emailMismatch + backupEmail; CloudSyncScreen shows warning dialog + requires explicit confirm), native-APK direct Cloudflare fetch (isNativePlatform → api.cloudflare.com directly, bypassing the static-export-missing proxy), product purchase-price snapshot preserved in backups (new ps_transactions.product JSON column) so historical profit survives restore; offline-service.ts: ownership checks on all delete functions (shared-device IDOR), numeric coercion/clamps in importBackupOffline, updateProductOffline whitelist+clamps; SplashScreen: persisted session now verified against the users store (verifyLocalUserId) so a hand-edited localStorage cannot resurrect a deleted account; ProfileScreen: password re-auth (login()) required before Reset All Data and file restore; InvoiceScreen: invalid Indian mobile numbers blocked before bill save (prevents invoice PDF reaching a stranger's WhatsApp); next.config.ts: ignoreBuildErrors removed + nosniff/referrer-policy headers; layout.tsx CSP meta tag; capacitor.config.json dead keys removed.
+   382→- BUG FIXES: StockOperationScreen handleBillSkip double-tap double-goBack guard; InvoiceScreen async-load goBack race (checks currentScreen==='invoice'); SplashScreen leaked hydration-wait interval (hoisted + cleared); Login/Signup Enter-key re-submit guards (isLoading); auth screens use resetNavigation('login') instead of growing the stack; DailyBookScreen back button aria-label; ProductDetail delete double-click safe (dialog closes first).
+   383→- DEAD CODE REMOVED: offline-service (updateCategoryOffline, deleteCategoryOffline, deleteTransactionOffline, offlineMeta re-export, resolvePeriodRange unexported), offline-db sync-era helpers (offlineMeta, offlinePendingDeletes, getDirtyItems, all getDirty methods, getByType/getByDateRange), sound-service playErrorSound, local-auth deleteLocalUser, capacitor-init isCapacitorReady/isBackButtonRegistered, types.ts SERVICE_CATEGORIES/ProfitData, i18n 14 onboarding keys + default export, toast cluster (use-toast.ts, ui/toast.tsx, ui/toaster.tsx), scripts/fix-dailybook.py, scripts/setup-supabase.js; deps pruned: react-markdown, react-syntax-highlighter, @mdxeditor/editor, @radix-ui/react-toast. 16 debug console.log removed from useBackHandler/capacitor-init/page.tsx.
+   384→- CRITICAL REPO FIX: .gitignore pattern `local-*` was silently excluding src/lib/local-auth.ts (the whole auth module!) from git — pattern root-anchored to `/local-*` and local-auth.ts committed.
+   385→- appStore.logout now also resets historyView.
+   386→
+   387→Stage Summary:
+   388→- Back navigation is now: dialog open → close dialog; history → previous page; no history → home; home → Exit/Continue dialog. In-app ← arrows and system back behave identically.
+   389→- Password storage upgraded to PBKDF2-SHA256 310k with zero-disruption migration; login brute-force throttled; destructive actions (reset data, file restore, cloud restore) gated by password/confirmation; D1 proxy rate-limited + same-origin; cloud backups atomic-safe and APK-compatible (direct fetch).
+   390→- ~25 dead symbols/files deleted, 4 unused heavy deps pruned, all debug console noise removed; lint + tsc clean.
+   391→
+   392→---
+   393→Task ID: 4
+   394→Agent: Z.ai Code (main)
+   395→Task: End-to-end browser verification of navigation system + security fixes
+   396→
+   397→Work Log:
+   398→- Fresh-profile signup (PBKDF2 v2 path) → dashboard OK; logout → login OK (v2 verify path).
+   399→- BACK NAVIGATION (system back via Escape / popstate; APK hardware back via same handler):
+   400→  * dashboard + back → Exit/Continue dialog; back closes it; back reopens it; Continue closes ✓
+   401→  * Profile tab (empty stack) + back → dashboard ✓
+   402→  * Profile → Billing Settings + back → PROFILE (previous page, NOT dashboard — stack works) ✓
+   403→  * Profile + back → dashboard → back → exit dialog ✓
+   404→  * dashboard → category-detail → product-detail → stock-out → (save) → e-Bill prompt → back → prompt skipped, landed on product-detail (single pop, no double-pop) ✓
+   405→  * product-detail + back → category-detail + back → dashboard + back → exit dialog ✓
+   406→  * Stock Out confirm dialog open + back → dialog closes, screen stays ✓ (modal-back registry)
+   407→  * Reset All Data dialog open + back → dialog closes, stays on Profile ✓
+   408→- SECURITY: Reset All Data with wrong password → toast "Wrong password — action cancelled", data intact ✓; login throttle present (5 fails/15min → backoff); generic no-enumeration messages verified in code.
+   409→- BUGS FOUND & FIXED during verification:
+   410→  * CRITICAL UI: every screen-level modal rendered relative to a scrollable ancestor instead of the viewport — `.animated-bg { contain: layout style }` (Task-1 perf hint) created a CSS containing block that re-parented `fixed` dialogs; on tall screens (Profile) dialogs appeared behind/under the BottomNav. Fixed by removing `contain` from `.animated-bg` (comment added); verified dialog now inset-0 of the real viewport.
+   411→  * Pre-existing z-index bug: screen dialogs used z-50, same as BottomNav (later in DOM → nav painted on top). All 11 dialog overlays bumped to z-[100] across 6 screens.
+   412→  * Turbopack served stale globals.css even after restart — required full `rm -rf .next` + restart to pick up the CSS fix.
+   413→  * New-account onboarding note: default category cards on dashboard are a fallback that routes to Add Category; categories must be created once before Add Product's select lists them (intended flow, verified working end-to-end).
+   414→- Stock flow verified: product 10 pcs → stock-out 2 → Qty 8, Stock Value ₹6,400 ✓; Today's Transactions 1 ✓.
+   415→- Cloud Backup screen renders on iPhone-14 viewport (390×844) with masked token field ✓.
+   416→- Zero console errors / zero CSP violations across the whole session ✓; lint clean; tsc clean (src/).
+   417→
+   418→Stage Summary:
+   419→- Navigation system is now full stack-based: back → in-screen dialog (if any) → previous page → home → Exit/Continue dialog → back dismisses. Verified end-to-end on desktop and mobile viewports.
+   420→- Security gates verified in-browser: password re-auth on destructive reset, PBKDF2 login, modal-aware back.
+   421→- Screenshots: upload/v5-*.png (exit dialog, stack-back, wrong password, dialog centered, cloud sync, mobile).
+   422→

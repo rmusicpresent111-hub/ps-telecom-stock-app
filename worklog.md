@@ -419,3 +419,30 @@ Stage Summary:
 - Navigation system is now full stack-based: back → in-screen dialog (if any) → previous page → home → Exit/Continue dialog → back dismisses. Verified end-to-end on desktop and mobile viewports.
 - Security gates verified in-browser: password re-auth on destructive reset, PBKDF2 login, modal-aware back.
 - Screenshots: upload/v5-*.png (exit dialog, stack-back, wrong password, dialog centered, cloud sync, mobile).
+
+---
+Task ID: 5
+Agent: Z.ai Code (main)
+Task: Full database-layer re-audit ("Detabase e ar kono samasya ache kina check koro") — IndexedDB + Cloudflare D1 backup/restore + auth storage
+
+Work Log:
+- Re-read every DB file end-to-end: offline-db.ts (schema v7 + clearOfflineData), offline-service.ts (all CRUD + backup/restore), cloud-d1.ts (credentials/queries/backup/restore), api/cloud/d1/route.ts (proxy), local-auth.ts (PBKDF2 + throttle), id.ts; verified index history across DB versions 3→7 (no backfill gaps — stores always created with full index sets).
+- BUG #1 (CRITICAL, data loss): importBackupOffline (file restore AND cloud restore) wiped all local rows in separate transactions, then wrote new rows in separate transactions — a crash/quota error mid-restore left the device half-wiped. FIXED: whole replace (wipe 7 stores + write imported rows + billingSettings swap) now runs in ONE readwrite IndexedDB transaction spanning all stores; any failure rolls back everything.
+- BUG #2 (restore always failed for settings-only backups): fresh shop backups (0 rows + billingSettings) hit "Backup file contains no valid data" on every restore attempt. FIXED: throw condition now also requires billingSettings to be absent.
+- BUG #3 (partial reset possible): clearOfflineData (Reset All Data) used per-store transactions and silently swallowed errors (partial wipe could go unnoticed). FIXED: single atomic transaction + errors propagate to the UI toast.
+- BUG #4 (IDOR inconsistency): createTransactionOffline (stock in/out/sell) had NO ownership check — a second account on a shared device could move stock on another account's product. FIXED: product.userId check inside the atomic tx (generic message).
+- BUG #5 (inconsistent cascade): deleteProductOffline deleted related transactions and the product in separate transactions. FIXED: cascade in one transaction.
+- BUG #6 (bill number duplicates): nextBillNumber computed max+1 over ALL bills (not transactional with the save) and never skipped already-taken numbers. FIXED: nextBillNumberFromRows runs against rows read inside the SAME transaction that saves the bill; also skips taken numbers (Set) so hand-imported/backup numbers can never collide; dupe-transaction guard now atomic too (double-tap safe).
+- BUG #7 (malformed backup crashes UI later): non-string date/createdAt/updatedAt fields from hand-edited backups would crash localeCompare()/filters at render time. FIXED: isoStr/fixDates coercion for all imported rows.
+- BUG #8 (APK cloud hang): native-path D1 queries had no timeout — a stuck connection left the progress bar spinning forever (web path had 30s via proxy). FIXED: 30s AbortController on every d1Query + "Cloudflare request timed out" message.
+- CLEANUP #9: ensureProductColumn (legacy ALTER TABLE) burned one doomed query on EVERY backup. FIXED: success or "duplicate column" outcome cached per session.
+- BUG FOUND DURING BROWSER VERIFICATION (stale UI after reset/restore): dashboard categories come from the Zustand store; fetchDashboard only overwrote the store when the new list was NON-empty, so after Reset All Data / restore the dashboard and Add Product select kept showing stale categories. FIXED: setCategories unconditionally (empty DB → default fallback cards) + ProfileScreen reset handler clears the store + file-restore handler seeds it from imported rows (Category-typed).
+- Recreated mini-services/d1-mock (in-memory Cloudflare D1 emulator, bun --hot, port 3030) — previous one had been removed in the dead-code cleanup; added ?-param binding + REPLACE-on-primary-key semantics this time.
+- VERIFIED END-TO-END (agent-browser): fresh signup → category → product (Qty 10) → stock-out 2 → e-Bill (bill saved, atomic path) → file backup downloaded → Reset All Data (password re-auth; IndexedDB verified EMPTY; dashboard immediately shows defaults — stale-cache fix confirmed) → file restore → all rows back with perfect integrity (Qty 8, prices, bill PS-2610-0001 total 1700, proprietor snapshot) → temp product + stock-in → delete → atomic cascade verified (product + its transactions gone, others untouched) → cloud backup via mock (meta row: real userId/email/counts bound correctly) → local reset again → cloud restore → identical integrity → settings-only backup import now succeeds (was always failing) → clean dev-server restart (real Cloudflare API, mock stopped) → dashboard renders restored data.
+- lint + tsc clean; zero console errors; zero page errors; mobile viewport: no horizontal overflow, bottom nav intact. Screenshots: upload/db-audit-*.png.
+
+Stage Summary:
+- Every database write path (transaction, bill, delete cascade, reset, restore, cloud backup/restore) is now fully atomic in IndexedDB — a crash can never leave half-wiped or half-imported data.
+- Restore of settings-only backups fixed (previously impossible); shared-device ownership hole in stock operations closed; bill numbers guaranteed unique; APK cloud queries time out at 30s like web.
+- Dashboard/store cache now always mirrors the real DB after reset and restore.
+- mini-services/d1-mock recreated (needed for e2e verification of the D1 feature).
