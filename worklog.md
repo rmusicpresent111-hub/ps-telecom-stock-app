@@ -467,3 +467,26 @@ Work Log:
 Stage Summary:
 - The "preview error" was not a code bug: new preview session = fresh device storage = no local account, so the old login could never succeed. The app now detects exactly this case and tells the user what to do (Sign Up, then optionally restore a cloud backup via Profile → Cloud Backup).
 - User recovery path for their old data: if they ever took a Cloud Backup (Cloudflare D1), sign up again with any email → Profile → Cloud Backup → restore. Otherwise old data was device-local and lives only in the previous browser profile.
+
+---
+Task ID: 7
+Agent: Z.ai Code (main)
+Task: User's Cloudflare D1 setup failing — "Connection failed: Forbidden" (photo-guided debugging)
+
+Work Log:
+- Diagnosed from user's screenshots: they pasted the Account ID with a stray "/home" suffix (45dc…d7d/home) AND the app showed bare "Connection failed: Forbidden".
+- Reproduced both failure modes with curl:
+  * Malformed account id → real Cloudflare 404 "Could not route to …" (NOT "Forbidden")
+  * Origin/Host mismatch → the proxy's own same-origin gate returned exactly "Forbidden". Root cause of the user's error: a gateway hop in the sandbox preview path rewrites the Host header, so legit same-origin browser calls were misclassified as cross-origin.
+- FIX 1 (proxy gate, src/app/api/cloud/d1/route.ts): gate now trusts Sec-Fetch-Site (browser-set, unspoofable): same-origin/same-site/none → allowed, cross-site → blocked with clear message. Legacy fallback compares Origin against Host OR X-Forwarded-Host. Verified: same-origin browser call with rewritten Host now passes and reaches Cloudflare; genuine cross-site still blocked.
+- FIX 2 (friendly Cloudflare errors): both the proxy (web) and normalizeCloudflareResponse (native APK) map raw CF failures to actionable messages — 404/7003/"Could not route" → "Account ID or Database ID is wrong…", 401/403/auth → "API token is invalid, expired, or missing the D1 Edit permission", 429 → rate limit, etc. Verified against the REAL API (dummy token → clear 401 message).
+- FIX 3 (paste-safe credentials, CloudSyncScreen): sanitizeAccountId/sanitizeDatabaseId extract the ID from raw pastes (full URLs like dash.cloudflare.com/<acc>/workers/d1/databases/<db>/metrics, or IDs with stray suffixes) automatically on every keystroke/load; inline red hints + blocked submit + i18n (bn/en/hi) when an ID doesn't match the expected shape (32-hex / UUID). Verified in browser: typing "45dc…d7d/home" auto-corrects to the clean 32-char ID.
+- Recreated mini-services/d1-mock (lost in the environment reset): in-memory Cloudflare D1 emulator on :3030 speaking the real response envelope, supporting the exact SQL shapes the engine emits (CREATE TABLE/INDEX, ALTER ADD COLUMN, INSERT OR REPLACE multi-tuple literals + ? params, DELETE/SELECT WHERE, quote-aware splitting with '' escapes). tsconfig excludes mini-services (standalone bun project).
+- VERIFIED END-TO-END (agent-browser + mock behind the proxy): fresh signup → Charger category + Samsung 25W Charger product → Cloud Sync with the user's malformed ID (auto-cleaned) → "Connected! Tables ready" → Backup to Cloud → mock D1 contains ps_backup_meta (total_rows 2, counts correct, no _incomplete) + category + product rows → Reset All Data (password re-auth) → dashboard empty → Restore from Cloud → Charger 1 items back on dashboard → clean dev-server restart (real API, mock stopped) → session + data persist → dummy-token test against real Cloudflare shows the new friendly 401 message → back navigation (Cloud Sync → Profile) intact.
+- lint clean; tsc clean (src/); zero console/page errors during the whole flow.
+
+Stage Summary:
+- The user's "Forbidden" was never a Cloudflare/credential problem: the sandbox preview path rewrites Host, and the old strict same-origin gate misfired. The gate is now Sec-Fetch-Site-based and proxy-proof.
+- Pasted-URL/typo credential mistakes are now impossible to make: IDs self-clean and are format-validated before any API call.
+- Cloudflare failures now explain themselves (wrong ID vs bad token vs rate limit) on both web and APK paths.
+- The complete backup → wipe → restore cycle was proven working end-to-end against a D1-compatible target through the fixed proxy.

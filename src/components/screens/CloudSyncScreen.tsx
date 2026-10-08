@@ -38,6 +38,35 @@ import { toast } from 'sonner';
 
 type ConnState = 'idle' | 'testing' | 'connected' | 'error';
 
+// ============ PASTE-SAFE ID SANITIZING ============
+// Shop owners often copy the whole Cloudflare URL (or an ID with a stray
+// suffix like "/home") instead of just the ID. These helpers extract the ID
+// from any reasonable input, so a wrong paste can never reach the API.
+
+const ACCOUNT_ID_RE = /[0-9a-f]{32}/i;
+const DATABASE_ID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+/** Extracts a 32-char Cloudflare Account ID from raw input or a full URL. */
+export function sanitizeAccountId(raw: string): string {
+  const m = raw.match(ACCOUNT_ID_RE);
+  return m ? m[0].toLowerCase() : raw.trim();
+}
+
+/** Extracts a D1 Database UUID from raw input or the database page URL. */
+export function sanitizeDatabaseId(raw: string): string {
+  const m = raw.match(DATABASE_ID_RE);
+  return m ? m[0].toLowerCase() : raw.trim();
+}
+
+export function isValidAccountId(v: string): boolean {
+  return ACCOUNT_ID_RE.test(v) && v.length === 32;
+}
+
+export function isValidDatabaseId(v: string): boolean {
+  const m = v.match(DATABASE_ID_RE);
+  return !!m && m[0] === v;
+}
+
 export default function CloudSyncScreen() {
   const user = useAppStore(s => s.user);
   const language = useAppStore(s => s.language);
@@ -88,9 +117,9 @@ export default function CloudSyncScreen() {
     if (!user?.id) return;
     const saved = getD1Credentials(user.id);
     if (!saved) return;
-    // Account/Database IDs prefill normally; the token stays hidden.
-    setAccountId(saved.accountId);
-    setDatabaseId(saved.databaseId);
+    // Account/Database IDs prefill normally (sanitized); the token stays hidden.
+    setAccountId(sanitizeAccountId(saved.accountId));
+    setDatabaseId(sanitizeDatabaseId(saved.databaseId));
     setApiToken('');
     setSavedCreds(saved);
     let cancelled = false;
@@ -114,18 +143,27 @@ export default function CloudSyncScreen() {
     };
   }, [user?.id]);
 
-  /** Typed values, falling back to the stored token when the field is untouched. */
+  /** Typed values (auto-cleaned), falling back to the stored token when the field is untouched. */
   const currentCreds = (): D1Credentials => ({
-    accountId: accountId.trim(),
-    databaseId: databaseId.trim(),
+    accountId: sanitizeAccountId(accountId),
+    databaseId: sanitizeDatabaseId(databaseId),
     apiToken: apiToken.trim() || savedCreds?.apiToken || '',
   });
+
+  const accountValid = accountId === '' || isValidAccountId(sanitizeAccountId(accountId));
+  const databaseValid = databaseId === '' || isValidDatabaseId(sanitizeDatabaseId(databaseId));
 
   const handleTest = useCallback(async () => {
     if (!user?.id) return;
     const creds = currentCreds();
     if (!creds.accountId || !creds.databaseId || !creds.apiToken) {
       toast.error(t('fillAllFields', language));
+      return;
+    }
+    if (!isValidAccountId(creds.accountId) || !isValidDatabaseId(creds.databaseId)) {
+      toast.error(
+        !isValidAccountId(creds.accountId) ? t('invalidAccountIdHint', language) : t('invalidDatabaseIdHint', language)
+      );
       return;
     }
     setConn('testing');
@@ -384,13 +422,16 @@ export default function CloudSyncScreen() {
             <input
               type="text"
               value={accountId}
-              onChange={e => setAccountId(e.target.value)}
+              onChange={e => setAccountId(sanitizeAccountId(e.target.value))}
               placeholder="e.g. 0123456789abcdef0123456789abcdef"
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
               className="glass-input w-full px-3 py-2.5 text-xs"
             />
+            {!accountValid && (
+              <p className="text-[10px] text-red-400/90 mt-1">{t('invalidAccountIdHint', language)}</p>
+            )}
           </div>
 
           <div>
@@ -398,13 +439,16 @@ export default function CloudSyncScreen() {
             <input
               type="text"
               value={databaseId}
-              onChange={e => setDatabaseId(e.target.value)}
+              onChange={e => setDatabaseId(sanitizeDatabaseId(e.target.value))}
               placeholder="e.g. 8f1e...-xxxx-xxxx-xxxx"
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
               className="glass-input w-full px-3 py-2.5 text-xs"
             />
+            {!databaseValid && (
+              <p className="text-[10px] text-red-400/90 mt-1">{t('invalidDatabaseIdHint', language)}</p>
+            )}
           </div>
 
           <div>

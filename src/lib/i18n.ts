@@ -264,6 +264,9 @@ type TranslationKeys = {
   // Fresh-device login guidance (empty local database)
   noAccountOnDevice: string;
   noAccountOnDeviceDesc: string;
+  // Cloud credential field validation
+  invalidAccountIdHint: string;
+  invalidDatabaseIdHint: string;
 };
 
 const translations: Record<Language, TranslationKeys> = {
@@ -509,6 +512,8 @@ const translations: Record<Language, TranslationKeys> = {
     tokenSavedHint: 'টোকেন সংরক্ষিত আছে — আগেরটি রাখতে খালি রাখুন',
     noAccountOnDevice: 'এই ডিভাইসে কোনো অ্যাকাউন্ট নেই',
     noAccountOnDeviceDesc: 'ডেটা প্রতিটি ডিভাইসে আলাদাভাবে সেভ থাকে। আগে সাইনআপ করুন — আগের ক্লাউড ব্যাকআপ থাকলে সাইনআপের পর Profile → Cloud Backup থেকে ফেরাতে পারবেন।',
+    invalidAccountIdHint: 'Account ID ঠিক নেই — এটা ৩২টা অক্ষরের কোড। URL থেকে পুরোটা পেস্ট করলেও চলবে, বাকি অংশ আপনি আপ নিজেই মুছে যাবে।',
+    invalidDatabaseIdHint: 'Database ID ঠিক নেই — এটা xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx এই আকৃতির। পুরো URL পেস্ট করলেও সঠিক অংশটা নিজেই ধরা হবে।',
   },
   en: {
     appName: 'PS TELECOM',
@@ -752,6 +757,8 @@ const translations: Record<Language, TranslationKeys> = {
     tokenSavedHint: 'Token saved — leave empty to keep the current one',
     noAccountOnDevice: 'No account exists on this device',
     noAccountOnDeviceDesc: 'Data is stored separately on each device. Please Sign Up first — if you had a cloud backup, restore it via Profile → Cloud Backup after signing up.',
+    invalidAccountIdHint: 'Account ID does not look right — it is a 32-character code. Pasting the whole URL is fine; the extra parts are removed automatically.',
+    invalidDatabaseIdHint: 'Database ID does not look right — it looks like xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx. Pasting the whole URL also works; the correct part is picked automatically.',
   },
   hi: {
     appName: 'PS TELECOM',
@@ -995,6 +1002,8 @@ const translations: Record<Language, TranslationKeys> = {
     tokenSavedHint: 'टोकन सहेजा गया है — मौजूदा टोकन रखने के लिए खाली छोड़ें',
     noAccountOnDevice: 'इस डिवाइस पर कोई अकाउंट नहीं है',
     noAccountOnDeviceDesc: 'डेटा हर डिवाइस पर अलग-अलग सेव रहता है। पहले साइनअप करें — अगर पहले क्लाउड बैकअप लिया था, तो साइनअप के बाद Profile → Cloud Backup से वापस ला सकते हैं।',
+    invalidAccountIdHint: 'Account ID सही नहीं लग रहा — यह 32 अक्षरों का कोड होता है। पूरा URL पेस्ट करने पर भी सही हिस्सा अपने आप निकाल लिया जाता है।',
+    invalidDatabaseIdHint: 'Database ID सही नहीं लग रहा — यह xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx आकार का होता है। पूरा URL पेस्ट करने पर भी सही हिस्सा अपने आप निकाल लिया जाता है।',
   },
 };
 

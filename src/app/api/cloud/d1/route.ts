@@ -83,16 +83,63 @@ function json(payload: D1Response, status = 200, extraHeaders?: Record<string, s
   });
 }
 
+/**
+ * Maps raw Cloudflare API failures to short, actionable messages a shop owner
+ * can act on (the raw detail is kept in parentheses when available).
+ */
+function friendlyCloudflareError(
+  status: number,
+  parsed: { errors?: { message?: string; code?: number }[] } | null,
+  rawText: string
+): string {
+  const cfMsg = parsed?.errors?.[0]?.message || '';
+  const cfCode = parsed?.errors?.[0]?.code || 0;
+  const lower = `${cfMsg} ${rawText}`.toLowerCase();
+
+  if (status === 404 || cfCode === 7003 || lower.includes('could not route')) {
+    return `Account ID or Database ID is wrong — please re-copy both from Cloudflare${cfMsg ? ` (${cfMsg})` : ''}`;
+  }
+  if (status === 403 || cfCode === 9109 || cfCode === 10000 || lower.includes('authentication error') || lower.includes('unauthorized')) {
+    return `API token is invalid, expired, or missing the "D1 Edit" permission${cfMsg ? ` (${cfMsg})` : ''}`;
+  }
+  if (status === 400 && lower.includes('invalid')) {
+    return `Account ID or Database ID looks malformed — paste the ID only, without any extra text${cfMsg ? ` (${cfMsg})` : ''}`;
+  }
+  if (status === 429) {
+    return 'Cloudflare rate limit reached — please wait a minute and try again';
+  }
+  return (
+    cfMsg ||
+    (rawText && rawText.length < 400 ? rawText : `Cloudflare API returned HTTP ${status}`)
+  );
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  // ---- Same-origin gate: a browser sending cross-origin requests gets 403 ----
-  const origin = req.headers.get('origin');
-  if (origin) {
-    try {
-      if (new URL(origin).host !== req.headers.get('host')) {
-        return json({ ok: false, error: 'Forbidden' }, 403);
+  // ---- Same-origin gate: block cross-site BROWSER calls ----
+  // Modern browsers always send Sec-Fetch-Site and JavaScript cannot spoof it,
+  // so it is the most reliable signal — and it survives reverse proxies that
+  // rewrite the Host header (which broke legit calls with a bare "Forbidden").
+  const secFetchSite = (req.headers.get('sec-fetch-site') || '').toLowerCase();
+  if (secFetchSite === 'cross-site') {
+    return json({ ok: false, error: 'Cross-origin requests are not allowed' }, 403);
+  }
+  if (!secFetchSite) {
+    // Older browser / unknown client — fall back to comparing Origin with the
+    // forwarded/original host (either may carry the public domain).
+    const origin = req.headers.get('origin');
+    if (origin) {
+      let blocked = true;
+      try {
+        const originHost = new URL(origin).host;
+        const hostHeader = (req.headers.get('host') || '').trim();
+        const fwdHost = (req.headers.get('x-forwarded-host') || '').trim().split(',')[0];
+        if (originHost === hostHeader || (fwdHost && originHost === fwdHost)) blocked = false;
+      } catch {
+        blocked = true;
       }
-    } catch {
-      return json({ ok: false, error: 'Forbidden' }, 403);
+      if (blocked) {
+        return json({ ok: false, error: 'Cross-origin requests are not allowed' }, 403);
+      }
     }
   }
 
@@ -167,11 +214,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     if (!res.ok || !parsed || parsed.success === false) {
-      const cfMsg = parsed?.errors?.[0]?.message;
-      const msg =
-        cfMsg ||
-        (text && text.length < 400 ? text : `Cloudflare API returned HTTP ${res.status}`);
-      return json({ ok: false, error: msg, status: res.status });
+      return json({ ok: false, error: friendlyCloudflareError(res.status, parsed, text), status: res.status });
     }
 
     // /query returns an array of per-statement results (multi-statement SQL)

@@ -258,8 +258,30 @@ async function d1Query(
 }
 
 /**
+ * Maps raw Cloudflare API failures to short, actionable messages a shop owner
+ * can act on. Kept in sync with the server-side proxy's mapping (web path).
+ */
+function friendlyCloudflareError(status: number, cfMsg: string | undefined, rawText: string): string {
+  const lower = `${cfMsg || ''} ${rawText}`.toLowerCase();
+  if (status === 404 || lower.includes('could not route') || lower.includes('7003')) {
+    return `Account ID or Database ID is wrong — please re-copy both from Cloudflare${cfMsg ? ` (${cfMsg})` : ''}`;
+  }
+  if (status === 403 || lower.includes('authentication error') || lower.includes('unauthorized') || lower.includes('9109') || lower.includes('10000')) {
+    return `API token is invalid, expired, or missing the "D1 Edit" permission${cfMsg ? ` (${cfMsg})` : ''}`;
+  }
+  if (status === 400 && lower.includes('invalid')) {
+    return `Account ID or Database ID looks malformed — paste the ID only, without any extra text${cfMsg ? ` (${cfMsg})` : ''}`;
+  }
+  if (status === 429) {
+    return 'Cloudflare rate limit reached — please wait a minute and try again';
+  }
+  return cfMsg || (rawText.length < 400 ? rawText : `Cloudflare API returned HTTP ${status}`);
+}
+
+/**
  * Normalizes a raw Cloudflare /query response (used only on the native path,
- * where there is no server-side proxy to do it). Mirrors the proxy's mapping.
+ * where there is no server-side proxy to do it). Mirrors the proxy's mapping,
+ * including the friendly error translation.
  */
 function normalizeCloudflareResponse(text: string, status: number): D1QueryResult {
   let parsed: {
@@ -274,10 +296,8 @@ function normalizeCloudflareResponse(text: string, status: number): D1QueryResul
   }
   if (!parsed || parsed.success === false) {
     const cfMsg = parsed?.errors?.[0]?.message;
-    return {
-      ok: false,
-      error: cfMsg || (text.length < 400 ? text : `Cloudflare API returned HTTP ${status}`),
-    };
+    const friendly = friendlyCloudflareError(status, cfMsg, text);
+    return { ok: false, error: friendly };
   }
   const resultArr = Array.isArray(parsed.result) ? parsed.result : [parsed.result];
   const rows: Record<string, unknown>[] = [];
