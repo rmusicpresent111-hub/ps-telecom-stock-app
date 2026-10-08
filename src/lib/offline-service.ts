@@ -18,6 +18,7 @@ import {
   offlineExpenses,
   offlineCashEntries,
   offlineServiceTransactions,
+  offlineBills,
   offlineMeta,
   clearOfflineData,
   getOfflineDB,
@@ -25,7 +26,7 @@ import {
 } from './offline-db';
 import { getLocalUser, updateLocalUser } from './local-auth';
 import { generateRecordId } from './id';
-import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType } from './types';
+import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillingSettings, PaymentMethod } from './types';
 
 // ============ DATE HELPERS (local timezone — never use UTC for business days) ============
 
@@ -926,16 +927,224 @@ export async function deleteServiceTransactionOffline(id: string, _userId: strin
   return { success: true };
 }
 
+// ============ BILLS (e-Bill / Invoice) ============
+
+export const DEFAULT_BILLING_SETTINGS: Omit<BillingSettings, 'userId' | 'updatedAt'> = {
+  shopName: 'PS TELECOM',
+  shopAddress: '',
+  shopPhone: '',
+  gstNumber: '',
+  gstEnabled: false,
+  gstRate: 18,
+  defaultDiscountPercent: 0,
+  upiId: '',
+  signatureDataUrl: '',
+  qrCodeDataUrl: '',
+  billPrefix: 'PS',
+  thankYouNote: 'Thank you for your business!',
+  termsText: '',
+};
+
+export async function getBillingSettingsOffline(userId: string): Promise<BillingSettings> {
+  const db = await getOfflineDB();
+  const existing = await db.get('billingSettings', userId);
+  if (existing) return existing;
+  return {
+    ...DEFAULT_BILLING_SETTINGS,
+    userId,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export async function saveBillingSettingsOffline(userId: string, updates: Partial<Omit<BillingSettings, 'userId' | 'updatedAt'>>): Promise<BillingSettings> {
+  const current = await getBillingSettingsOffline(userId);
+  const next: BillingSettings = {
+    ...current,
+    ...updates,
+    // Never allow blank shop name — bill header must always render
+    shopName: (updates.shopName ?? current.shopName).trim() || DEFAULT_BILLING_SETTINGS.shopName,
+    gstRate: clampNumber(updates.gstRate ?? current.gstRate, 0, 100),
+    defaultDiscountPercent: clampNumber(updates.defaultDiscountPercent ?? current.defaultDiscountPercent, 0, 100),
+    userId,
+    updatedAt: new Date().toISOString(),
+  };
+  const db = await getOfflineDB();
+  await db.put('billingSettings', next);
+  return next;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return min;
+  return Math.min(max, Math.max(min, num));
+}
+
+/** Generates the next sequential bill number: PREFIX-YYMM-0001 */
+async function nextBillNumber(userId: string, prefix: string): Promise<string> {
+  const bills = await offlineBills.getAll(userId);
+  const now = new Date();
+  const yy = String(now.getFullYear()).slice(-2);
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const monthPrefix = `${prefix}-${yy}${mm}-`;
+  let maxSeq = 0;
+  for (const b of bills) {
+    if (typeof b.billNumber === 'string' && b.billNumber.startsWith(monthPrefix)) {
+      const seq = parseInt(b.billNumber.slice(monthPrefix.length), 10);
+      if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
+    }
+  }
+  return `${monthPrefix}${String(maxSeq + 1).padStart(4, '0')}`;
+}
+
+export async function createBillOffline(data: {
+  userId: string;
+  transactionId: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  customerName?: string;
+  customerMobile?: string;
+  discountType?: 'amount' | 'percent';
+  discountValue?: number;
+  paymentMethod?: PaymentMethod;
+  paidAmount?: number;
+  note?: string;
+  date?: string;
+}): Promise<{ bill: Bill }> {
+  const qty = Math.floor(Number(data.quantity));
+  if (!Number.isFinite(qty) || qty <= 0) throw new Error('Quantity must be a positive whole number');
+  const unitPrice = Number(data.unitPrice);
+  if (!Number.isFinite(unitPrice) || unitPrice < 0) throw new Error('Price cannot be negative');
+
+  const settings = await getBillingSettingsOffline(data.userId);
+
+  const discountType = data.discountType === 'percent' ? 'percent' : 'amount';
+  let discountValue = Math.max(0, Number(data.discountValue ?? 0) || 0);
+  const subtotal = round2(qty * unitPrice);
+
+  let discountAmount = 0;
+  if (discountType === 'percent') {
+    discountValue = clampNumber(discountValue, 0, 100);
+    discountAmount = round2((subtotal * discountValue) / 100);
+  } else {
+    discountAmount = round2(Math.min(discountValue, subtotal));
+  }
+
+  const gstEnabled = !!settings.gstEnabled && !!settings.gstNumber.trim() && settings.gstRate > 0;
+  const gstAmount = gstEnabled ? round2(((subtotal - discountAmount) * settings.gstRate) / 100) : 0;
+  const total = round2(subtotal - discountAmount + gstAmount);
+
+  const paymentMethod: PaymentMethod = data.paymentMethod ?? 'cash';
+  let paidAmount = data.paidAmount === undefined ? total : Math.max(0, Number(data.paidAmount) || 0);
+  if (paymentMethod === 'due') paidAmount = 0;
+  paidAmount = round2(Math.min(paidAmount, total));
+  const dueAmount = round2(total - paidAmount);
+
+  // Guard: one bill per stock-out/sell transaction — prevents accidental duplicates
+  const existingBills = await offlineBills.getAll(data.userId);
+  const dupe = existingBills.find(b => b.transactionId === data.transactionId);
+  if (dupe) throw new Error('A bill already exists for this transaction');
+
+  const now = new Date().toISOString();
+  const billNumber = await nextBillNumber(data.userId, settings.billPrefix.trim() || 'PS');
+
+  const bill: OfflineDBSchema['bills']['value'] = {
+    id: generateRecordId(),
+    userId: data.userId,
+    billNumber,
+    customerName: (data.customerName ?? '').trim() || 'Walk-in Customer',
+    customerMobile: (data.customerMobile ?? '').replace(/[^\d+]/g, ''),
+    items: [
+      {
+        productId: data.productId,
+        name: data.productName,
+        quantity: qty,
+        unitPrice,
+        total: subtotal,
+      },
+    ],
+    subtotal,
+    discountValue,
+    discountType,
+    discountAmount,
+    gstEnabled,
+    gstRate: gstEnabled ? settings.gstRate : 0,
+    gstAmount,
+    total,
+    paymentMethod,
+    paidAmount,
+    dueAmount,
+    note: (data.note ?? '').trim(),
+    transactionId: data.transactionId,
+    shopSnapshot: {
+      name: settings.shopName,
+      address: settings.shopAddress,
+      phone: settings.shopPhone,
+      gstNumber: settings.gstNumber,
+    },
+    date: data.date || localDateStr(),
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await offlineBills.put(bill);
+  return { bill: bill as unknown as Bill };
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+export async function getBillsOffline(userId: string, options?: { from?: string; to?: string; search?: string }): Promise<Bill[]> {
+  let rows = await offlineBills.getAll(userId);
+  if (options?.from) rows = rows.filter(b => b.date >= options.from!);
+  if (options?.to) rows = rows.filter(b => b.date <= options.to!);
+  if (options?.search) {
+    const q = options.search.toLowerCase();
+    rows = rows.filter(b =>
+      b.customerName.toLowerCase().includes(q) ||
+      b.customerMobile.includes(q) ||
+      b.billNumber.toLowerCase().includes(q) ||
+      b.items.some(i => i.name.toLowerCase().includes(q))
+    );
+  }
+  return rows
+    .sort((a, b) => {
+      if (a.date !== b.date) return b.date.localeCompare(a.date);
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    })
+    .map(b => b as unknown as Bill);
+}
+
+export async function getBillByIdOffline(id: string, userId: string): Promise<Bill | null> {
+  const db = await getOfflineDB();
+  const row = await db.get('bills', id);
+  if (!row || row.userId !== userId) return null;
+  return row as unknown as Bill;
+}
+
+export async function deleteBillOffline(id: string, userId: string): Promise<{ success: boolean }> {
+  const db = await getOfflineDB();
+  const row = await db.get('bills', id);
+  if (row && row.userId === userId) {
+    await db.delete('bills', id);
+  }
+  return { success: true };
+}
+
 // ============ BACKUP (Local) ============
 
 export async function exportBackupOffline(userId: string) {
-  const [localCategories, localProducts, localTransactions, localExpenses, localCashEntries, localServiceTxns] = await Promise.all([
+  const [localCategories, localProducts, localTransactions, localExpenses, localCashEntries, localServiceTxns, localBills, billingSettings] = await Promise.all([
     offlineCategories.getAll(userId),
     offlineProducts.getAll(userId),
     offlineTransactions.getAll(userId),
     offlineExpenses.getAll(userId),
     offlineCashEntries.getAll(userId),
     offlineServiceTransactions.getAll(userId),
+    offlineBills.getAll(userId),
+    getBillingSettingsOffline(userId),
   ]);
 
   return {
@@ -945,6 +1154,8 @@ export async function exportBackupOffline(userId: string) {
     expenses: localExpenses.map(e => stripSync(e)),
     cashEntries: localCashEntries.map(e => stripSync(e)),
     serviceTransactions: localServiceTxns.map(s => stripSync(s)),
+    bills: localBills.map(b => b),
+    billingSettings,
     exportedAt: new Date().toISOString(),
   };
 }
@@ -956,6 +1167,8 @@ export async function importBackupOffline(userId: string, backupData: {
   expenses?: unknown[];
   cashEntries?: unknown[];
   serviceTransactions?: unknown[];
+  bills?: unknown[];
+  billingSettings?: unknown;
 }) {
   const now = Date.now();
 
@@ -974,19 +1187,24 @@ export async function importBackupOffline(userId: string, backupData: {
   const expenses = asRows(backupData.expenses || []);
   const cashEntries = asRows(backupData.cashEntries || []);
   const serviceTransactions = asRows(backupData.serviceTransactions || []);
+  const bills = asRows(backupData.bills || []);
+  const billingSettings = (backupData.billingSettings && typeof backupData.billingSettings === 'object')
+    ? backupData.billingSettings as Record<string, unknown>
+    : null;
 
-  if (categories.length === 0 && products.length === 0 && transactions.length === 0 && expenses.length === 0 && cashEntries.length === 0 && serviceTransactions.length === 0) {
+  if (categories.length === 0 && products.length === 0 && transactions.length === 0 && expenses.length === 0 && cashEntries.length === 0 && serviceTransactions.length === 0 && bills.length === 0) {
     throw new Error('Backup file contains no valid data');
   }
 
   // REPLACE semantics: clear existing stores first so stale rows can't survive a restore.
-  const [allLocalCats, allLocalProducts, allLocalTxns, allLocalExpenses, allLocalCash, allLocalSvc] = await Promise.all([
+  const [allLocalCats, allLocalProducts, allLocalTxns, allLocalExpenses, allLocalCash, allLocalSvc, allLocalBills] = await Promise.all([
     offlineCategories.getAll(userId),
     offlineProducts.getAll(userId),
     offlineTransactions.getAll(userId),
     offlineExpenses.getAll(userId),
     offlineCashEntries.getAll(userId),
     offlineServiceTransactions.getAll(userId),
+    offlineBills.getAll(userId),
   ]);
   await Promise.all([
     ...allLocalCats.map(c => offlineCategories.delete(c.id)),
@@ -995,6 +1213,7 @@ export async function importBackupOffline(userId: string, backupData: {
     ...allLocalExpenses.map(e => offlineExpenses.delete(e.id)),
     ...allLocalCash.map(e => offlineCashEntries.delete(e.id)),
     ...allLocalSvc.map(s => offlineServiceTransactions.delete(s.id)),
+    ...allLocalBills.map(b => offlineBills.delete(b.id)),
   ]);
 
   if (categories.length) {
@@ -1026,6 +1245,20 @@ export async function importBackupOffline(userId: string, backupData: {
     await offlineServiceTransactions.putBulk(
       serviceTransactions.map((svc) => ({ ...svc, userId, _synced: now, _dirty: 0 })) as OfflineDBSchema['serviceTransactions']['value'][]
     );
+  }
+  if (bills.length) {
+    await offlineBills.putBulk(
+      bills.map((bill) => ({ ...bill, userId, createdAt: bill.createdAt || new Date().toISOString(), updatedAt: bill.updatedAt || new Date().toISOString() })) as OfflineDBSchema['bills']['value'][]
+    );
+  }
+  if (billingSettings) {
+    const db = await getOfflineDB();
+    await db.put('billingSettings', {
+      ...DEFAULT_BILLING_SETTINGS,
+      ...billingSettings,
+      userId,
+      updatedAt: new Date().toISOString(),
+    } as OfflineDBSchema['billingSettings']['value']);
   }
 
   return { message: 'Backup imported successfully' };

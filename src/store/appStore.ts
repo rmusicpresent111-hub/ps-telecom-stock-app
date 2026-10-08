@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Screen, Language, ThemeMode, User, Category, Product, Transaction } from '@/lib/types';
+import { Screen, Language, ThemeMode, User, Category, Product, Transaction, Bill } from '@/lib/types';
 
 interface AppState {
   // Hydration
@@ -60,6 +60,28 @@ interface AppState {
   // Search
   searchQuery: string;
   setSearchQuery: (q: string) => void;
+
+  // Billing (e-Bill)
+  pendingBillData: PendingBillData | null;
+  setPendingBillData: (data: PendingBillData | null) => void;
+  selectedBillId: string | null;
+  setSelectedBillId: (id: string | null) => void;
+  selectedBill: Bill | null;
+  setSelectedBill: (bill: Bill | null) => void;
+
+  // History view (transactions | bills)
+  historyView: 'transactions' | 'bills';
+  setHistoryView: (view: 'transactions' | 'bills') => void;
+}
+
+export interface PendingBillData {
+  transactionId: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  totalAmount: number;
+  date?: string;
 }
 
 export const useAppStore = create<AppState>()(
@@ -118,6 +140,9 @@ export const useAppStore = create<AppState>()(
           categories: [],
           products: [],
           transactions: [],
+          pendingBillData: null,
+          selectedBillId: null,
+          selectedBill: null,
         }),
 
       // App State
@@ -157,6 +182,18 @@ export const useAppStore = create<AppState>()(
       // Search
       searchQuery: '',
       setSearchQuery: (q) => set({ searchQuery: q }),
+
+      // Billing (e-Bill)
+      pendingBillData: null,
+      setPendingBillData: (data) => set({ pendingBillData: data }),
+      selectedBillId: null,
+      setSelectedBillId: (id) => set({ selectedBillId: id }),
+      selectedBill: null,
+      setSelectedBill: (bill) => set({ selectedBill: bill }),
+
+      // History view
+      historyView: 'transactions' as const,
+      setHistoryView: (view) => set({ historyView: view }),
     }),
     {
       name: 'ps-telecom-store',

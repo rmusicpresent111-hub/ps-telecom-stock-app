@@ -261,3 +261,38 @@ Stage Summary:
 - Browser-verified end-to-end (agent-browser, mobile 390x844 + desktop 1440x900): splash→welcome→tutorial→signup→dashboard→add category→add product→stock-in (atomic, qty 10→15)→instant sell (insufficient-stock guard + successful SELL 3×₹750)→profit screen (₹2,250 rev − ₹1,500 cost = ₹750, 33% margin, snapshot-based)→daily book (cash 5000/2000, expense add+delete with confirm)→backup→logout→wrong-password rejected→case-insensitive login→forgot-password reset→re-login with new password. Data persists across logout/login. No console errors.
 - Screenshots: upload/v2-welcome.png, v2-dashboard.png, v2-category-added.png, v2-sell-done.png, v2-desktop.png
 - Known remaining LOW items (not blocking, listed in audit): DailyBook uses inline ternaries instead of t() keys; dead 'shine' CSS animation refs; TutorialScreen descriptions English-only; some hardcoded EN strings (Profit/Unit, Threshold etc.)
+
+---
+Task ID: 3
+Agent: Z.ai Code (main agent)
+Task: e-Bill system + date-wise history + billing settings + WhatsApp sharing ("History page e date by history, product load fast, stock out er somoy ebill billing, profile e billing settings (shop name/address/GST/signature/QR/discount), ebill WhatsApp e jabe, history te save thakbe PDF share soho")
+
+Work Log:
+- Installed jspdf@4.2.1 (client-side PDF generation, no server needed)
+- types.ts: added Bill, BillItem, BillingSettings, PaymentMethod types + 'billing-settings' Screen
+- offline-db.ts: DB_VERSION 6→7, added `bills` store (by-userId, by-date indexes) + `billingSettings` store (keyed by userId); clearOfflineData now wipes bills + settings too
+- offline-service.ts: added DEFAULT_BILLING_SETTINGS (shopName 'PS TELECOM'), getBillingSettingsOffline, saveBillingSettingsOffline, createBillOffline (validates qty/price, computes discount %/flat + GST + paid/due, duplicate-transaction guard, sequential bill number PREFIX-YYMM-0001, shop snapshot frozen at bill time), getBillsOffline (search by customer/mobile/billNo/product), getBillByIdOffline, deleteBillOffline; backup export/import now includes bills + billingSettings
+- CREATED src/lib/bill-pdf.ts: jsPDF A5 invoice (dark header + gold band, shop name/address/phone/GSTIN, TAX INVOICE badge, items table with zebra stripes, subtotal/discount/GST/grand-total gold band, paid/balance-due, amount in Indian words, QR image, signature image, thank-you note, terms footer); helpers: formatMoney, formatDate, normalizeMobile (10-digit → 91xx for wa.me), amountInWords, downloadBlob, sharePdfFile (Web Share API with PDF file, AbortError-safe), buildBillMessage (WhatsApp text summary), whatsappUrl, sendBillViaWhatsapp (download + wa.me)
+- CREATED src/lib/image-utils.ts: fileToResizedDataUrl (canvas resize, PNG for transparency, progressive JPEG downscale under 120KB/250KB budgets) for signature/QR uploads
+- appStore.ts: pendingBillData/setPendingBillData, selectedBillId, selectedBill, historyView ('transactions'|'bills'), all cleared on logout
+- i18n.ts: 47 new keys × bn/en/hi (billing settings, e-bill prompt, bills tab, payment methods, share actions, today/yesterday, totals)
+- CREATED BillingSettingsScreen: shop name/address/phone, GST toggle + number + rate, default discount %, UPI ID, signature & QR image upload with live preview + remove, bill prefix, thank-you note, terms; sticky save bar
+- CREATED InvoiceScreen: 3 modes — create (from pendingBillData: item summary card, customer name/mobile/note, ₹/% discount toggle, Cash/UPI/Card/Due segmented control, partial paid amount, live totals incl. GST from settings), success + view (receipt-style preview with shop header/bill no/QR/signature; WhatsApp button, Share PDF, View PDF (blob new tab), Download PDF, delete with confirm, History→ shortcut)
+- StockOperationScreen: after successful STOCK_OUT/SELL the transaction result is held and an "e-Bill?" dialog appears (Create e-Bill / Skip); Create → setPendingBillData + goBack + navigateTo('invoice'); Skip → goBack; STOCK_IN unchanged
+- HistoryScreen: full rewrite — segmented Transactions|Bills switch with count badge, shared search box, single parallel fetch (txns + bills + settings) with client-side filtering (no refetch per filter), date-grouped lists (Today/Yesterday/weekday, DD MMM YYYY) with sticky day headers + day summaries (txn count, sales ₹ / bill count, total ₹, due ₹), bill cards with billNo/customer/items/mobile/payment/total/due-badge and 4 actions (WhatsApp, Share PDF, Download PDF, Delete), unbilled SELL/STOCK_OUT rows show "Make e-Bill" button (billedTxnIds Set prevents duplicates), delete confirmation dialog
+- ProfileScreen: added "Billing Settings" menu item (ReceiptText icon, subtitle); restore now passes bills + billingSettings
+- page.tsx: invoice → InvoiceScreen (was DashboardScreen placeholder), 'billing-settings' → BillingSettingsScreen
+- FIXED pre-existing type bugs: useBackHandler.ts referenced removed 'onboarding' screen; ReportsScreen.tsx grandTotal union-type assignment
+- Lint: 0 errors/warnings. tsc --noEmit src/: clean. Dev server HTTP 200, no console errors.
+
+Stage Summary:
+- Verified end-to-end in browser (mobile 390×844 + desktop 1440×900, Bengali + English UI):
+  signup → add category/product (20×₹800/₹1200) → Stock Out 2×₹1200 → success toast → "e-Bill?" prompt → Create → customer Rahim/9876543210, ₹100 flat discount → Generate → bill PS-2610-0001 ₹2,300 saved, receipt preview + share buttons
+- Billing Settings: address/GST 19ABCDE1234F1Z5/rate 18/phone saved; QR image uploaded via hidden file input → preview rendered
+- Instant Sell 1×₹1200 → e-Bill prompt → bill PS-2610-0002: TAX INVOICE badge, GST 18% = ₹216, total ₹1,416, Due method → due ₹1,416; QR visible on preview & PDF
+- PDF verified visually in new tab (blob URL): dark header, gold total band, "In Words: One Thousand Four Hundred Sixteen Rupees Only", QR, signature line, footer
+- WhatsApp button → downloads PDF + opens api.whatsapp.com/send/?phone=919123456780&text=<formatted bill> (10-digit auto 91-prefix)
+- History: Transactions tab groups by date ("Today • 3 transactions • বিক্রয় ₹1,200") with Make e-Bill only on unbilled rows; Bills tab ("আজ • 2 বিলসমূহ • ₹3,716 • বাকি ₹1,416"); delete bill works with confirm + badge/summary update
+- Skip flow: stock-out → Skip → returns without bill; stock math verified (20→17→16)
+- Logout → login: bills + settings persist (IndexedDB); product loading instant (100% local)
+- Screenshots: upload/bill-success.png, bill-gst-qr.png, bill-pdf-rendered.png, bills-desktop.png, final-dashboard-bn.png

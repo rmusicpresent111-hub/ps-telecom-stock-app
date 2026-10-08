@@ -8,7 +8,7 @@ import { Screen } from '@/lib/types';
 const TAB_SCREENS: Screen[] = ['dashboard', 'product-list', 'profit', 'history', 'profile'];
 
 // Auth/onboarding screens - back behavior is different
-const AUTH_SCREENS: Screen[] = ['splash', 'welcome', 'tutorial', 'onboarding', 'language', 'login', 'signup', 'forgot-password'];
+const AUTH_SCREENS: Screen[] = ['splash', 'welcome', 'tutorial', 'language', 'login', 'signup', 'forgot-password'];
 
 interface BackHandlerResult {
   showExitDialog: boolean;

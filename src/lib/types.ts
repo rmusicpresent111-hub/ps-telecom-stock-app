@@ -20,6 +20,7 @@ export type Screen =
   | 'instant-sell'
   | 'add-category'
   | 'invoice'
+  | 'billing-settings'
   | 'daily-book'
   | 'service-category';
 
@@ -123,3 +124,59 @@ export interface ServiceTransaction {
 
 export const SERVICE_CATEGORIES = ['Repairing', 'Withdraw/Deposit'] as const;
 export type ServiceCategoryType = 'repairing' | 'withdraw-deposit';
+
+// ============ BILLING (e-Bill / Invoice) ============
+
+export type PaymentMethod = 'cash' | 'upi' | 'card' | 'due';
+
+export interface BillItem {
+  productId: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+}
+
+export interface Bill {
+  id: string;
+  userId: string;
+  billNumber: string;
+  customerName: string;
+  customerMobile: string;
+  items: BillItem[];
+  subtotal: number;
+  discountValue: number;   // amount or percent depending on discountType
+  discountType: 'amount' | 'percent';
+  discountAmount: number;  // resolved rupee value
+  gstEnabled: boolean;
+  gstRate: number;
+  gstAmount: number;
+  total: number;
+  paymentMethod: PaymentMethod;
+  paidAmount: number;
+  dueAmount: number;
+  note: string;
+  transactionId: string;   // the STOCK_OUT/SELL transaction this bill documents
+  shopSnapshot: { name: string; address: string; phone: string; gstNumber: string };
+  date: string;            // YYYY-MM-DD (local)
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BillingSettings {
+  userId: string;
+  shopName: string;
+  shopAddress: string;
+  shopPhone: string;
+  gstNumber: string;
+  gstEnabled: boolean;
+  gstRate: number;         // percent, e.g. 18
+  defaultDiscountPercent: number;
+  upiId: string;
+  signatureDataUrl: string; // dataURL image, '' when unset
+  qrCodeDataUrl: string;    // payment QR image dataURL, '' when unset
+  billPrefix: string;       // e.g. 'PS'
+  thankYouNote: string;
+  termsText: string;
+  updatedAt: string;
+}

@@ -7,7 +7,7 @@
 import { openDB, type IDBPDatabase } from 'idb';
 
 const DB_NAME = 'ps-telecom-offline';
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 
 // ============ LOCAL USERS (authentication) ============
 
@@ -153,6 +153,62 @@ export interface OfflineDBSchema {
     value: LocalUserRecord;
     indexes: { 'by-email': string };
   };
+  bills: {
+    key: string;
+    value: {
+      id: string;
+      userId: string;
+      billNumber: string;
+      customerName: string;
+      customerMobile: string;
+      items: {
+        productId: string;
+        name: string;
+        quantity: number;
+        unitPrice: number;
+        total: number;
+      }[];
+      subtotal: number;
+      discountValue: number;
+      discountType: 'amount' | 'percent';
+      discountAmount: number;
+      gstEnabled: boolean;
+      gstRate: number;
+      gstAmount: number;
+      total: number;
+      paymentMethod: 'cash' | 'upi' | 'card' | 'due';
+      paidAmount: number;
+      dueAmount: number;
+      note: string;
+      transactionId: string;
+      shopSnapshot: { name: string; address: string; phone: string; gstNumber: string };
+      date: string;
+      createdAt: string;
+      updatedAt: string;
+    };
+    indexes: { 'by-userId': string; 'by-date': string };
+  };
+  billingSettings: {
+    key: string; // userId
+    value: {
+      userId: string;
+      shopName: string;
+      shopAddress: string;
+      shopPhone: string;
+      gstNumber: string;
+      gstEnabled: boolean;
+      gstRate: number;
+      defaultDiscountPercent: number;
+      upiId: string;
+      signatureDataUrl: string;
+      qrCodeDataUrl: string;
+      billPrefix: string;
+      thankYouNote: string;
+      termsText: string;
+      updatedAt: string;
+    };
+    indexes: Record<never, never>;
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<OfflineDBSchema>> | null = null;
@@ -215,6 +271,14 @@ function getDB(): Promise<IDBPDatabase<OfflineDBSchema>> {
         if (!db.objectStoreNames.contains('users')) {
           const userStore = db.createObjectStore('users', { keyPath: 'id' });
           userStore.createIndex('by-email', 'email');
+        }
+        if (!db.objectStoreNames.contains('bills')) {
+          const billStore = db.createObjectStore('bills', { keyPath: 'id' });
+          billStore.createIndex('by-userId', 'userId');
+          billStore.createIndex('by-date', 'date');
+        }
+        if (!db.objectStoreNames.contains('billingSettings')) {
+          db.createObjectStore('billingSettings', { keyPath: 'userId' });
         }
       },
     }).catch((err) => {
@@ -433,11 +497,20 @@ export const offlineServiceTransactions = {
   getDirty: () => getDirtyItems('serviceTransactions'),
 };
 
+// ============ BILLS (e-Bill / Invoice) ============
+
+export const offlineBills = {
+  getAll: (userId: string) => getAllByUser('bills', userId),
+  put: (bill: OfflineDBSchema['bills']['value']) => putItem('bills', bill),
+  putBulk: (bills: OfflineDBSchema['bills']['value'][]) => putBulk('bills', bills),
+  delete: (id: string) => deleteItem('bills', id),
+};
+
 // ============ CLEAR ALL ============
 
 export async function clearOfflineData(userId: string): Promise<void> {
   const db = await getDB();
-  const stores: (keyof OfflineDBSchema)[] = ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'syncMeta', 'pendingDeletes', 'serviceTransactions'];
+  const stores: (keyof OfflineDBSchema)[] = ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'syncMeta', 'pendingDeletes', 'serviceTransactions', 'bills'];
   for (const store of stores) {
     if (!db.objectStoreNames.contains(store)) continue;
     try {
@@ -450,5 +523,9 @@ export async function clearOfflineData(userId: string): Promise<void> {
     } catch {
       // Store might not have by-userId index
     }
+  }
+  // billingSettings is keyed by userId directly (no index)
+  if (db.objectStoreNames.contains('billingSettings')) {
+    await db.delete('billingSettings', userId);
   }
 }

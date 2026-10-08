@@ -110,7 +110,7 @@ export default function ReportsScreen() {
         getReportsOffline(user.id, 'monthly'),
       ]);
       setStockValueData((svReport.data || []) as StockValueCategory[]);
-      setGrandTotal(svReport.grandTotal || null);
+      setGrandTotal((svReport.grandTotal || null) as GrandTotal | null);
       setCategoryData((catReport.data || []) as CategoryReport[]);
       setDailyData((dailyReport.data || []) as DailyReport[]);
       setMonthlyData((monthlyReport.data || []) as MonthlyReport[]);

@@ -3,10 +3,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
-import { Product } from '@/lib/types';
+import { Product, Transaction } from '@/lib/types';
 import { getProductsOffline, createTransactionOffline } from '@/lib/offline-service';
 import { playStockOutSound, playSellSound, playStockInSound } from '@/lib/sound-service';
-import { ArrowLeft, Search, X, TrendingUp, TrendingDown, ShoppingBag } from 'lucide-react';
+import { ArrowLeft, Search, X, TrendingUp, TrendingDown, ShoppingBag, ReceiptText } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -20,6 +20,8 @@ export default function StockOperationScreen() {
   const user = useAppStore(s => s.user);
   const language = useAppStore(s => s.language);
   const goBack = useAppStore(s => s.goBack);
+  const navigateTo = useAppStore(s => s.navigateTo);
+  const setPendingBillData = useAppStore(s => s.setPendingBillData);
   const selectedProductId = useAppStore(s => s.selectedProductId);
   const stockOperationType = useAppStore(s => s.stockOperationType);
 
@@ -34,6 +36,7 @@ export default function StockOperationScreen() {
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [billPrompt, setBillPrompt] = useState<Transaction | null>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const lastMatchedIdRef = useRef<string | null>(null);
   const preselectedRef = useRef(false);
@@ -200,7 +203,7 @@ export default function StockOperationScreen() {
 
     setLoading(true);
     try {
-      await createTransactionOffline({
+      const { transaction } = await createTransactionOffline({
         type: stockOperationType,
         productId: product.id,
         quantity: qty,
@@ -219,12 +222,39 @@ export default function StockOperationScreen() {
       }
 
       toast.success(t('success', language));
-      goBack();
+
+      if (stockOperationType === 'STOCK_OUT' || stockOperationType === 'SELL') {
+        // Ask for e-Bill BEFORE leaving the screen (user can skip)
+        setBillPrompt(transaction);
+      } else {
+        goBack();
+      }
     } catch (error) {
       toast.error((error as Error).message || t('error', language));
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleBillSkip = () => {
+    setBillPrompt(null);
+    goBack();
+  };
+
+  const handleBillCreate = () => {
+    if (!billPrompt || !product) return;
+    setPendingBillData({
+      transactionId: billPrompt.id,
+      productId: billPrompt.productId,
+      productName: billPrompt.product?.name || product.name,
+      quantity: billPrompt.quantity,
+      unitPrice: billPrompt.unitPrice,
+      totalAmount: billPrompt.totalAmount,
+      date: billPrompt.date,
+    });
+    setBillPrompt(null);
+    goBack();          // leave the stock screen (stack: [..., prev])
+    navigateTo('invoice'); // push e-Bill screen (stack: [..., prev, invoice])
   };
 
   const handleConfirmCancel = () => {
@@ -539,6 +569,71 @@ export default function StockOperationScreen() {
                   }}
                 >
                   {loading ? t('loading', language) : t('confirm', language)}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* e-Bill Prompt — shown right after a successful STOCK_OUT / SELL */}
+      <AnimatePresence>
+        {billPrompt && product && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] flex items-center justify-center p-6"
+          >
+            <div className="absolute inset-0 bg-black/70" />
+
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              onClick={(e) => e.stopPropagation()}
+              className="glass-card-strong p-6 w-full max-w-sm relative z-10"
+            >
+              <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 bg-amber-500/15 border border-amber-500/40">
+                <ReceiptText size={24} className="text-amber-300" />
+              </div>
+
+              <h3 className="text-lg font-bold text-center mb-1 text-amber-300">{t('eBill', language)}?</h3>
+              <p className="text-xs text-white/50 text-center mb-4">{t('eBillPromptDesc', language)}</p>
+
+              <div className="space-y-2 mb-5">
+                <div className="flex justify-between items-center py-2 px-3 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                  <span className="text-xs text-white/50">{t('item', language)}</span>
+                  <span className="text-sm font-medium text-white/90">{billPrompt.product?.name || product.name}</span>
+                </div>
+                <div className="flex justify-between items-center py-2 px-3 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                  <span className="text-xs text-white/50">{t('quantity', language)}</span>
+                  <span className="text-sm font-medium text-white/90">{billPrompt.quantity} pcs</span>
+                </div>
+                <div className="flex justify-between items-center py-2 px-3 rounded-lg" style={{ background: 'rgba(245,222,179,0.08)', border: '1px solid rgba(212,168,83,0.3)' }}>
+                  <span className="text-xs text-white/50">Total</span>
+                  <span className="text-sm font-bold text-amber-300">₹{billPrompt.totalAmount.toLocaleString()}</span>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={handleBillSkip}
+                  className="flex-1 glass-card py-3 text-sm font-semibold text-white/70 rounded-xl hover:bg-white/10 transition-colors"
+                >
+                  {t('skipEBill', language)}
+                </button>
+                <button
+                  onClick={handleBillCreate}
+                  className="flex-1 py-3 text-sm font-semibold rounded-xl text-white transition-all flex items-center justify-center gap-1.5"
+                  style={{
+                    background: 'linear-gradient(135deg, #D4A853, #A07C3E)',
+                    border: '1px solid rgba(212,168,83,0.6)',
+                  }}
+                >
+                  <ReceiptText size={15} />
+                  {t('createEBill', language)}
                 </button>
               </div>
             </motion.div>

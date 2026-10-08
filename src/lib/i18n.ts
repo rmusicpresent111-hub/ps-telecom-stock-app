@@ -180,6 +180,58 @@ type TranslationKeys = {
   cashIn: string;
   cashOut: string;
   duplicateProduct: string;
+  // Billing (e-Bill)
+  billingSettings: string;
+  billingSettingsDesc: string;
+  shopAddress: string;
+  shopPhone: string;
+  gstNumberLabel: string;
+  enableGst: string;
+  gstRate: string;
+  defaultDiscount: string;
+  upiId: string;
+  signature: string;
+  paymentQr: string;
+  uploadImage: string;
+  removeImage: string;
+  billPrefix: string;
+  thankYouNote: string;
+  termsText: string;
+  eBill: string;
+  createEBill: string;
+  skipEBill: string;
+  eBillPromptDesc: string;
+  bills: string;
+  transactionsLabel: string;
+  today: string;
+  yesterday: string;
+  subtotal: string;
+  discount: string;
+  gst: string;
+  grandTotal: string;
+  paidAmount: string;
+  dueAmount: string;
+  paymentMethod: string;
+  cash: string;
+  upi: string;
+  card: string;
+  due: string;
+  note: string;
+  generateBill: string;
+  billSaved: string;
+  viewPdf: string;
+  sharePdf: string;
+  whatsappSend: string;
+  downloadPdf: string;
+  shareWhatsappHint: string;
+  walkInCustomer: string;
+  billed: string;
+  makeBill: string;
+  deleteBill: string;
+  billDeleted: string;
+  viewBill: string;
+  soldAmount: string;
+  saved: string;
 };
 
 const translations: Record<Language, TranslationKeys> = {
@@ -345,6 +397,57 @@ const translations: Record<Language, TranslationKeys> = {
     cashIn: 'ক্যাশ ইন',
     cashOut: 'ক্যাশ আউট',
     duplicateProduct: 'এই নামের প্রোডাক্ট এই ক্যাটেগরিতে আগেই আছে!',
+    billingSettings: 'বিলিং সেটিংস',
+    billingSettingsDesc: 'দোকান, GST, সিগনেচার, QR',
+    shopAddress: 'দোকানের ঠিকানা',
+    shopPhone: 'দোকানের ফোন',
+    gstNumberLabel: 'GST নম্বর',
+    enableGst: 'GST চালু করুন',
+    gstRate: 'GST হার (%)',
+    defaultDiscount: 'ডিফল্ট ডিস্কাউন্ট (%)',
+    upiId: 'UPI আইডি',
+    signature: 'সিগনেচার',
+    paymentQr: 'পেমেন্ট QR কোড',
+    uploadImage: 'ছবি আপলোড করুন',
+    removeImage: 'সরান',
+    billPrefix: 'বিল প্রিফিক্স',
+    thankYouNote: 'ধন্যবাদ নোট',
+    termsText: 'শর্তাবলী',
+    eBill: 'ই-বিল',
+    createEBill: 'ই-বিল তৈরি করুন',
+    skipEBill: 'এড়িয়ে যান',
+    eBillPromptDesc: 'এই বিক্রয়ের জন্য কি ই-বিল তৈরি করবেন?',
+    bills: 'বিলসমূহ',
+    transactionsLabel: 'লেনদেন',
+    today: 'আজ',
+    yesterday: 'গতকাল',
+    subtotal: 'সাবটোটাল',
+    discount: 'ডিস্কাউন্ট',
+    gst: 'GST',
+    grandTotal: 'সর্বমোট',
+    paidAmount: 'প্রদত্ত',
+    dueAmount: 'বাকি',
+    paymentMethod: 'পেমেন্ট মাধ্যম',
+    cash: 'ক্যাশ',
+    upi: 'UPI',
+    card: 'কার্ড',
+    due: 'বাকি',
+    note: 'নোট',
+    generateBill: 'বিল তৈরি করুন',
+    billSaved: 'বিল সংরক্ষিত হয়েছে',
+    viewPdf: 'PDF দেখুন',
+    sharePdf: 'PDF শেয়ার',
+    whatsappSend: 'WhatsApp-এ পাঠান',
+    downloadPdf: 'PDF ডাউনলোড',
+    shareWhatsappHint: 'PDF ডাউনলোড হয়েছে — WhatsApp চ্যাটে সংযুক্ত করুন',
+    walkInCustomer: 'সাধারণ ক্রেতা',
+    billed: 'বিল হয়েছে',
+    makeBill: 'ই-বিল করুন',
+    deleteBill: 'বিল মুছুন',
+    billDeleted: 'বিল মুছে ফেলা হয়েছে',
+    viewBill: 'বিল দেখুন',
+    soldAmount: 'বিক্রয়',
+    saved: 'সংরক্ষিত হয়েছে',
   },
   en: {
     appName: 'PS TELECOM',
@@ -508,6 +611,57 @@ const translations: Record<Language, TranslationKeys> = {
     cashIn: 'Cash In',
     cashOut: 'Cash Out',
     duplicateProduct: 'A product with this name already exists in this category!',
+    billingSettings: 'Billing Settings',
+    billingSettingsDesc: 'Shop, GST, signature, QR',
+    shopAddress: 'Shop Address',
+    shopPhone: 'Shop Phone',
+    gstNumberLabel: 'GST Number',
+    enableGst: 'Enable GST',
+    gstRate: 'GST Rate (%)',
+    defaultDiscount: 'Default Discount (%)',
+    upiId: 'UPI ID',
+    signature: 'Signature',
+    paymentQr: 'Payment QR Code',
+    uploadImage: 'Upload image',
+    removeImage: 'Remove',
+    billPrefix: 'Bill Prefix',
+    thankYouNote: 'Thank-you Note',
+    termsText: 'Terms & Conditions',
+    eBill: 'e-Bill',
+    createEBill: 'Create e-Bill',
+    skipEBill: 'Skip',
+    eBillPromptDesc: 'Do you want to create an e-Bill for this sale?',
+    bills: 'Bills',
+    transactionsLabel: 'Transactions',
+    today: 'Today',
+    yesterday: 'Yesterday',
+    subtotal: 'Subtotal',
+    discount: 'Discount',
+    gst: 'GST',
+    grandTotal: 'Grand Total',
+    paidAmount: 'Paid',
+    dueAmount: 'Due',
+    paymentMethod: 'Payment Method',
+    cash: 'Cash',
+    upi: 'UPI',
+    card: 'Card',
+    due: 'Due',
+    note: 'Note',
+    generateBill: 'Generate Bill',
+    billSaved: 'Bill saved successfully',
+    viewPdf: 'View PDF',
+    sharePdf: 'Share PDF',
+    whatsappSend: 'Send on WhatsApp',
+    downloadPdf: 'Download PDF',
+    shareWhatsappHint: 'PDF downloaded — attach it in the WhatsApp chat',
+    walkInCustomer: 'Walk-in Customer',
+    billed: 'Billed',
+    makeBill: 'Make e-Bill',
+    deleteBill: 'Delete Bill',
+    billDeleted: 'Bill deleted',
+    viewBill: 'View Bill',
+    soldAmount: 'Sales',
+    saved: 'Saved successfully',
   },
   hi: {
     appName: 'PS TELECOM',
@@ -671,6 +825,57 @@ const translations: Record<Language, TranslationKeys> = {
     cashIn: 'कैश इन',
     cashOut: 'कैश आउट',
     duplicateProduct: 'इस नाम का प्रोडक्ट इस कैटेगरी में पहले से मौजूद है!',
+    billingSettings: 'बिलिंग सेटिंग्स',
+    billingSettingsDesc: 'दुकान, GST, हस्ताक्षर, QR',
+    shopAddress: 'दुकान का पता',
+    shopPhone: 'दुकान का फोन',
+    gstNumberLabel: 'GST नंबर',
+    enableGst: 'GST सक्षम करें',
+    gstRate: 'GST दर (%)',
+    defaultDiscount: 'डिफ़ॉल्ट छूट (%)',
+    upiId: 'UPI आईडी',
+    signature: 'हस्ताक्षर',
+    paymentQr: 'पेमेंट QR कोड',
+    uploadImage: 'छवि अपलोड करें',
+    removeImage: 'हटाएं',
+    billPrefix: 'बिल प्रीफिक्स',
+    thankYouNote: 'धन्यवाद नोट',
+    termsText: 'नियम और शर्तें',
+    eBill: 'ई-बिल',
+    createEBill: 'ई-बिल बनाएं',
+    skipEBill: 'छोड़ें',
+    eBillPromptDesc: 'क्या आप इस बिक्री के लिए ई-बिल बनाना चाहते हैं?',
+    bills: 'बिल',
+    transactionsLabel: 'लेनदेन',
+    today: 'आज',
+    yesterday: 'कल',
+    subtotal: 'सबटोटल',
+    discount: 'छूट',
+    gst: 'GST',
+    grandTotal: 'कुल राशि',
+    paidAmount: 'भुगतान',
+    dueAmount: 'बकाया',
+    paymentMethod: 'भुगतान माध्यम',
+    cash: 'नकद',
+    upi: 'UPI',
+    card: 'कार्ड',
+    due: 'बकाया',
+    note: 'नोट',
+    generateBill: 'बिल बनाएं',
+    billSaved: 'बिल सहेजा गया',
+    viewPdf: 'PDF देखें',
+    sharePdf: 'PDF साझा करें',
+    whatsappSend: 'WhatsApp पर भेजें',
+    downloadPdf: 'PDF डाउनलोड',
+    shareWhatsappHint: 'PDF डाउनलोड हो गया — WhatsApp चैट में जोड़ें',
+    walkInCustomer: 'सामान्य ग्राहक',
+    billed: 'बिल बना',
+    makeBill: 'ई-बिल बनाएं',
+    deleteBill: 'बिल मिटाएं',
+    billDeleted: 'बिल मिटा दिया गया',
+    viewBill: 'बिल देखें',
+    soldAmount: 'बिक्री',
+    saved: 'सहेजा गया',
   },
 };
 

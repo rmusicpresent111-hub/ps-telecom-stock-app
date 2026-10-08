@@ -5,7 +5,7 @@ import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { getProfileOffline, updateProfileOffline, exportBackupOffline, importBackupOffline, resetDataOffline } from '@/lib/offline-service';
 import { motion } from 'framer-motion';
-import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, LogOut, Receipt } from 'lucide-react';
+import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, LogOut, Receipt, ReceiptText } from 'lucide-react';
 import { toast } from 'sonner';
 import type { User as UserType } from '@/lib/types';
 
@@ -105,6 +105,8 @@ export default function ProfileScreen() {
         expenses: backupData.expenses || [],
         cashEntries: backupData.cashEntries || [],
         serviceTransactions: backupData.serviceTransactions || [],
+        bills: backupData.bills || [],
+        billingSettings: backupData.billingSettings,
       });
       toast.success(t('restore', language) + ' ✓');
     } catch (error) {
@@ -205,6 +207,21 @@ export default function ProfileScreen() {
               <span className="text-sm">{t('languageChange', language)}</span>
             </div>
             <span className="text-xs text-white/40 uppercase">{language}</span>
+          </button>
+
+          {/* Billing Settings */}
+          <button
+            onClick={() => navigateTo('billing-settings')}
+            className="glass-card w-full p-4 flex items-center justify-between"
+          >
+            <div className="flex items-center gap-3">
+              <ReceiptText size={18} className="text-amber-300" />
+              <div className="text-left">
+                <span className="text-sm block">{t('billingSettings', language)}</span>
+                <span className="text-[10px] text-white/40">{t('billingSettingsDesc', language)}</span>
+              </div>
+            </div>
+            <span className="text-xs text-white/40">₹</span>
           </button>
 
           {/* Daily Book */}
