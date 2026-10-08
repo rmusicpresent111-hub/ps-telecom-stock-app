@@ -31,6 +31,7 @@ const ReportsScreen = lazy(() => import('@/components/screens/ReportsScreen'));
 const DailyBookScreen = lazy(() => import('@/components/screens/DailyBookScreen'));
 const InvoiceScreen = lazy(() => import('@/components/screens/InvoiceScreen'));
 const BillingSettingsScreen = lazy(() => import('@/components/screens/BillingSettingsScreen'));
+const CloudSyncScreen = lazy(() => import('@/components/screens/CloudSyncScreen'));
 const WelcomeScreen = lazy(() => import('@/components/screens/WelcomeScreen'));
 const TutorialScreen = lazy(() => import('@/components/screens/TutorialScreen'));
 const ServiceCategoryScreen = lazy(() => import('@/components/screens/ServiceCategoryScreen'));
@@ -58,6 +59,7 @@ const screenComponents: Record<Screen, React.ComponentType> = {
   'service-category': ServiceCategoryScreen,
   invoice: InvoiceScreen,
   'billing-settings': BillingSettingsScreen,
+  'cloud-sync': CloudSyncScreen,
   welcome: WelcomeScreen,
   tutorial: TutorialScreen,
 };

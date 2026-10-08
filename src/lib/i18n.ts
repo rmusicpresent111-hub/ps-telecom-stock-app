@@ -236,6 +236,38 @@ type TranslationKeys = {
   viewBill: string;
   soldAmount: string;
   saved: string;
+  // Cloud backup (Cloudflare D1)
+  cloudSync: string;
+  cloudSyncDesc: string;
+  accountId: string;
+  databaseId: string;
+  apiToken: string;
+  saveTestConnection: string;
+  connecting: string;
+  connectionOk: string;
+  connectionFailed: string;
+  cloudStatusConnected: string;
+  cloudStatusNotConnected: string;
+  backupToCloud: string;
+  restoreFromCloud: string;
+  backingUp: string;
+  restoring: string;
+  cloudBackupDone: string;
+  cloudRestoreDone: string;
+  cloudRestoreTitle: string;
+  cloudRestoreDesc: string;
+  lastCloudBackup: string;
+  never: string;
+  setupGuide: string;
+  setupStep1: string;
+  setupStep2: string;
+  setupStep3: string;
+  setupStep4: string;
+  setupStep5: string;
+  clearCredentials: string;
+  cloudDbEmpty: string;
+  fillAllFields: string;
+  cloudInfo: string;
 };
 
 const translations: Record<Language, TranslationKeys> = {
@@ -456,6 +488,37 @@ const translations: Record<Language, TranslationKeys> = {
     viewBill: 'বিল দেখুন',
     soldAmount: 'বিক্রয়',
     saved: 'সংরক্ষিত হয়েছে',
+    cloudSync: 'ক্লাউড ব্যাকআপ',
+    cloudSyncDesc: 'Cloudflare D1 ডেটাবেসে ডেটা রাখুন',
+    accountId: 'Account ID',
+    databaseId: 'Database ID',
+    apiToken: 'API Token',
+    saveTestConnection: 'সংরক্ষণ ও সংযোগ পরীক্ষা',
+    connecting: 'পরীক্ষা হচ্ছে...',
+    connectionOk: 'সংযোগ সফল! টেবিল প্রস্তুত',
+    connectionFailed: 'সংযোগ ব্যর্থ হয়েছে',
+    cloudStatusConnected: 'সংযোগ হয়েছে',
+    cloudStatusNotConnected: 'সংযোগ করা হয়নি',
+    backupToCloud: 'ক্লাউডে ব্যাকআপ করুন',
+    restoreFromCloud: 'ক্লাউড থেকে রিস্টোর করুন',
+    backingUp: 'ব্যাকআপ হচ্ছে...',
+    restoring: 'রিস্টোর হচ্ছে...',
+    cloudBackupDone: 'ক্লাউড ব্যাকআপ সম্পন্ন!',
+    cloudRestoreDone: 'ক্লাউড থেকে রিস্টোর সম্পন্ন!',
+    cloudRestoreTitle: 'ক্লাউড থেকে রিস্টোর করবেন?',
+    cloudRestoreDesc: 'এই ফোনের বর্তমান সব ডেটা মুছে গিয়ে ক্লাউডের ব্যাকআপ বসে যাবে।',
+    lastCloudBackup: 'শেষ ক্লাউড ব্যাকআপ',
+    never: 'এখনো হয়নি',
+    setupGuide: 'Cloudflare সেটআপ গাইড',
+    setupStep1: 'dash.cloudflare.com এ লগইন করুন',
+    setupStep2: 'Workers & Pages → D1 → "Create database" (নাম দিন: ps-telecom)',
+    setupStep3: 'ডেটাবেস খুলে "Database ID" কপি করুন; Account ID পাবেন Workers & Pages এর ডান দিকে',
+    setupStep4: 'My Profile → API Tokens → Create Token → Custom Token: Account → D1 → Edit',
+    setupStep5: 'তিনটি মান নিচে বসিয়ে "সংরক্ষণ ও সংযোগ পরীক্ষা" চাপুন',
+    clearCredentials: 'সংযোগ মুছে ফেলুন',
+    cloudDbEmpty: 'ক্লাউড ডেটাবেস খালি — আগে ব্যাকআপ করুন',
+    fillAllFields: 'তিনটি তথ্যই পূরণ করুন',
+    cloudInfo: 'আপনার ডেটা আপনার নিজের Cloudflare অ্যাকাউন্টে থাকে — ফোন হারালেও ডেটা নিরাপদ।',
   },
   en: {
     appName: 'PS TELECOM',
@@ -674,6 +737,37 @@ const translations: Record<Language, TranslationKeys> = {
     viewBill: 'View Bill',
     soldAmount: 'Sales',
     saved: 'Saved successfully',
+    cloudSync: 'Cloud Backup',
+    cloudSyncDesc: 'Store data in Cloudflare D1 database',
+    accountId: 'Account ID',
+    databaseId: 'Database ID',
+    apiToken: 'API Token',
+    saveTestConnection: 'Save & Test Connection',
+    connecting: 'Testing...',
+    connectionOk: 'Connected! Tables ready',
+    connectionFailed: 'Connection failed',
+    cloudStatusConnected: 'Connected',
+    cloudStatusNotConnected: 'Not connected',
+    backupToCloud: 'Backup to Cloud',
+    restoreFromCloud: 'Restore from Cloud',
+    backingUp: 'Backing up...',
+    restoring: 'Restoring...',
+    cloudBackupDone: 'Cloud backup complete!',
+    cloudRestoreDone: 'Restored from cloud!',
+    cloudRestoreTitle: 'Restore from cloud?',
+    cloudRestoreDesc: 'All current data on this phone will be REPLACED with the cloud backup.',
+    lastCloudBackup: 'Last cloud backup',
+    never: 'Never',
+    setupGuide: 'Cloudflare setup guide',
+    setupStep1: 'Log in at dash.cloudflare.com',
+    setupStep2: 'Workers & Pages → D1 → "Create database" (name: ps-telecom)',
+    setupStep3: 'Open the database and copy the "Database ID"; Account ID is on the right side of Workers & Pages',
+    setupStep4: 'My Profile → API Tokens → Create Token → Custom Token: Account → D1 → Edit',
+    setupStep5: 'Paste the three values below and tap "Save & Test Connection"',
+    clearCredentials: 'Disconnect',
+    cloudDbEmpty: 'Cloud database is empty — run a backup first',
+    fillAllFields: 'Please fill in all three fields',
+    cloudInfo: 'Your data lives in your own Cloudflare account — safe even if the phone is lost.',
   },
   hi: {
     appName: 'PS TELECOM',
@@ -892,6 +986,37 @@ const translations: Record<Language, TranslationKeys> = {
     viewBill: 'बिल देखें',
     soldAmount: 'बिक्री',
     saved: 'सहेजा गया',
+    cloudSync: 'क्लाउड बैकअप',
+    cloudSyncDesc: 'Cloudflare D1 डेटाबेस में डेटा रखें',
+    accountId: 'Account ID',
+    databaseId: 'Database ID',
+    apiToken: 'API Token',
+    saveTestConnection: 'सहेजें और कनेक्शन जांचें',
+    connecting: 'जांच हो रही है...',
+    connectionOk: 'कनेक्ट हो गया! टेबल तैयार',
+    connectionFailed: 'कनेक्शन विफल हुआ',
+    cloudStatusConnected: 'कनेक्टेड',
+    cloudStatusNotConnected: 'कनेक्ट नहीं है',
+    backupToCloud: 'क्लाउड पर बैकअप करें',
+    restoreFromCloud: 'क्लाउड से रिस्टोर करें',
+    backingUp: 'बैकअप हो रहा है...',
+    restoring: 'रिस्टोर हो रहा है...',
+    cloudBackupDone: 'क्लाउड बैकअप पूरा!',
+    cloudRestoreDone: 'क्लाउड से रिस्टोर पूरा!',
+    cloudRestoreTitle: 'क्लाउड से रिस्टोर करें?',
+    cloudRestoreDesc: 'इस फोन का सारा मौजूदा डेटा हटकर क्लाउड बैकअप आ जाएगा।',
+    lastCloudBackup: 'अंतिम क्लाउड बैकअप',
+    never: 'अभी तक नहीं',
+    setupGuide: 'Cloudflare सेटअप गाइड',
+    setupStep1: 'dash.cloudflare.com पर लॉगिन करें',
+    setupStep2: 'Workers & Pages → D1 → "Create database" (नाम: ps-telecom)',
+    setupStep3: 'डेटाबेस खोलकर "Database ID" कॉपी करें; Account ID Workers & Pages के दाईं ओर मिलेगा',
+    setupStep4: 'My Profile → API Tokens → Create Token → Custom Token: Account → D1 → Edit',
+    setupStep5: 'तीनों मान नीचे पेस्ट करके "सहेजें और कनेक्शन जांचें" दबाएं',
+    clearCredentials: 'कनेक्शन हटाएं',
+    cloudDbEmpty: 'क्लाउड डेटाबेस खाली है — पहले बैकअप करें',
+    fillAllFields: 'तीनों जानकारी भरें',
+    cloudInfo: 'आपका डेटा आपके ही Cloudflare अकाउंट में रहता है — फोन खोने पर भी डेटा सुरक्षित।',
   },
 };
 
