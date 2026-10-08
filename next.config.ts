@@ -11,9 +11,6 @@ const nextConfig: NextConfig = {
     unoptimized: true,
   },
   trailingSlash: true,
-  turbopack: {
-    root: "..",
-  },
 };
 
 export default nextConfig;

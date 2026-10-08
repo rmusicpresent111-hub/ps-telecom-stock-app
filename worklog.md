@@ -133,3 +133,25 @@ Stage Summary:
 - Add Category: preset grid stagger pop-in with hover bounce
 - CSS enhancements: golden glow hover, image zoom, emoji float
 - Lint passes, dev server running 200
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Clone user's GitHub repo (ps-telecom-stock-app) into sandbox and get it running for preview
+
+Work Log:
+- Cloned https://github.com/rmusicpresent111-hub/ps-telecom-stock-app.git into /tmp (initially 404/private, succeeded after user made it public)
+- Replaced sandbox default project files with the cloned repo (kept .git, remote origin intact)
+- Installed 926 packages via bun install
+- Prisma: schema already matched db/custom.db (db:generate + db:push - already in sync)
+- Fixed next.config.ts: removed `turbopack: { root: ".." }` which resolved to /home/z and caused dev server compile to hang/crash
+- Started dev server on port 3000, page compiles and returns HTTP 200
+- Verified via agent-browser: Welcome screen renders, Get Started → Onboarding → Login screen all work
+- Screenshots saved: upload/preview-welcome.png, preview-login.png, preview-desktop.png
+- Lint passes with no errors
+
+Stage Summary:
+- PS TELECOM Stock Management app fully running on port 3000
+- One config change: next.config.ts turbopack.root removed (fixes dev server hang)
+- App architecture: Next.js 16 + Supabase (client-side) + IndexedDB offline-first + Capacitor (APK)
+- Git remote origin preserved for future push of modifications
