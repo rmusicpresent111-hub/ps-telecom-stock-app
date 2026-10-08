@@ -8,7 +8,7 @@ import {
 } from '@/lib/offline-service';
 import {
   generateBillPdf, downloadBlob, sharePdfFile, buildBillMessage, whatsappUrl,
-  formatMoney, formatDate, type GeneratedPdf,
+  sendBillViaWhatsapp, shopInitials, formatMoney, formatDate, type GeneratedPdf,
 } from '@/lib/bill-pdf';
 import { BillingSettings, Bill, PaymentMethod } from '@/lib/types';
 import { ArrowLeft, FileText, Loader2, Trash2, Download, Share2, MessageCircle, ExternalLink, BadgeIndianRupee } from 'lucide-react';
@@ -154,6 +154,7 @@ export default function InvoiceScreen() {
         upiId: settings?.upiId,
         thankYouNote: settings?.thankYouNote,
         termsText: settings?.termsText,
+        proprietorName: settings?.proprietorName,
       });
     } catch (error) {
       toast.error((error as Error).message || t('error', language));
@@ -166,13 +167,12 @@ export default function InvoiceScreen() {
   const handleWhatsApp = useCallback(async (targetBill: Bill) => {
     const pdf = await makePdf(targetBill);
     if (!pdf) return;
-    downloadBlob(pdf.blob, pdf.fileName);
-    if (targetBill.customerMobile) {
-      window.open(whatsappUrl(targetBill.customerMobile, buildBillMessage(targetBill)), '_blank');
-      toast.success(t('shareWhatsappHint', language));
-    } else {
-      toast.error(t('customerPhone', language) + ' ' + t('error', language));
-    }
+    // Preferred: native share sheet WITH the PDF file attached → user picks
+    // WhatsApp + the customer chat. Fallback: download + wa.me text chat.
+    const result = await sendBillViaWhatsapp(targetBill, pdf);
+    if (result === 'shared') toast.success(t('billSharedWithPdf', language));
+    else if (result === 'fallback') toast.success(t('shareWhatsappHint', language));
+    else toast.error(t('customerPhone', language) + ' ' + t('error', language));
   }, [makePdf, language]);
 
   const handleShare = useCallback(async (targetBill: Bill) => {
@@ -377,39 +377,67 @@ export default function InvoiceScreen() {
         <div className="max-w-md mx-auto px-4 pt-4">
           <InvoiceHeader goBack={goBack} title={mode === 'success' ? t('billSaved', language) : t('viewBill', language)} />
 
-          {/* Receipt-style preview */}
+          {/* Premium receipt-style preview */}
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            className="rounded-2xl overflow-hidden shadow-2xl mb-4 bg-[#12151f] border border-[#D4A853]/30"
+            className="rounded-2xl overflow-hidden shadow-2xl mb-4 relative bg-[#0f1219] ring-1 ring-[#D4A853]/45 shadow-[0_12px_60px_-15px_rgba(212,168,83,0.45)]"
           >
+            {/* watermark */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden" aria-hidden="true">
+              <span className="font-serif font-bold text-6xl text-white/[0.035] -rotate-[22deg] whitespace-nowrap tracking-widest select-none">
+                {bill.shopSnapshot?.name || settings?.shopName || 'PS TELECOM'}
+              </span>
+            </div>
+
+            <div className="h-1.5 bg-gradient-to-r from-amber-200 via-[#D4A853] to-amber-700" />
+
             {/* header */}
-            <div className="bg-[#181c28] px-5 py-4 border-b-2 border-[#D4A853]">
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="text-lg font-bold text-white">{bill.shopSnapshot?.name || settings?.shopName || 'PS TELECOM'}</p>
-                  {bill.shopSnapshot?.address && <p className="text-[10px] text-white/50 mt-0.5 whitespace-pre-line">{bill.shopSnapshot.address}</p>}
-                  <div className="flex gap-2 mt-0.5 text-[10px] text-white/50">
-                    {bill.shopSnapshot?.phone && <span>Ph: {bill.shopSnapshot.phone}</span>}
-                    {bill.shopSnapshot?.gstNumber && <span>GSTIN: {bill.shopSnapshot.gstNumber}</span>}
-                  </div>
+            <div className="bg-gradient-to-b from-[#1e2434] to-[#141927] px-5 py-4 relative">
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 shrink-0 rounded-full bg-gradient-to-br from-amber-200 via-[#D4A853] to-amber-700 flex items-center justify-center shadow-lg shadow-amber-900/40 ring-2 ring-amber-200/30">
+                  <span className="font-serif font-bold text-[#1a1408] text-sm tracking-wide">
+                    {shopInitials(bill.shopSnapshot?.name || settings?.shopName || 'PS TELECOM')}
+                  </span>
                 </div>
-                <div className="text-right">
-                  <span className="text-[9px] font-bold bg-[#D4A853] text-black px-2 py-0.5 rounded">{bill.gstEnabled ? 'TAX INVOICE' : 'INVOICE'}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="font-serif text-[21px] leading-tight font-bold tracking-[0.1em] bg-gradient-to-r from-amber-100 via-[#EBCB7F] to-amber-300 bg-clip-text text-transparent truncate">
+                    {bill.shopSnapshot?.name || settings?.shopName || 'PS TELECOM'}
+                  </p>
+                  {(bill.shopSnapshot?.proprietorName ?? settings?.proprietorName) && (
+                    <p className="font-serif italic text-[10px] text-amber-200/70 mt-0.5">
+                      Proprietor: {bill.shopSnapshot?.proprietorName ?? settings?.proprietorName}
+                    </p>
+                  )}
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="text-[9px] font-bold bg-gradient-to-r from-amber-300 to-[#C89B4B] text-[#1a1408] px-2 py-0.5 rounded-sm shadow">{bill.gstEnabled ? 'TAX INVOICE' : 'INVOICE'}</span>
                   <p className="text-[10px] text-white/60 mt-1.5">{bill.billNumber}</p>
                   <p className="text-[10px] text-white/60">{formatDate(bill.date)}</p>
                 </div>
               </div>
+              <div className="mt-2 text-[10px] text-white/45 leading-snug">
+                {bill.shopSnapshot?.address && <p className="whitespace-pre-line">{bill.shopSnapshot.address}</p>}
+                {(bill.shopSnapshot?.phone || bill.shopSnapshot?.gstNumber) && (
+                  <p className="mt-0.5">
+                    {bill.shopSnapshot?.phone && <span>Ph: {bill.shopSnapshot.phone}</span>}
+                    {bill.shopSnapshot?.phone && bill.shopSnapshot?.gstNumber && <span>{'  |  '}</span>}
+                    {bill.shopSnapshot?.gstNumber && <span>GSTIN: {bill.shopSnapshot.gstNumber}</span>}
+                  </p>
+                )}
+              </div>
             </div>
+            <div className="h-px bg-gradient-to-r from-transparent via-[#D4A853]/70 to-transparent" />
 
             {/* customer */}
-            <div className="px-5 py-3 border-b border-white/10">
-              <p className="text-[9px] text-white/40 font-semibold tracking-wide">BILL TO</p>
+            <div className="px-5 py-3">
+              <p className="text-[9px] text-[#D4A853]/80 font-semibold tracking-[0.12em]">BILL TO</p>
               <div className="flex justify-between items-center mt-0.5">
-                <p className="text-sm font-semibold text-white/90">{bill.customerName}</p>
+                <p className="text-sm font-serif font-semibold text-white/90">{bill.customerName}</p>
                 {bill.customerMobile && <p className="text-xs text-white/60">Mob: {bill.customerMobile}</p>}
               </div>
             </div>
+            <div className="mx-5 h-px bg-white/5" />
 
             {/* items */}
             <div className="px-5 py-2">
@@ -436,9 +464,9 @@ export default function InvoiceScreen() {
               {bill.gstEnabled && bill.gstAmount > 0 && (
                 <TotalRow label={`${t('gst', language)} (${bill.gstRate}%)`} value={`₹${formatMoney(bill.gstAmount)}`} />
               )}
-              <div className="bg-[#D4A853]/15 border border-[#D4A853]/40 rounded-lg px-3 py-2 flex justify-between items-center mt-2">
-                <span className="text-xs font-bold text-[#D4A853]">{t('grandTotal', language)}</span>
-                <span className="text-lg font-bold text-[#D4A853]">₹{formatMoney(bill.total)}</span>
+              <div className="bg-gradient-to-r from-[#EDD494] via-[#D4A853] to-[#A67C34] rounded-lg px-3 py-2.5 flex justify-between items-center mt-2 shadow-md">
+                <span className="text-xs font-bold font-serif tracking-wide text-[#221a08]">{t('grandTotal', language)}</span>
+                <span className="text-lg font-bold font-serif text-[#221a08]">₹{formatMoney(bill.total)}</span>
               </div>
               {bill.dueAmount > 0 && (
                 <TotalRow label={t('dueAmount', language)} value={`₹${formatMoney(bill.dueAmount)}`} accent="text-red-400 font-semibold" />
@@ -450,12 +478,12 @@ export default function InvoiceScreen() {
               {bill.note && <p className="text-[10px] text-white/40 italic pt-1">{t('note', language)}: {bill.note}</p>}
             </div>
 
-            {/* qr + thanks */}
+            {/* qr + signature */}
             <div className="px-5 pb-4 pt-1 flex items-end justify-between">
               {settings?.qrCodeDataUrl ? (
                 <div className="text-center">
                   { }
-                  <img src={settings.qrCodeDataUrl} alt="Payment QR" className="w-16 h-16 object-contain bg-white rounded-lg p-0.5" />
+                  <img src={settings.qrCodeDataUrl} alt="Payment QR" className="w-16 h-16 object-contain bg-white rounded-lg p-0.5 ring-1 ring-[#D4A853]/50" />
                   {settings.upiId && <p className="text-[8px] text-white/40 mt-1">{settings.upiId}</p>}
                 </div>
               ) : <span />}
@@ -464,10 +492,17 @@ export default function InvoiceScreen() {
                    
                   <img src={settings.signatureDataUrl} alt="Signature" className="h-8 object-contain ml-auto mb-0.5" />
                 )}
-                <p className="text-[9px] text-white/50 border-t border-white/20 pt-1">For {bill.shopSnapshot?.name || 'PS TELECOM'}</p>
+                <p className="text-[9px] text-white/50 border-t border-[#D4A853]/40 pt-1">For {bill.shopSnapshot?.name || 'PS TELECOM'}</p>
+                {(bill.shopSnapshot?.proprietorName ?? settings?.proprietorName) && (
+                  <>
+                    <p className="font-serif text-[11px] font-bold text-amber-100/90 mt-0.5">{bill.shopSnapshot?.proprietorName ?? settings?.proprietorName}</p>
+                    <p className="text-[8px] text-white/40">Proprietor</p>
+                  </>
+                )}
               </div>
             </div>
-            <p className="text-center text-[10px] text-white/60 pb-3 font-medium">{settings?.thankYouNote || 'Thank you for your business!'}</p>
+            <p className="text-center font-serif italic text-[11px] text-amber-200/80 pb-3 font-medium relative">{settings?.thankYouNote || 'Thank you for your business!'}</p>
+            <div className="h-1.5 bg-gradient-to-r from-amber-700 via-[#D4A853] to-amber-200" />
           </motion.div>
 
           {/* Share actions */}

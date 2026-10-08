@@ -181,7 +181,7 @@ export interface OfflineDBSchema {
       dueAmount: number;
       note: string;
       transactionId: string;
-      shopSnapshot: { name: string; address: string; phone: string; gstNumber: string };
+      shopSnapshot: { name: string; address: string; phone: string; gstNumber: string; proprietorName?: string };
       date: string;
       createdAt: string;
       updatedAt: string;
@@ -193,6 +193,7 @@ export interface OfflineDBSchema {
     value: {
       userId: string;
       shopName: string;
+      proprietorName: string;
       shopAddress: string;
       shopPhone: string;
       gstNumber: string;

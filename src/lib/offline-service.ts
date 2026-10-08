@@ -931,6 +931,7 @@ export async function deleteServiceTransactionOffline(id: string, _userId: strin
 
 export const DEFAULT_BILLING_SETTINGS: Omit<BillingSettings, 'userId' | 'updatedAt'> = {
   shopName: 'PS TELECOM',
+  proprietorName: 'Avijit Maity & Brother',
   shopAddress: '',
   shopPhone: '',
   gstNumber: '',
@@ -1079,6 +1080,7 @@ export async function createBillOffline(data: {
     transactionId: data.transactionId,
     shopSnapshot: {
       name: settings.shopName,
+      proprietorName: settings.proprietorName,
       address: settings.shopAddress,
       phone: settings.shopPhone,
       gstNumber: settings.gstNumber,

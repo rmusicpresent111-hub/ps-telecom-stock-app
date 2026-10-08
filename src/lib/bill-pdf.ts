@@ -2,19 +2,33 @@
  * Bill PDF generation (jsPDF) + sharing helpers.
  *
  * The e-bill is generated 100% on-device. Sharing strategy:
- *  1. Web Share API with the actual PDF file → user picks WhatsApp + contact (mobile).
+ *  1. Web Share API WITH the actual PDF file → user picks WhatsApp + the customer
+ *     chat, and the PDF travels natively attached with the pre-filled message.
  *  2. Fallback: download the PDF + open wa.me chat with a formatted bill summary,
  *     so the user just attaches the downloaded file.
+ *
+ * PDF design: premium "gold on midnight" certificate style — serif shop
+ * monogram + name, proprietor line, gold gradient bands, ornamental page
+ * frame, subtle watermark, diamond footer divider.
  */
 
 import { jsPDF } from 'jspdf';
 import { Bill } from './types';
 
-const GOLD: [number, number, number] = [212, 168, 83];
-const DARK: [number, number, number] = [24, 28, 40];
-const GREEN: [number, number, number] = [16, 140, 90];
-const RED: [number, number, number] = [220, 60, 60];
-const GRAY: [number, number, number] = [110, 116, 130];
+type RGB = [number, number, number];
+
+const GOLD: RGB = [212, 168, 83];
+const GOLD_LIGHT: RGB = [238, 210, 140];
+const GOLD_DEEP: RGB = [158, 116, 46];
+const DARK: RGB = [22, 26, 38];
+const DARK2: RGB = [32, 38, 54];
+const GREEN: RGB = [16, 140, 90];
+const RED: RGB = [214, 58, 58];
+const GRAY: RGB = [110, 116, 130];
+const IVORY: RGB = [250, 247, 240];
+const WATERMARK: RGB = [246, 241, 230];
+
+const PROPRIETOR_FALLBACK = 'Avijit Maity & Brother';
 
 // ============ HELPERS ============
 
@@ -78,6 +92,40 @@ function numberToWordsIndian(n: number): string {
   return parts.join(' ');
 }
 
+/** First letters of up to 2 words — monogram initials, e.g. "PS TELECOM" → "PS". */
+export function shopInitials(name: string): string {
+  const words = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return 'PS';
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return ((words[0][0] || '') + (words[1][0] || '')).toUpperCase();
+}
+
+const lerp = (a: number, b: number, t: number) => Math.round(a + (b - a) * t);
+
+/** Paints a vertical gold gradient band by stacking thin interpolated strips. */
+function goldGradient(doc: jsPDF, x: number, y: number, w: number, h: number): void {
+  const steps = Math.max(10, Math.min(64, Math.round(h)));
+  const stepH = h / steps;
+  for (let i = 0; i < steps; i++) {
+    const t = i / (steps - 1);
+    doc.setFillColor(
+      lerp(GOLD_LIGHT[0], GOLD_DEEP[0], t),
+      lerp(GOLD_LIGHT[1], GOLD_DEEP[1], t),
+      lerp(GOLD_LIGHT[2], GOLD_DEEP[2], t),
+    );
+    doc.rect(x, y + stepH * i, w, stepH + 0.4, 'F');
+  }
+}
+
+/** Small gold diamond ornament (two triangles) centered at (cx, cy). */
+function diamond(doc: jsPDF, cx: number, cy: number, r: number): void {
+  doc.setFillColor(...GOLD);
+  doc.triangle(cx - r, cy, cx, cy - r, cx, cy, 'F');
+  doc.triangle(cx, cy - r, cx + r, cy, cx, cy, 'F');
+  doc.triangle(cx - r, cy, cx, cy + r, cx, cy, 'F');
+  doc.triangle(cx, cy + r, cx + r, cy, cx, cy, 'F');
+}
+
 // ============ PDF ============
 
 export interface GeneratedPdf {
@@ -85,83 +133,167 @@ export interface GeneratedPdf {
   fileName: string;
 }
 
+export interface BillPdfImages {
+  signatureDataUrl?: string;
+  qrCodeDataUrl?: string;
+  upiId?: string;
+  thankYouNote?: string;
+  termsText?: string;
+  proprietorName?: string;
+}
+
 /**
- * Draws a beautiful A5 invoice PDF for the bill.
- * shopName/address/phone come from the bill's shopSnapshot (frozen at bill time).
- * signature/qr data URLs come from current billing settings.
+ * Draws a premium A5 invoice PDF for the bill.
+ * shopSnapshot (frozen at bill time) drives the header; signature/QR come
+ * from current billing settings.
  */
 export async function generateBillPdf(
   bill: Bill,
-  images: { signatureDataUrl?: string; qrCodeDataUrl?: string; upiId?: string; thankYouNote?: string; termsText?: string }
+  images: BillPdfImages = {},
 ): Promise<GeneratedPdf> {
   const doc = new jsPDF({ unit: 'pt', format: 'a5', orientation: 'portrait' });
   const W = doc.internal.pageSize.getWidth();   // 419.5 pt
   const H = doc.internal.pageSize.getHeight();  // 595.3 pt
-  const M = 28; // margin
+  const M = 26; // margin
 
   const shop = bill.shopSnapshot || { name: 'PS TELECOM', address: '', phone: '', gstNumber: '' };
+  const shopName = shop.name || 'PS TELECOM';
+  const proprietor = shop.proprietorName ?? images.proprietorName ?? PROPRIETOR_FALLBACK;
+
+  // ---- Page frame (double gold certificate border) ----
+  doc.setDrawColor(...GOLD);
+  doc.setLineWidth(1.1);
+  doc.rect(8, 8, W - 16, H - 16, 'S');
+  doc.setDrawColor(...GOLD_LIGHT);
+  doc.setLineWidth(0.4);
+  doc.rect(12, 12, W - 24, H - 24, 'S');
+
+  // ---- Corner ornaments ----
+  const corner = (cx: number, cy: number, sx: number, sy: number) => {
+    doc.setFillColor(...GOLD);
+    doc.circle(cx, cy, 1.6, 'F');
+    doc.setDrawColor(...GOLD);
+    doc.setLineWidth(0.7);
+    doc.line(cx + sx * 5, cy, cx + sx * 14, cy);
+    doc.line(cx, cy + sy * 5, cx, cy + sy * 14);
+  };
+  corner(18, 18, 1, 1);
+  corner(W - 18, 18, -1, 1);
+  corner(18, H - 18, 1, -1);
+  corner(W - 18, H - 18, -1, -1);
+
+  // ---- Watermark (behind everything on the body) ----
+  doc.setFont('times', 'bold');
+  doc.setFontSize(42);
+  doc.setTextColor(...WATERMARK);
+  doc.text(shopName, W / 2, H * 0.58, { align: 'center', angle: 28 });
 
   // ---- Header band ----
+  const HEAD_H = 116;
   doc.setFillColor(...DARK);
-  doc.rect(0, 0, W, 86, 'F');
+  doc.rect(0, 0, W, HEAD_H, 'F');
+  // subtle darker vignette strip
+  doc.setFillColor(...DARK2);
+  doc.rect(0, 0, W, 22, 'F');
+  goldGradient(doc, 0, HEAD_H, W, 4);
+  doc.setFillColor(...GOLD_DEEP);
+  doc.rect(0, HEAD_H + 4, W, 0.8, 'F');
+
+  // Monogram medallion
+  const mcx = M + 17, mcy = 32, mr = 16;
   doc.setFillColor(...GOLD);
-  doc.rect(0, 86, W, 3, 'F');
+  doc.circle(mcx, mcy, mr, 'F');
+  doc.setDrawColor(...GOLD_LIGHT);
+  doc.setLineWidth(0.9);
+  doc.circle(mcx, mcy, mr - 2.4, 'S');
+  doc.setTextColor(...DARK);
+  doc.setFont('times', 'bold');
+  doc.setFontSize(13);
+  doc.text(shopInitials(shopName), mcx, mcy + 4.5, { align: 'center' });
 
+  // Shop name — serif, letter-spaced, auto-shrink to fit
+  const nameX = M + 44;
+  const nameMaxW = W - nameX - M - 84;
+  let nameSize = 19;
+  doc.setFont('times', 'bold');
   doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(20);
-  doc.text(shop.name || 'PS TELECOM', M, 36);
+  do {
+    doc.setFontSize(nameSize);
+    doc.setCharSpace(1.1);
+    if (doc.getTextWidth(shopName) <= nameMaxW) break;
+    doc.setCharSpace(0);
+    nameSize -= 0.5;
+  } while (nameSize > 11);
+  doc.text(shopName, nameX, 36);
+  doc.setCharSpace(0);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.setTextColor(220, 220, 228);
+  // Proprietor line
   let headerY = 50;
+  if (proprietor) {
+    doc.setFont('times', 'italic');
+    doc.setFontSize(8.8);
+    doc.setTextColor(238, 208, 140);
+    doc.text(`Proprietor: ${proprietor}`, nameX, headerY);
+    headerY += 12;
+  }
+
+  // Address / contact
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.8);
+  doc.setTextColor(214, 216, 226);
   if (shop.address) {
-    const addressLines = doc.splitTextToSize(shop.address, W - M * 2 - 110);
-    doc.text(addressLines, M, headerY);
-    headerY += addressLines.length * 11;
+    const addressLines = doc.splitTextToSize(shop.address, W - nameX - M - 84) as string[];
+    doc.text(addressLines, nameX, headerY);
+    headerY += addressLines.length * 9.5;
   }
   const contactBits: string[] = [];
-  if (shop.phone) contactBits.push(`Phone: ${shop.phone}`);
+  if (shop.phone) contactBits.push(`Ph: ${shop.phone}`);
   if (shop.gstNumber) contactBits.push(`GSTIN: ${shop.gstNumber}`);
-  if (contactBits.length) {
-    doc.text(contactBits.join('  |  '), M, headerY);
-  }
+  if (contactBits.length) doc.text(contactBits.join('  |  '), nameX, headerY);
 
-  // TAX INVOICE label box
-  doc.setFillColor(...GOLD);
-  doc.roundedRect(W - M - 74, 22, 74, 20, 4, 4, 'F');
+  // INVOICE plate (right, gold gradient with engraved border)
+  const plateW = 78, plateH = 20, plateX = W - M - plateW, plateY = 16;
+  goldGradient(doc, plateX, plateY, plateW, plateH);
+  doc.setDrawColor(...DARK);
+  doc.setLineWidth(0.9);
+  doc.rect(plateX + 2, plateY + 2, plateW - 4, plateH - 4, 'S');
   doc.setTextColor(...DARK);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text(bill.gstEnabled ? 'TAX INVOICE' : 'INVOICE', W - M - 37, 35, { align: 'center' });
+  doc.setFontSize(8.6);
+  doc.text(bill.gstEnabled ? 'TAX INVOICE' : 'INVOICE', plateX + plateW / 2, plateY + 13.5, { align: 'center' });
 
   // Bill meta (right column)
-  doc.setTextColor(230, 230, 238);
+  doc.setTextColor(226, 228, 238);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.text(`Bill No: ${bill.billNumber}`, W - M, 56, { align: 'right' });
-  doc.text(`Date: ${formatDate(bill.date)}`, W - M, 68, { align: 'right' });
+  doc.setFontSize(8.4);
+  doc.text(`Bill No: ${bill.billNumber}`, W - M, 52, { align: 'right' });
+  doc.text(`Date: ${formatDate(bill.date)}`, W - M, 63.5, { align: 'right' });
 
-  // ---- Bill To ----
-  let y = 112;
-  doc.setDrawColor(...GOLD);
-  doc.setLineWidth(0.8);
-  doc.roundedRect(M, y - 14, W - M * 2, 44, 6, 6, 'S');
+  // ---- Bill To (with gold accent bar) ----
+  let y = 142;
+  doc.setFillColor(...GOLD);
+  doc.roundedRect(M, y - 14, 2.6, 44, 1.2, 1.2, 'F');
+  doc.setDrawColor(226, 219, 200);
+  doc.setLineWidth(0.7);
+  doc.roundedRect(M + 6, y - 14, W - M * 2 - 6, 44, 6, 6, 'S');
   doc.setTextColor(...GRAY);
-  doc.setFontSize(7.5);
+  doc.setFontSize(7.4);
   doc.setFont('helvetica', 'bold');
-  doc.text('BILL TO', M + 12, y - 1);
+  doc.setCharSpace(1);
+  doc.text('BILL TO', M + 16, y - 1);
+  doc.setCharSpace(0);
   doc.setTextColor(...DARK);
-  doc.setFontSize(11);
-  doc.text(bill.customerName || 'Walk-in Customer', M + 12, y + 13);
+  doc.setFont('times', 'bold');
+  doc.setFontSize(12);
+  doc.text(bill.customerName || 'Walk-in Customer', M + 16, y + 14);
   if (bill.customerMobile) {
+    doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.setTextColor(80, 84, 96);
-    doc.text(`Mob: ${bill.customerMobile}`, W - M - 12, y + 13, { align: 'right' });
+    doc.setTextColor(84, 88, 100);
+    doc.text(`Mob: ${bill.customerMobile}`, W - M - 14, y + 14, { align: 'right' });
   }
 
-  y += 48;
+  y += 50;
 
   // ---- Items table ----
   const colItem = M + 10;
@@ -170,37 +302,41 @@ export async function generateBillPdf(
   const colAmount = W - M - 12;
   const tableTop = y;
 
-  // table header
   doc.setFillColor(...DARK);
-  doc.rect(M, tableTop, W - M * 2, 22, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(8.5);
+  doc.rect(M, tableTop, W - M * 2, 23, 'F');
+  doc.setFillColor(...GOLD);
+  doc.rect(M, tableTop + 23, W - M * 2, 1.4, 'F');
+  doc.setTextColor(...GOLD_LIGHT);
+  doc.setFontSize(8.2);
   doc.setFont('helvetica', 'bold');
-  doc.text('ITEM', colItem, tableTop + 15);
-  doc.text('QTY', colQty, tableTop + 15, { align: 'center' });
-  doc.text('RATE', colRate, tableTop + 15, { align: 'right' });
-  doc.text('AMOUNT', colAmount, tableTop + 15, { align: 'right' });
+  doc.setCharSpace(0.6);
+  doc.text('ITEM', colItem, tableTop + 15.5);
+  doc.text('QTY', colQty, tableTop + 15.5, { align: 'center' });
+  doc.text('RATE', colRate, tableTop + 15.5, { align: 'right' });
+  doc.text('AMOUNT', colAmount, tableTop + 15.5, { align: 'right' });
+  doc.setCharSpace(0);
 
-  let rowY = tableTop + 22;
+  let rowY = tableTop + 24.4;
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...DARK);
   for (const item of bill.items) {
     const nameLines = doc.splitTextToSize(item.name, colQty - colItem - 14) as string[];
     const rowHeight = Math.max(24, nameLines.length * 11 + 10);
 
-    // zebra stripe
-    if ((bill.items.indexOf(item)) % 2 === 1) {
-      doc.setFillColor(248, 246, 240);
+    if (bill.items.indexOf(item) % 2 === 1) {
+      doc.setFillColor(...IVORY);
       doc.rect(M, rowY, W - M * 2, rowHeight, 'F');
     }
 
-    doc.setFontSize(9.5);
+    doc.setFontSize(9.4);
     doc.text(nameLines, colItem, rowY + 15);
     doc.text(String(item.quantity), colQty, rowY + 15, { align: 'center' });
     doc.text(`Rs. ${formatMoney(item.unitPrice)}`, colRate, rowY + 15, { align: 'right' });
-    doc.setFont('helvetica', 'bold');
+    doc.setFont('times', 'bold');
+    doc.setFontSize(10);
     doc.text(`Rs. ${formatMoney(item.total)}`, colAmount, rowY + 15, { align: 'right' });
     doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.4);
 
     rowY += rowHeight;
     doc.setDrawColor(228, 224, 214);
@@ -213,7 +349,7 @@ export async function generateBillPdf(
   const totalsX = W * 0.5;
   const totalsLabelX = totalsX + 12;
   const totalsValueX = W - M - 12;
-  const line = (label: string, value: string, opts?: { bold?: boolean; color?: [number, number, number] }) => {
+  const line = (label: string, value: string, opts?: { bold?: boolean; color?: RGB }) => {
     doc.setFont('helvetica', opts?.bold ? 'bold' : 'normal');
     doc.setFontSize(opts?.bold ? 10.5 : 9);
     if (opts?.color) doc.setTextColor(...opts.color); else doc.setTextColor(70, 74, 86);
@@ -231,17 +367,20 @@ export async function generateBillPdf(
     line(`GST (${bill.gstRate}%)`, `Rs. ${formatMoney(bill.gstAmount)}`);
   }
 
-  // Grand total band
+  // Grand total — engraved gold plate
   y += 2;
-  doc.setFillColor(...GOLD);
-  doc.roundedRect(totalsX, y - 3, W - M - totalsX, 26, 5, 5, 'F');
+  const bandH = 28;
+  goldGradient(doc, totalsX, y, W - M - totalsX, bandH);
+  doc.setDrawColor(...DARK);
+  doc.setLineWidth(0.9);
+  doc.rect(totalsX + 2, y + 2, W - M - totalsX - 4, bandH - 4, 'S');
   doc.setTextColor(...DARK);
-  doc.setFont('helvetica', 'bold');
+  doc.setFont('times', 'bold');
   doc.setFontSize(11);
-  doc.text('GRAND TOTAL', totalsLabelX, y + 14);
-  doc.setFontSize(12.5);
-  doc.text(`Rs. ${formatMoney(bill.total)}`, totalsValueX, y + 14, { align: 'right' });
-  y += 34;
+  doc.text('GRAND TOTAL', totalsLabelX, y + 18.5);
+  doc.setFontSize(13.5);
+  doc.text(`Rs. ${formatMoney(bill.total)}`, totalsValueX, y + 18.5, { align: 'right' });
+  y += bandH + 8;
 
   if (bill.paidAmount > 0 || bill.dueAmount > 0) {
     line('Paid', `Rs. ${formatMoney(bill.paidAmount)}`, { color: GREEN });
@@ -254,8 +393,8 @@ export async function generateBillPdf(
 
   // Amount in words (left column, next to totals)
   const wordsY = tableTop + 22 + Math.max(bill.items.length * 26, 30) + 12;
-  doc.setFont('helvetica', 'bolditalic');
-  doc.setFontSize(8);
+  doc.setFont('times', 'bolditalic');
+  doc.setFontSize(8.4);
   doc.setTextColor(...GRAY);
   const wordsLines = doc.splitTextToSize(`In Words: ${amountInWords(bill.total)}`, W * 0.46) as string[];
   doc.text(wordsLines, M + 2, Math.min(wordsY, rowY + 24));
@@ -270,55 +409,77 @@ export async function generateBillPdf(
   }
 
   // ---- QR + Signature row (pinned near bottom) ----
-  const bottomZone = H - 96;
+  const bottomZone = H - 104;
   if (y < bottomZone - 8) y = bottomZone;
 
   if (images.qrCodeDataUrl) {
     try {
       const qrSize = 62;
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(...GOLD);
+      doc.setLineWidth(0.8);
+      doc.roundedRect(M - 2, y - 2, qrSize + 4, qrSize + 4, 4, 4, 'FD');
       doc.addImage(images.qrCodeDataUrl, 'PNG', M, y, qrSize, qrSize);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7);
       doc.setTextColor(...GRAY);
-      doc.text(images.upiId ? `Scan to pay  |  UPI: ${images.upiId}` : 'Scan to pay', M + qrSize / 2, y + qrSize + 10, { align: 'center' });
+      doc.text(images.upiId ? `Scan to pay  |  UPI: ${images.upiId}` : 'Scan to pay', M + qrSize / 2, y + qrSize + 12, { align: 'center' });
     } catch {
       // invalid image data — skip QR silently
     }
   }
 
+  // Signature block
   if (images.signatureDataUrl) {
     try {
-      doc.addImage(images.signatureDataUrl, 'PNG', W - M - 90, y - 12, 90, 34);
+      doc.addImage(images.signatureDataUrl, 'PNG', W - M - 92, y - 14, 92, 32);
     } catch {
       // invalid image data — skip signature silently
     }
   }
   doc.setDrawColor(140, 144, 156);
   doc.setLineWidth(0.6);
-  doc.line(W - M - 100, y + 28, W - M, y + 28);
+  doc.line(W - M - 102, y + 26, W - M, y + 26);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(...GRAY);
-  doc.text(`For ${shop.name || 'PS TELECOM'}`, W - M, y + 39, { align: 'right' });
+  doc.text(`For ${shopName}`, W - M, y + 12, { align: 'right' });
+  if (proprietor) {
+    doc.setFont('times', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(...DARK);
+    doc.text(proprietor, W - M, y + 38, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.2);
+    doc.setTextColor(...GRAY);
+    doc.text('Proprietor', W - M, y + 47, { align: 'right' });
+  }
 
-  // ---- Thank you + footer ----
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
+  // ---- Footer: ornament divider + thank you + terms ----
+  const divY = H - 44;
+  doc.setDrawColor(...GOLD);
+  doc.setLineWidth(0.6);
+  doc.line(M + 4, divY, W / 2 - 9, divY);
+  doc.line(W / 2 + 9, divY, W - M - 4, divY);
+  diamond(doc, W / 2, divY, 3);
+
+  doc.setFont('times', 'bolditalic');
+  doc.setFontSize(10);
   doc.setTextColor(...DARK);
   const thanks = images.thankYouNote || 'Thank you for your business!';
-  doc.text(thanks, W / 2, H - 34, { align: 'center' });
+  doc.text(thanks, W / 2, H - 31, { align: 'center' });
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
+  doc.setFontSize(6.6);
   doc.setTextColor(150, 154, 166);
   let footer = `Generated on ${new Date().toLocaleString('en-GB')} — PS TELECOM App`;
   if (images.termsText) {
     footer = `${images.termsText}  |  ${footer}`;
   }
-  doc.text(doc.splitTextToSize(footer, W - M * 2) as string[], W / 2, H - 20, { align: 'center' });
+  doc.text(doc.splitTextToSize(footer, W - M * 2 - 20) as string[], W / 2, H - 19.5, { align: 'center' });
 
   const blob = doc.output('blob');
-  const fileName = `${(bill.shopSnapshot?.name || 'bill').replace(/[^a-zA-Z0-9]+/g, '-')}-${bill.billNumber}.pdf`;
+  const fileName = `${shopName.replace(/[^a-zA-Z0-9]+/g, '-')}-${bill.billNumber}.pdf`;
   return { blob, fileName };
 }
 
@@ -356,25 +517,46 @@ export async function sharePdfFile(blob: Blob, fileName: string, text: string): 
 }
 
 /** Build the WhatsApp text summary for a bill. */
-export function buildBillMessage(bill: Bill): string {
+export function buildBillMessage(bill: Bill, opts?: { withPdfNote?: boolean }): string {
   const shop = bill.shopSnapshot || { name: 'PS TELECOM', address: '', phone: '', gstNumber: '' };
+  const shopName = shop.name || 'PS TELECOM';
+  const proprietor = shop.proprietorName ?? PROPRIETOR_FALLBACK;
   const lines: string[] = [];
-  lines.push(`*${shop.name || 'PS TELECOM'}*`);
+
+  lines.push(`*${shopName}*`);
+  if (proprietor) lines.push(`_${proprietor}_`);
+  if (shop.address) lines.push(shop.address.replace(/\n+/g, ', '));
+  const contact: string[] = [];
+  if (shop.phone) contact.push(`Ph: ${shop.phone}`);
+  if (shop.gstNumber) contact.push(`GSTIN: ${shop.gstNumber}`);
+  if (contact.length) lines.push(contact.join(' | '));
+
+  lines.push('━━━━━━━━━━━━━━━━━━');
+  // NOTE: no astral-plane (4-byte UTF-8) emoji here — some network proxies
+  // mangle them into U+FFFD. BMP symbols (━ • — ₹ ⚠) travel safely.
+  lines.push(`*${bill.gstEnabled ? 'TAX INVOICE' : 'INVOICE'}*`);
   lines.push(`Bill No: ${bill.billNumber}`);
   lines.push(`Date: ${formatDate(bill.date)}`);
-  lines.push('------------------------------');
-  lines.push(`Customer: ${bill.customerName || 'Walk-in Customer'}`);
+  lines.push(`Customer: ${bill.customerName || 'Walk-in Customer'}${bill.customerMobile ? ` (${bill.customerMobile})` : ''}`);
+  lines.push('━━━━━━━━━━━━━━━━━━');
   for (const item of bill.items) {
-    lines.push(`${item.name} x${item.quantity} = Rs. ${formatMoney(item.total)}`);
+    lines.push(`• ${item.name} — ${item.quantity} × ₹${formatMoney(item.unitPrice)} = *₹${formatMoney(item.total)}*`);
   }
-  if (bill.discountAmount > 0) lines.push(`Discount: -Rs. ${formatMoney(bill.discountAmount)}`);
-  if (bill.gstEnabled && bill.gstAmount > 0) lines.push(`GST (${bill.gstRate}%): Rs. ${formatMoney(bill.gstAmount)}`);
-  lines.push(`*TOTAL: Rs. ${formatMoney(bill.total)}*`);
-  if (bill.dueAmount > 0) lines.push(`Balance Due: Rs. ${formatMoney(bill.dueAmount)}`);
-  const pmLabel: Record<string, string> = { cash: 'Cash', upi: 'UPI', card: 'Card', due: 'Due' };
+  lines.push('━━━━━━━━━━━━━━━━━━');
+  lines.push(`Subtotal: ₹${formatMoney(bill.subtotal)}`);
+  if (bill.discountAmount > 0) {
+    const pct = bill.discountType === 'percent' ? ` (${bill.discountValue}%)` : '';
+    lines.push(`Discount${pct}: -₹${formatMoney(bill.discountAmount)}`);
+  }
+  if (bill.gstEnabled && bill.gstAmount > 0) lines.push(`GST (${bill.gstRate}%): ₹${formatMoney(bill.gstAmount)}`);
+  lines.push(`*GRAND TOTAL: ₹${formatMoney(bill.total)}*`);
+  if (bill.paidAmount > 0) lines.push(`Paid: ₹${formatMoney(bill.paidAmount)}`);
+  if (bill.dueAmount > 0) lines.push(`⚠ Balance Due: ₹${formatMoney(bill.dueAmount)}`);
+  const pmLabel: Record<string, string> = { cash: 'Cash', upi: 'UPI', card: 'Card', due: 'Due (Credit)' };
   lines.push(`Payment: ${pmLabel[bill.paymentMethod] || bill.paymentMethod}`);
-  lines.push('------------------------------');
+  lines.push('━━━━━━━━━━━━━━━━━━');
   lines.push('Thank you for shopping with us!');
+  if (opts?.withPdfNote) lines.push('— PDF bill attached —');
   return lines.join('\n');
 }
 
@@ -384,13 +566,26 @@ export function whatsappUrl(mobile: string, message: string): string {
   return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
 }
 
+export type WhatsappSendResult = 'shared' | 'fallback' | 'no-mobile';
+
 /**
- * One-tap WhatsApp flow:
- *  1. downloads the PDF (so the user can attach it), then
- *  2. opens the customer's WhatsApp chat with the bill summary.
+ * One-tap WhatsApp flow WITH the PDF attached:
+ *  1. Opens the native share sheet carrying the actual PDF file + pre-filled
+ *     bill message → on mobile the user taps WhatsApp, picks the customer chat
+ *     and the PDF is attached natively to the message.
+ *  2. Fallback (desktop / unsupported): downloads the PDF and opens the
+ *     customer's wa.me chat with the bill summary so the user attaches the
+ *     downloaded file manually.
  */
-export async function sendBillViaWhatsapp(bill: Bill, pdf: GeneratedPdf, images: Parameters<typeof generateBillPdf>[1]): Promise<void> {
+export async function sendBillViaWhatsapp(bill: Bill, pdf: GeneratedPdf): Promise<WhatsappSendResult> {
+  const message = buildBillMessage(bill, { withPdfNote: true });
+  const shared = await sharePdfFile(pdf.blob, pdf.fileName, message);
+  if (shared) return 'shared';
+
   downloadBlob(pdf.blob, pdf.fileName);
-  const url = whatsappUrl(bill.customerMobile, buildBillMessage(bill));
-  window.open(url, '_blank');
+  if (bill.customerMobile) {
+    window.open(whatsappUrl(bill.customerMobile, buildBillMessage(bill)), '_blank');
+    return 'fallback';
+  }
+  return 'no-mobile';
 }

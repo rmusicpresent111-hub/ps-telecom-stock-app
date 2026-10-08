@@ -5,7 +5,7 @@ import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { getBillingSettingsOffline, saveBillingSettingsOffline } from '@/lib/offline-service';
 import { fileToResizedDataUrl } from '@/lib/image-utils';
-import { ArrowLeft, Save, Store, MapPin, Phone, Hash, Percent, Smartphone, PenLine, QrCode, Tag, HeartHandshake, ScrollText, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, Store, UserRound, MapPin, Phone, Hash, Percent, Smartphone, PenLine, QrCode, Tag, HeartHandshake, ScrollText, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { BillingSettings } from '@/lib/types';
 
@@ -135,6 +135,7 @@ export default function BillingSettingsScreen() {
           <div className="glass-card-strong p-5 space-y-4">
             <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wide">{t('shopName', language)}</p>
             <Field icon={Store} label={t('shopName', language)} value={form.shopName} onChange={(v) => update('shopName', v)} placeholder="PS TELECOM" />
+            <Field icon={UserRound} label={t('proprietorName', language)} value={form.proprietorName} onChange={(v) => update('proprietorName', v)} placeholder="Avijit Maity & Brother" />
             <Field icon={MapPin} label={t('shopAddress', language)} value={form.shopAddress} onChange={(v) => update('shopAddress', v)} placeholder="" multiline />
             <Field icon={Phone} label={t('shopPhone', language)} value={form.shopPhone} onChange={(v) => update('shopPhone', v)} placeholder="98xxxxxxxx" type="tel" />
           </div>

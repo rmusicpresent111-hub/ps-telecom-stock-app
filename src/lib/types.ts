@@ -157,7 +157,7 @@ export interface Bill {
   dueAmount: number;
   note: string;
   transactionId: string;   // the STOCK_OUT/SELL transaction this bill documents
-  shopSnapshot: { name: string; address: string; phone: string; gstNumber: string };
+  shopSnapshot: { name: string; address: string; phone: string; gstNumber: string; proprietorName?: string };
   date: string;            // YYYY-MM-DD (local)
   createdAt: string;
   updatedAt: string;
@@ -166,6 +166,7 @@ export interface Bill {
 export interface BillingSettings {
   userId: string;
   shopName: string;
+  proprietorName: string;  // e.g. 'Avijit Maity & Brother'
   shopAddress: string;
   shopPhone: string;
   gstNumber: string;

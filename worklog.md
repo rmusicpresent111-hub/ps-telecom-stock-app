@@ -296,3 +296,25 @@ Stage Summary:
 - Skip flow: stock-out → Skip → returns without bill; stock math verified (20→17→16)
 - Logout → login: bills + settings persist (IndexedDB); product loading instant (100% local)
 - Screenshots: upload/bill-success.png, bill-gst-qr.png, bill-pdf-rendered.png, bills-desktop.png, final-dashboard-bn.png
+---
+Task ID: 4
+Agent: Z.ai Code (main agent)
+Task: WhatsApp bill with PDF attached + premium bill style + proprietor name "Avijit Maity & Brother"
+
+Work Log:
+- types.ts / offline-db.ts / offline-service.ts: added `proprietorName` to BillingSettings (default 'Avijit Maity & Brother'), to bills shopSnapshot (optional, backward-compatible) and to billingSettings store schema type; createBillOffline now freezes proprietor into the snapshot
+- i18n.ts: +proprietorName (bn/en/hi), +billSharedWithPdf (bn/en/hi)
+- bill-pdf.ts FULL premium redesign of generateBillPdf: double gold certificate page frame + corner ornaments, diagonal shop-name watermark, gold-gradient helper (strip-interpolated bands), monogram medallion (shopInitials), serif (times) letter-spaced shop name with auto-shrink, gold italic "Proprietor:" line, gradient INVOICE plate with engraved border, gold column headers + gold accent BILL TO bar, engraved gradient GRAND TOTAL plate, QR in gold-bordered white tile, signature block now shows proprietor name + "Proprietor" designation, diamond-ornament footer divider, serif thank-you
+- bill-pdf.ts: buildBillMessage upgraded (shop header with proprietor, formatted items qty×₹rate, bold totals, withPdfNote option); NEW sendBillViaWhatsapp → Web Share API WITH PDF file attached (mobile: user picks WhatsApp + chat, PDF travels natively) with fallback download + wa.me; returns 'shared'|'fallback'|'no-mobile'
+- CRITICAL FIX: 4-byte UTF-8 emoji (🧾🙏📄) got mangled to U+FFFD through the wa.me chain in this environment — replaced all astral emoji in the WhatsApp message with BMP-safe glyphs (━ • — ₹ ⚠); verified byte-clean (0 astral chars)
+- InvoiceScreen: premium receipt preview (monogram, gradient-gold serif shop name via bg-clip-text, proprietor line, watermark, gold gradient grand-total band, signature block with proprietor, gold top/bottom bands); WhatsApp button now uses sendBillViaWhatsapp with result-specific toasts
+- HistoryScreen: bill-card WhatsApp action switched to the same PDF-attached flow; generateBillPdf call passes proprietorName
+- BillingSettingsScreen: +Proprietor Name field (UserRound icon) in shop identity section
+- Verified in browser (mobile 390×844 + desktop 1440×900): signup → category → product → stock-out 2×₹1200 → e-Bill prompt → bill PS-2610-0001 → premium receipt + premium PDF (blob tab screenshot) → WhatsApp fallback opens wa.me with clean UTF-8 message incl. proprietor line; Billing Settings shows proprietor default
+- Screenshots: upload/v3-premium-receipt.png, upload/v3-premium-pdf.png, upload/v3-billing-settings.png, upload/v3-desktop-bill.png
+
+Stage Summary:
+- WhatsApp bill flow now carries the actual PDF file (native share sheet on mobile) with graceful desktop fallback; bill message is proxy-safe UTF-8
+- Bill design (PDF + in-app preview) upgraded to premium gold-on-midnight certificate style with proprietor "Avijit Maity & Brother" featured under the shop name and above the signature
+- Proprietor name is editable in Profile → Billing Settings and frozen into each bill's snapshot
+- Lint clean, tsc clean, no console errors, HTTP 200

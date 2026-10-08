@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   generateBillPdf, downloadBlob, sharePdfFile, buildBillMessage, whatsappUrl,
-  formatMoney, formatDate,
+  sendBillViaWhatsapp, formatMoney, formatDate,
 } from '@/lib/bill-pdf';
 
 type FilterType = 'ALL' | 'STOCK_IN' | 'STOCK_OUT' | 'SELL';
@@ -207,6 +207,7 @@ export default function HistoryScreen() {
         upiId: billingSettings?.upiId,
         thankYouNote: billingSettings?.thankYouNote,
         termsText: billingSettings?.termsText,
+        proprietorName: billingSettings?.proprietorName,
       });
       if (action === 'download') {
         downloadBlob(pdf.blob, pdf.fileName);
@@ -220,13 +221,11 @@ export default function HistoryScreen() {
         return;
       }
       if (action === 'whatsapp') {
-        downloadBlob(pdf.blob, pdf.fileName);
-        if (bill.customerMobile) {
-          window.open(whatsappUrl(bill.customerMobile, buildBillMessage(bill)), '_blank');
-          toast.success(t('shareWhatsappHint', language));
-        } else {
-          toast.error(t('customerPhone', language) + ' ' + t('error', language));
-        }
+        // Native share sheet WITH the PDF attached → WhatsApp; fallback: download + wa.me
+        const result = await sendBillViaWhatsapp(bill, pdf);
+        if (result === 'shared') toast.success(t('billSharedWithPdf', language));
+        else if (result === 'fallback') toast.success(t('shareWhatsappHint', language));
+        else toast.error(t('customerPhone', language) + ' ' + t('error', language));
         return;
       }
       // share
