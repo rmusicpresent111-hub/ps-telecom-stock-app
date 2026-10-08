@@ -497,10 +497,65 @@ export function downloadBlob(blob: Blob, fileName: string): void {
 }
 
 /**
- * Try the native share sheet with the PDF file (mobile → WhatsApp etc.).
+ * Blob → base64 (no data-url prefix) — needed by Capacitor Filesystem.writeFile.
+ */
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.onerror = () => reject(new Error('Could not read the PDF file'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * NATIVE path (Capacitor APK): Android WebView has NO navigator.share, so the
+ * Web Share API silently falls back there and the PDF never reaches WhatsApp.
+ * Instead we write the PDF to the app's cache and hand the real file to the
+ * Android share sheet via @capacitor/share — WhatsApp attaches it natively.
+ */
+async function sharePdfNative(blob: Blob, fileName: string, text: string): Promise<boolean> {
+  try {
+    const { Capacitor } = await import('@capacitor/core');
+    if (!Capacitor.isNativePlatform()) return false;
+
+    const [{ Directory, Filesystem }, { Share }] = await Promise.all([
+      import('@capacitor/filesystem'),
+      import('@capacitor/share'),
+    ]);
+
+    const base64Data = await blobToBase64(blob);
+    const written = await Filesystem.writeFile({
+      path: fileName,
+      data: base64Data,
+      directory: Directory.Cache,
+      recursive: true,
+    });
+
+    await Share.share({
+      title: fileName,
+      text,
+      files: [written.uri],
+      dialogTitle: 'Send bill via…',
+    });
+    return true;
+  } catch (err) {
+    const msg = String((err as Error)?.message || '').toLowerCase();
+    if (msg.includes('cancel')) return true; // user closed the share sheet — not an error
+    return false;
+  }
+}
+
+/**
+ * Share the actual PDF file via the OS share sheet.
+ *  1. Native (Capacitor APK) — @capacitor/share with the cached PDF file.
+ *  2. Web Share API Level 2 (mobile browsers over HTTPS) — navigator.share with files.
  * Returns true when sharing was actually handed to the OS.
  */
 export async function sharePdfFile(blob: Blob, fileName: string, text: string): Promise<boolean> {
+  const nativeShared = await sharePdfNative(blob, fileName, text);
+  if (nativeShared) return true;
+
   const file = new File([blob], fileName, { type: 'application/pdf' });
   const nav = navigator as Navigator & { canShare?: (data: ShareData) => boolean };
   if (nav.share && nav.canShare?.({ files: [file] })) {
@@ -570,10 +625,11 @@ export type WhatsappSendResult = 'shared' | 'fallback' | 'no-mobile';
 
 /**
  * One-tap WhatsApp flow WITH the PDF attached:
- *  1. Opens the native share sheet carrying the actual PDF file + pre-filled
- *     bill message → on mobile the user taps WhatsApp, picks the customer chat
- *     and the PDF is attached natively to the message.
- *  2. Fallback (desktop / unsupported): downloads the PDF and opens the
+ *  1. Native APK: Android share sheet carrying the real PDF file + pre-filled
+ *     bill message → user taps WhatsApp, picks the customer chat, the PDF is
+ *     attached natively to the message.
+ *  2. Mobile browser (HTTPS): same via the Web Share API with files.
+ *  3. Fallback (desktop / unsupported): downloads the PDF and opens the
  *     customer's wa.me chat with the bill summary so the user attaches the
  *     downloaded file manually.
  */
