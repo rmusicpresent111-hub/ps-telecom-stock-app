@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
+import type { Language } from '@/lib/types';
 import {
   getD1Credentials,
   saveD1Credentials,
@@ -37,6 +38,27 @@ import {
 import { toast } from 'sonner';
 
 type ConnState = 'idle' | 'testing' | 'connected' | 'error';
+
+// ============ TRANSLATED CLOUD ERRORS ============
+// The friendly cloud-error messages are stable constants emitted by our own
+// D1 layer (proxy + native mapper), so matching a stable substring lets the UI
+// show them in the user's language instead of English. Unknown messages pass
+// through untouched.
+function cloudErrorKey(msg: string): Parameters<typeof t>[0] | null {
+  const m = msg || '';
+  if (m.includes('API token is invalid')) return 'errTokenInvalid';
+  if (m.includes('Account ID or Database ID is wrong')) return 'errIdsWrong';
+  if (m.includes('looks malformed')) return 'errIdsMalformed';
+  if (m.includes('rate limit')) return 'errRateLimit';
+  if (m.includes('timed out')) return 'errTimeout';
+  return null;
+}
+
+function cloudErrorMsg(msg: string | undefined, language: Language): string {
+  if (!msg) return '';
+  const key = cloudErrorKey(msg);
+  return key ? t(key, language) : msg;
+}
 
 // ============ PASTE-SAFE ID SANITIZING ============
 // Shop owners often copy the whole Cloudflare URL (or an ID with a stray
@@ -181,7 +203,7 @@ export default function CloudSyncScreen() {
       } else {
         setConn('error');
         setConnError(res.error || t('connectionFailed', language));
-        toast.error(t('connectionFailed', language) + ': ' + (res.error || ''));
+        toast.error(t('connectionFailed', language) + ': ' + cloudErrorMsg(res.error, language));
       }
     } catch (e) {
       setConn('error');
@@ -225,7 +247,7 @@ export default function CloudSyncScreen() {
         });
         setConn('connected');
       } else {
-        toast.error(t('connectionFailed', language) + ': ' + (res.error || ''));
+        toast.error(t('connectionFailed', language) + ': ' + cloudErrorMsg(res.error, language));
       }
     } finally {
       setBusy(null);
@@ -263,7 +285,7 @@ export default function CloudSyncScreen() {
         toast.error(
           res.empty
             ? t('cloudDbEmpty', language)
-            : t('connectionFailed', language) + ': ' + (res.error || '')
+            : t('connectionFailed', language) + ': ' + cloudErrorMsg(res.error, language)
         );
       }
     } finally {
@@ -400,7 +422,7 @@ export default function CloudSyncScreen() {
 
           {conn === 'error' && connError && (
             <p className="mt-2 text-[11px] text-red-400/90 break-words bg-red-500/10 rounded-lg p-2">
-              {connError}
+              {cloudErrorMsg(connError, language)}
             </p>
           )}
         </motion.div>

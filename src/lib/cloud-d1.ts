@@ -189,6 +189,8 @@ export interface D1QueryResult {
   rows?: Record<string, unknown>[];
   changes?: number;
   error?: string;
+  /** Stable machine code so the UI can show a translated message. */
+  errorCode?: string;
 }
 
 const CF_DIRECT_BASE = 'https://api.cloudflare.com/client/v4';
@@ -244,12 +246,11 @@ async function d1Query(
     return payload;
   } catch (e) {
     const err = e as Error;
+    const timedOut = err.name === 'AbortError';
     return {
       ok: false,
-      error:
-        err.name === 'AbortError'
-          ? 'Cloudflare request timed out'
-          : err.message || 'Network error',
+      error: timedOut ? 'Cloudflare request timed out' : err.message || 'Network error',
+      ...(timedOut ? { errorCode: 'timeout' as const } : {}),
     };
   } finally {
     // Never leave a stray 30s abort timer behind, even when fetch throws.
@@ -258,24 +259,34 @@ async function d1Query(
 }
 
 /**
+ * Stable error codes the client UI maps to translated, friendly messages.
+ * Keep in sync with /api/cloud/d1 (server proxy) and the i18n keys.
+ */
+type CloudErrorCode = 'ids_wrong' | 'token_invalid' | 'ids_malformed' | 'rate_limit';
+
+/**
  * Maps raw Cloudflare API failures to short, actionable messages a shop owner
  * can act on. Kept in sync with the server-side proxy's mapping (web path).
  */
-function friendlyCloudflareError(status: number, cfMsg: string | undefined, rawText: string): string {
+function friendlyCloudflareError(
+  status: number,
+  cfMsg: string | undefined,
+  rawText: string
+): { message: string; code?: CloudErrorCode } {
   const lower = `${cfMsg || ''} ${rawText}`.toLowerCase();
   if (status === 404 || lower.includes('could not route') || lower.includes('7003')) {
-    return `Account ID or Database ID is wrong — please re-copy both from Cloudflare${cfMsg ? ` (${cfMsg})` : ''}`;
+    return { message: `Account ID or Database ID is wrong — please re-copy both from Cloudflare${cfMsg ? ` (${cfMsg})` : ''}`, code: 'ids_wrong' };
   }
   if (status === 403 || lower.includes('authentication error') || lower.includes('unauthorized') || lower.includes('9109') || lower.includes('10000')) {
-    return `API token is invalid, expired, or missing the "D1 Edit" permission${cfMsg ? ` (${cfMsg})` : ''}`;
+    return { message: `API token is invalid, expired, or missing the "D1 Edit" permission${cfMsg ? ` (${cfMsg})` : ''}`, code: 'token_invalid' };
   }
   if (status === 400 && lower.includes('invalid')) {
-    return `Account ID or Database ID looks malformed — paste the ID only, without any extra text${cfMsg ? ` (${cfMsg})` : ''}`;
+    return { message: `Account ID or Database ID looks malformed — paste the ID only, without any extra text${cfMsg ? ` (${cfMsg})` : ''}`, code: 'ids_malformed' };
   }
   if (status === 429) {
-    return 'Cloudflare rate limit reached — please wait a minute and try again';
+    return { message: 'Cloudflare rate limit reached — please wait a minute and try again', code: 'rate_limit' };
   }
-  return cfMsg || (rawText.length < 400 ? rawText : `Cloudflare API returned HTTP ${status}`);
+  return { message: cfMsg || (rawText.length < 400 ? rawText : `Cloudflare API returned HTTP ${status}`) };
 }
 
 /**
@@ -297,7 +308,7 @@ function normalizeCloudflareResponse(text: string, status: number): D1QueryResul
   if (!parsed || parsed.success === false) {
     const cfMsg = parsed?.errors?.[0]?.message;
     const friendly = friendlyCloudflareError(status, cfMsg, text);
-    return { ok: false, error: friendly };
+    return { ok: false, error: friendly.message, errorCode: friendly.code };
   }
   const resultArr = Array.isArray(parsed.result) ? parsed.result : [parsed.result];
   const rows: Record<string, unknown>[] = [];

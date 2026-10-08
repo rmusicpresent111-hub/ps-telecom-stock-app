@@ -266,6 +266,12 @@ type TranslationKeys = {
   noAccountOnDeviceDesc: string;
   // Cloud credential field validation
   invalidAccountIdHint: string;
+  // Friendly, translated cloud error messages (matched by errorCode from the D1 layer)
+  errTokenInvalid: string;
+  errIdsWrong: string;
+  errIdsMalformed: string;
+  errRateLimit: string;
+  errTimeout: string;
   invalidDatabaseIdHint: string;
 };
 
@@ -513,6 +519,11 @@ const translations: Record<Language, TranslationKeys> = {
     noAccountOnDevice: 'এই ডিভাইসে কোনো অ্যাকাউন্ট নেই',
     noAccountOnDeviceDesc: 'ডেটা প্রতিটি ডিভাইসে আলাদাভাবে সেভ থাকে। আগে সাইনআপ করুন — আগের ক্লাউড ব্যাকআপ থাকলে সাইনআপের পর Profile → Cloud Backup থেকে ফেরাতে পারবেন।',
     invalidAccountIdHint: 'Account ID ঠিক নেই — এটা ৩২টা অক্ষরের কোড। URL থেকে পুরোটা পেস্ট করলেও চলবে, বাকি অংশ আপনি আপ নিজেই মুছে যাবে।',
+    errTokenInvalid: 'আপনার API Token কাজ করছে না — token হয় ভুল কপি হয়েছে, মুছে ফেলা হয়েছে, বা এতে "D1: Edit" permission নেই। Cloudflare-এ নতুন token বানিয়ে আবার চেষ্টা করুন।',
+    errIdsWrong: 'Account ID বা Database ID ভুল — Cloudflare থেকে দুটোই আবার কপি করে বসান।',
+    errIdsMalformed: 'Account ID বা Database ID-এর লেখা ঠিক নেই — শুধু কোডটাই পেস্ট করুন, বাড়তা কোনো লেখা ছাড়া।',
+    errRateLimit: 'Cloudflare একটু বেশি request পেয়ে গেছে — এক মিনিট পর আবার চেষ্টা করুন।',
+    errTimeout: 'Cloudflare-এর সাথে সংযোগে দেরি হচ্ছে — ইন্টারনেট ঠিক আছে কিনা দেখে আবার চেষ্টা করুন।',
     invalidDatabaseIdHint: 'Database ID ঠিক নেই — এটা xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx এই আকৃতির। পুরো URL পেস্ট করলেও সঠিক অংশটা নিজেই ধরা হবে।',
   },
   en: {
@@ -758,6 +769,11 @@ const translations: Record<Language, TranslationKeys> = {
     noAccountOnDevice: 'No account exists on this device',
     noAccountOnDeviceDesc: 'Data is stored separately on each device. Please Sign Up first — if you had a cloud backup, restore it via Profile → Cloud Backup after signing up.',
     invalidAccountIdHint: 'Account ID does not look right — it is a 32-character code. Pasting the whole URL is fine; the extra parts are removed automatically.',
+    errTokenInvalid: 'Your API token is invalid, expired, or missing the "D1 Edit" permission — create a new token in Cloudflare and try again.',
+    errIdsWrong: 'Account ID or Database ID is wrong — please re-copy both from Cloudflare.',
+    errIdsMalformed: 'Account ID or Database ID looks malformed — paste the ID only, without any extra text.',
+    errRateLimit: 'Cloudflare rate limit reached — please wait a minute and try again.',
+    errTimeout: 'The connection to Cloudflare timed out — check your internet and try again.',
     invalidDatabaseIdHint: 'Database ID does not look right — it looks like xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx. Pasting the whole URL also works; the correct part is picked automatically.',
   },
   hi: {
@@ -1003,6 +1019,11 @@ const translations: Record<Language, TranslationKeys> = {
     noAccountOnDevice: 'इस डिवाइस पर कोई अकाउंट नहीं है',
     noAccountOnDeviceDesc: 'डेटा हर डिवाइस पर अलग-अलग सेव रहता है। पहले साइनअप करें — अगर पहले क्लाउड बैकअप लिया था, तो साइनअप के बाद Profile → Cloud Backup से वापस ला सकते हैं।',
     invalidAccountIdHint: 'Account ID सही नहीं लग रहा — यह 32 अक्षरों का कोड होता है। पूरा URL पेस्ट करने पर भी सही हिस्सा अपने आप निकाल लिया जाता है।',
+    errTokenInvalid: 'आपका API Token काम नहीं कर रहा — token गलत कॉपी हुआ, डिलीट हो गया, या इसमें "D1: Edit" permission नहीं है। Cloudflare पर नया token बनाकर फिर कोशिश करें।',
+    errIdsWrong: 'Account ID या Database ID गलत है — दोनों Cloudflare से फिर से कॉपी करके भरें।',
+    errIdsMalformed: 'Account ID या Database ID का फॉर्मैट सही नहीं — सिर्फ कोड पेस्ट करें, बिना किसी अतिरिक्त टेक्स्ट के।',
+    errRateLimit: 'Cloudflare पर बहुत ज़्यादा request गई — एक मिनट बाद फिर कोशिश करें।',
+    errTimeout: 'Cloudflare से कनेक्शन में देरी हो रही है — इंटरनेट जाँचकर फिर कोशिश करें।',
     invalidDatabaseIdHint: 'Database ID सही नहीं लग रहा — यह xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx आकार का होता है। पूरा URL पेस्ट करने पर भी सही हिस्सा अपने आप निकाल लिया जाता है।',
   },
 };

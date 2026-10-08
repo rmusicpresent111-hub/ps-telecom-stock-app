@@ -490,3 +490,26 @@ Stage Summary:
 - Pasted-URL/typo credential mistakes are now impossible to make: IDs self-clean and are format-validated before any API call.
 - Cloudflare failures now explain themselves (wrong ID vs bad token vs rate limit) on both web and APK paths.
 - The complete backup → wipe → restore cycle was proven working end-to-end against a D1-compatible target through the fixed proxy.
+
+---
+Task ID: 7
+Agent: main (Z.ai Code)
+Task: Cloud Backup error — user filled Cloudflare credentials in app but got an error. Diagnose + fix. ("Ami app e ami codegulo bosale error asche dekho" → follow-up "Hoyeche ebar ki korbo")
+
+Work Log:
+- Read dev.log: POST /api/cloud/d1/ 200 responses → proxy healthy, no CORS issue (web path uses same-origin proxy)
+- agent-browser: opened Profile → Cloud Backup; found status "Not connected" with error "API token is invalid, expired, or missing the D1 Edit permission (Authentication error)"
+- Confirmed via curl with a fake token through the proxy → identical 401 Authentication error → error originates from Cloudflare itself; user's Account ID + Database ID are correct, their API token is invalid/expired/rolled (a backup had succeeded at 08 Oct 06:31 pm IST, so a previously-working token was later invalidated/replaced)
+- UX fix: cloud errors were English-only; shop owner cannot read them
+  - src/app/api/cloud/d1/route.ts: friendlyCloudflareError now returns {message, code} with stable errorCode (ids_wrong | token_invalid | ids_malformed | rate_limit); timeout path returns errorCode 'timeout'
+  - src/lib/cloud-d1.ts: same errorCode mapping for the native/APK path + timeout
+  - src/lib/i18n.ts: new keys errTokenInvalid / errIdsWrong / errIdsMalformed / errRateLimit / errTimeout in bn+en+hi
+  - src/components/screens/CloudSyncScreen.tsx: cloudErrorKey()/cloudErrorMsg() helpers; raw error kept in state, translated at render time (covers mount auto-verify, handleTest, handleBackup, doRestore paths); toast + inline red box both translated
+- Verified in agent-browser (bn language): inline error and toast both show full Bengali message "আপনার API Token কাজ করছে না — token হয় ভুল কপি হয়েছে, মুছে ফেলা হয়েছে, বা এতে "D1: Edit" permission নেই। Cloudflare-এ নতুন token বানিয়ে আবার চেষ্টা করুন।"
+- bun run lint clean; tsc clean (only pre-existing examples/skills errors)
+
+Stage Summary:
+- Root cause: user's Cloudflare API token is invalid (Authentication error from Cloudflare) — likely missing D1:Edit permission on the new token or the old working token was deleted/rolled after the successful 06:31 pm backup
+- Code was NOT the bug; added translated (bn/hi/en) cloud error messages so the owner can self-diagnose
+- User guidance given in Bengali: create new Custom Token with Account→D1→Edit permission, copy 40-char token, paste in app, Save & Test, then Backup to Cloud
+- Queued tasks remain: back navigation (prev page → home → exit dialog), full app security/dead-code audit

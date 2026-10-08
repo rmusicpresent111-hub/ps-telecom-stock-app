@@ -73,6 +73,8 @@ interface D1Response {
   rows?: Record<string, unknown>[];
   changes?: number;
   error?: string;
+  /** Stable machine code so the UI can show a translated message. */
+  errorCode?: string;
   status?: number;
 }
 
@@ -84,6 +86,12 @@ function json(payload: D1Response, status = 200, extraHeaders?: Record<string, s
 }
 
 /**
+ * Stable error codes the client UI maps to translated, friendly messages.
+ * Keep in sync with src/lib/cloud-d1.ts (native path) and the i18n keys.
+ */
+type CloudErrorCode = 'ids_wrong' | 'token_invalid' | 'ids_malformed' | 'rate_limit';
+
+/**
  * Maps raw Cloudflare API failures to short, actionable messages a shop owner
  * can act on (the raw detail is kept in parentheses when available).
  */
@@ -91,27 +99,29 @@ function friendlyCloudflareError(
   status: number,
   parsed: { errors?: { message?: string; code?: number }[] } | null,
   rawText: string
-): string {
+): { message: string; code?: CloudErrorCode } {
   const cfMsg = parsed?.errors?.[0]?.message || '';
   const cfCode = parsed?.errors?.[0]?.code || 0;
   const lower = `${cfMsg} ${rawText}`.toLowerCase();
 
   if (status === 404 || cfCode === 7003 || lower.includes('could not route')) {
-    return `Account ID or Database ID is wrong — please re-copy both from Cloudflare${cfMsg ? ` (${cfMsg})` : ''}`;
+    return { message: `Account ID or Database ID is wrong — please re-copy both from Cloudflare${cfMsg ? ` (${cfMsg})` : ''}`, code: 'ids_wrong' };
   }
   if (status === 403 || cfCode === 9109 || cfCode === 10000 || lower.includes('authentication error') || lower.includes('unauthorized')) {
-    return `API token is invalid, expired, or missing the "D1 Edit" permission${cfMsg ? ` (${cfMsg})` : ''}`;
+    return { message: `API token is invalid, expired, or missing the "D1 Edit" permission${cfMsg ? ` (${cfMsg})` : ''}`, code: 'token_invalid' };
   }
   if (status === 400 && lower.includes('invalid')) {
-    return `Account ID or Database ID looks malformed — paste the ID only, without any extra text${cfMsg ? ` (${cfMsg})` : ''}`;
+    return { message: `Account ID or Database ID looks malformed — paste the ID only, without any extra text${cfMsg ? ` (${cfMsg})` : ''}`, code: 'ids_malformed' };
   }
   if (status === 429) {
-    return 'Cloudflare rate limit reached — please wait a minute and try again';
+    return { message: 'Cloudflare rate limit reached — please wait a minute and try again', code: 'rate_limit' };
   }
-  return (
-    cfMsg ||
-    (rawText && rawText.length < 400 ? rawText : `Cloudflare API returned HTTP ${status}`)
-  );
+  return {
+    message: (
+      cfMsg ||
+      (rawText && rawText.length < 400 ? rawText : `Cloudflare API returned HTTP ${status}`)
+    ),
+  };
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -214,7 +224,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     if (!res.ok || !parsed || parsed.success === false) {
-      return json({ ok: false, error: friendlyCloudflareError(res.status, parsed, text), status: res.status });
+      const fe = friendlyCloudflareError(res.status, parsed, text);
+      return json({ ok: false, error: fe.message, errorCode: fe.code, status: res.status });
     }
 
     // /query returns an array of per-statement results (multi-statement SQL)
@@ -234,11 +245,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return json({ ok: true, rows, changes });
   } catch (e) {
     const err = e as Error;
-    const msg =
-      err.name === 'AbortError'
-        ? 'Cloudflare request timed out'
-        : err.message || 'Network error while contacting Cloudflare';
-    return json({ ok: false, error: msg });
+    const timedOut = err.name === 'AbortError';
+    const msg = timedOut
+      ? 'Cloudflare request timed out'
+      : err.message || 'Network error while contacting Cloudflare';
+    return json({ ok: false, error: msg, ...(timedOut ? { errorCode: 'timeout' } : {}) });
   } finally {
     // Never leave a stray 30s abort timer behind, even when fetch throws.
     clearTimeout(timer);
