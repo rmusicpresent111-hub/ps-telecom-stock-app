@@ -335,3 +335,16 @@ Work Log:
 
 Stage Summary:
 - On mobile browsers (HTTPS) tapping "Send on WhatsApp" now opens the native share sheet carrying the REAL PDF file + bill message → picking WhatsApp and the customer chat sends the PDF attached with the text. In embedded preview iframes the browser blocks sharing; the app now explicitly tells the user to tap "Open in New Tab" instead of failing silently. If a browser truly can't share files, PDF is auto-downloaded, the customer's WhatsApp chat opens, and a toast explains to attach the 📎 file. APK build uses @capacitor/share natively.
+
+---
+Task ID: 6
+Agent: Z.ai Code (main)
+Task: Native back navigation — back from any page → home page first; back on home → Exit/Continue dialog
+
+Work Log:
+- Reviewed existing wiring: capacitor-init.ts (App 'backButton' → 'app:back-button' event), page.tsx (event → handleBack, exit dialog UI), useBackHandler.ts (popstate + Escape + logic), appStore (navigateTo/navigateToTab/goBack/resetNavigation stack).
+- Rewrote src/hooks/useBackHandler.ts to the requested simple native flow: (1) back on ANY non-auth page → resetNavigation('dashboard') — straight to home in one step, no step-through-stack; (2) back on dashboard → exit confirmation dialog (Exit / Continue); (3) back while the dialog is open → closes the dialog (Android convention, tracked via exitDialogRef so handleBack stays stable). Removed old TAB_SCREENS/stack-pop logic. In-app header ← arrows still use store.goBack() step-by-step as before.
+- Verified with agent-browser (fresh profile, signup, Escape key simulates system back): home+back → "Exit App?" dialog appears; Continue closes it; back again reopens; category-detail inner page + back → dashboard in one step; history tab + back → dashboard (logs: "[BackHandler] history → straight to home (dashboard)"); dialog + back → dialog closes. Screenshot upload/v4-exit-dialog.png. Lint clean.
+
+Stage Summary:
+- System back button (APK hardware back via capacitor bridge, browser back gesture via popstate, Escape on desktop) now behaves: any page → HOME → Exit/Continue dialog → back closes dialog / Exit exits app (App.exitApp on Android). No changes needed in capacitor-init.ts or page.tsx — only useBackHandler.ts rewritten.
