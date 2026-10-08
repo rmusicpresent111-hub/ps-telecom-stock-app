@@ -5,6 +5,7 @@ import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Product, Transaction } from '@/lib/types';
 import { getProductsOffline, createTransactionOffline } from '@/lib/offline-service';
+import { registerBackModal } from '@/lib/modal-back';
 import { playStockOutSound, playSellSound, playStockInSound } from '@/lib/sound-service';
 import { ArrowLeft, Search, X, TrendingUp, TrendingDown, ShoppingBag, ReceiptText } from 'lucide-react';
 import { toast } from 'sonner';
@@ -85,6 +86,19 @@ export default function StockOperationScreen() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Hardware/browser back closes open dialogs instead of navigating beneath them
+  useEffect(() => {
+    if (!showConfirmDialog) return;
+    return registerBackModal(() => setShowConfirmDialog(false));
+  }, [showConfirmDialog]);
+
+  useEffect(() => {
+    if (!billPrompt) return;
+    // The transaction is already saved when the prompt shows — "closing"
+    // the prompt means skipping the e-Bill, i.e. leave the screen.
+    return registerBackModal(handleBillSkip);
+  }, [billPrompt]);
 
   // For non-SELL: auto-match product by exact name
   useEffect(() => {
@@ -237,6 +251,9 @@ export default function StockOperationScreen() {
   };
 
   const handleBillSkip = () => {
+    // Double-tap guard: billPrompt is cleared synchronously, so a second
+    // invocation within the same frame would pop the stack one extra level.
+    if (!billPrompt) return;
     setBillPrompt(null);
     goBack();
   };

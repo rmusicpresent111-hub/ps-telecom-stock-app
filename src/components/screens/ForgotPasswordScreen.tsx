@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 import { resetLocalPassword, normalizeEmail } from '@/lib/local-auth';
 
 export default function ForgotPasswordScreen() {
-  const { language, navigateTo } = useAppStore();
+  const { language, resetNavigation } = useAppStore();
   const lang = language as Language;
 
   const [step, setStep] = useState<'email' | 'reset'>('email');
@@ -51,7 +51,7 @@ export default function ForgotPasswordScreen() {
     try {
       await resetLocalPassword(email, newPassword);
       toast.success(t('success', lang), { description: 'Password updated. Please log in.' });
-      navigateTo('login');
+      resetNavigation('login');
     } catch (error) {
       toast.error(t('error', lang), {
         description: error instanceof Error ? error.message : 'Something went wrong',
@@ -66,7 +66,7 @@ export default function ForgotPasswordScreen() {
       {/* Back button */}
       <motion.button
         className="flex items-center gap-2 text-white/60 hover:text-white transition-colors mb-8 mt-4"
-        onClick={() => (step === 'reset' ? setStep('email') : navigateTo('login'))}
+        onClick={() => (step === 'reset' ? setStep('email') : resetNavigation('login'))}
         initial={{ opacity: 0, x: -10 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.3 }}
@@ -226,7 +226,7 @@ export default function ForgotPasswordScreen() {
       >
         <button
           className="text-[#D4A853] text-sm font-medium hover:underline"
-          onClick={() => navigateTo('login')}
+          onClick={() => resetNavigation('login')}
         >
           {t('backToLogin', lang)}
         </button>

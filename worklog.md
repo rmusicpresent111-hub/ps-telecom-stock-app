@@ -368,3 +368,54 @@ Stage Summary:
 - Data model fully typed in D1 (8 tables + meta), escape-safe (apostrophes/emoji/dataURLs), restore works even on a lost phone (meta row identifies backup owner; rows remap to the new account on import).
 - API route is the only server piece; credentials never stored server-side; works on web AND in the APK (same-origin /api/cloud/d1 fetch from the WebView).
 - lint + tsc clean; app on port 3000 hitting the REAL Cloudflare API (mock available via mini-services/d1-mock: `cd mini-services/d1-mock && bun run dev` + start dev with CLOUDFLARE_API_BASE=http://127.0.0.1:3030/client/v4).
+
+---
+Task ID: 3 (a+b+c)
+Agent: Z.ai Code (main) + full-stack-developer (lib fixes)
+Task: Stack-based back navigation (previous page → home → exit dialog) + full app security/bug/dead-code audit & fixes
+
+Work Log:
+- NAVIGATION: useBackHandler.ts rewritten to stack-based back: (1) in-screen modal open → close it via new modal-back registry; (2) navigation history → store.goBack() (previous page); (3) empty history (bottom-nav tab) → dashboard; (4) dashboard → Exit/Continue dialog; (5) exit dialog open → back closes it. Auth-flow screens (splash/welcome/tutorial/login/signup/forgot-password) + onboarding language screen ignore back. appStore.navigateTo: no-op guard when target === current screen (prevents dead back-presses) + stack depth cap (25).
+- NEW src/lib/modal-back.ts: registerBackModal(close)/closeTopBackModal() — hardware/browser/Escape back now closes the topmost open dialog (Android standard) instead of navigating beneath it. Wired into: StockOperationScreen (confirm dialog + e-Bill prompt), ProductDetailScreen (delete), HistoryScreen (bill delete), DailyBookScreen (delete), ServiceCategoryScreen (delete), CloudSyncScreen (restore dialogs), ProfileScreen (its dialogs).
+- AUDIT: 3 parallel Explore agents (security / bugs+dead-code / screens consistency) produced full reports.
+- SECURITY FIXES (lib, by full-stack agent): local-auth.ts PBKDF2 (310k iter) replacing single-pass SHA-256 with transparent legacy-hash migration on login + per-email failed-login backoff (30s→…→1h after 5 fails/15min) + no-enumeration messages; /api/cloud/d1 route: same-origin gate, per-IP 30 req/min rate limit (429 + Retry-After), SQL cap 4MB→1MB, params type validation, clearTimeout in finally; cloud-d1.ts: per-user credential keys (ps-d1-creds:<userId> with legacy migration), _incomplete backup marker written BEFORE the destructive DELETE (restore refuses incomplete/corrupt backups via marker + per-table count verification vs meta), restore email-mismatch confirmation flow (restoreFromD1 returns emailMismatch + backupEmail; CloudSyncScreen shows warning dialog + requires explicit confirm), native-APK direct Cloudflare fetch (isNativePlatform → api.cloudflare.com directly, bypassing the static-export-missing proxy), product purchase-price snapshot preserved in backups (new ps_transactions.product JSON column) so historical profit survives restore; offline-service.ts: ownership checks on all delete functions (shared-device IDOR), numeric coercion/clamps in importBackupOffline, updateProductOffline whitelist+clamps; SplashScreen: persisted session now verified against the users store (verifyLocalUserId) so a hand-edited localStorage cannot resurrect a deleted account; ProfileScreen: password re-auth (login()) required before Reset All Data and file restore; InvoiceScreen: invalid Indian mobile numbers blocked before bill save (prevents invoice PDF reaching a stranger's WhatsApp); next.config.ts: ignoreBuildErrors removed + nosniff/referrer-policy headers; layout.tsx CSP meta tag; capacitor.config.json dead keys removed.
+- BUG FIXES: StockOperationScreen handleBillSkip double-tap double-goBack guard; InvoiceScreen async-load goBack race (checks currentScreen==='invoice'); SplashScreen leaked hydration-wait interval (hoisted + cleared); Login/Signup Enter-key re-submit guards (isLoading); auth screens use resetNavigation('login') instead of growing the stack; DailyBookScreen back button aria-label; ProductDetail delete double-click safe (dialog closes first).
+- DEAD CODE REMOVED: offline-service (updateCategoryOffline, deleteCategoryOffline, deleteTransactionOffline, offlineMeta re-export, resolvePeriodRange unexported), offline-db sync-era helpers (offlineMeta, offlinePendingDeletes, getDirtyItems, all getDirty methods, getByType/getByDateRange), sound-service playErrorSound, local-auth deleteLocalUser, capacitor-init isCapacitorReady/isBackButtonRegistered, types.ts SERVICE_CATEGORIES/ProfitData, i18n 14 onboarding keys + default export, toast cluster (use-toast.ts, ui/toast.tsx, ui/toaster.tsx), scripts/fix-dailybook.py, scripts/setup-supabase.js; deps pruned: react-markdown, react-syntax-highlighter, @mdxeditor/editor, @radix-ui/react-toast. 16 debug console.log removed from useBackHandler/capacitor-init/page.tsx.
+- CRITICAL REPO FIX: .gitignore pattern `local-*` was silently excluding src/lib/local-auth.ts (the whole auth module!) from git — pattern root-anchored to `/local-*` and local-auth.ts committed.
+- appStore.logout now also resets historyView.
+
+Stage Summary:
+- Back navigation is now: dialog open → close dialog; history → previous page; no history → home; home → Exit/Continue dialog. In-app ← arrows and system back behave identically.
+- Password storage upgraded to PBKDF2-SHA256 310k with zero-disruption migration; login brute-force throttled; destructive actions (reset data, file restore, cloud restore) gated by password/confirmation; D1 proxy rate-limited + same-origin; cloud backups atomic-safe and APK-compatible (direct fetch).
+- ~25 dead symbols/files deleted, 4 unused heavy deps pruned, all debug console noise removed; lint + tsc clean.
+
+---
+Task ID: 4
+Agent: Z.ai Code (main)
+Task: End-to-end browser verification of navigation system + security fixes
+
+Work Log:
+- Fresh-profile signup (PBKDF2 v2 path) → dashboard OK; logout → login OK (v2 verify path).
+- BACK NAVIGATION (system back via Escape / popstate; APK hardware back via same handler):
+  * dashboard + back → Exit/Continue dialog; back closes it; back reopens it; Continue closes ✓
+  * Profile tab (empty stack) + back → dashboard ✓
+  * Profile → Billing Settings + back → PROFILE (previous page, NOT dashboard — stack works) ✓
+  * Profile + back → dashboard → back → exit dialog ✓
+  * dashboard → category-detail → product-detail → stock-out → (save) → e-Bill prompt → back → prompt skipped, landed on product-detail (single pop, no double-pop) ✓
+  * product-detail + back → category-detail + back → dashboard + back → exit dialog ✓
+  * Stock Out confirm dialog open + back → dialog closes, screen stays ✓ (modal-back registry)
+  * Reset All Data dialog open + back → dialog closes, stays on Profile ✓
+- SECURITY: Reset All Data with wrong password → toast "Wrong password — action cancelled", data intact ✓; login throttle present (5 fails/15min → backoff); generic no-enumeration messages verified in code.
+- BUGS FOUND & FIXED during verification:
+  * CRITICAL UI: every screen-level modal rendered relative to a scrollable ancestor instead of the viewport — `.animated-bg { contain: layout style }` (Task-1 perf hint) created a CSS containing block that re-parented `fixed` dialogs; on tall screens (Profile) dialogs appeared behind/under the BottomNav. Fixed by removing `contain` from `.animated-bg` (comment added); verified dialog now inset-0 of the real viewport.
+  * Pre-existing z-index bug: screen dialogs used z-50, same as BottomNav (later in DOM → nav painted on top). All 11 dialog overlays bumped to z-[100] across 6 screens.
+  * Turbopack served stale globals.css even after restart — required full `rm -rf .next` + restart to pick up the CSS fix.
+  * New-account onboarding note: default category cards on dashboard are a fallback that routes to Add Category; categories must be created once before Add Product's select lists them (intended flow, verified working end-to-end).
+- Stock flow verified: product 10 pcs → stock-out 2 → Qty 8, Stock Value ₹6,400 ✓; Today's Transactions 1 ✓.
+- Cloud Backup screen renders on iPhone-14 viewport (390×844) with masked token field ✓.
+- Zero console errors / zero CSP violations across the whole session ✓; lint clean; tsc clean (src/).
+
+Stage Summary:
+- Navigation system is now full stack-based: back → in-screen dialog (if any) → previous page → home → Exit/Continue dialog → back dismisses. Verified end-to-end on desktop and mobile viewports.
+- Security gates verified in-browser: password re-auth on destructive reset, PBKDF2 login, modal-aware back.
+- Screenshots: upload/v5-*.png (exit dialog, stack-back, wrong password, dialog centered, cloud sync, mobile).

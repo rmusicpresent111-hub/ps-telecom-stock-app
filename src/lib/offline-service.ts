@@ -19,7 +19,6 @@ import {
   offlineCashEntries,
   offlineServiceTransactions,
   offlineBills,
-  offlineMeta,
   clearOfflineData,
   getOfflineDB,
   type OfflineDBSchema,
@@ -45,7 +44,7 @@ export function localDateStr(d: Date = new Date()): string {
 /**
  * Resolves a reporting period to a [from, to] date range (local time).
  */
-export function resolvePeriodRange(options?: { period?: string; date?: string; from?: string; to?: string }): { from: string; to: string } {
+function resolvePeriodRange(options?: { period?: string; date?: string; from?: string; to?: string }): { from: string; to: string } {
   const now = new Date();
   if (options?.from && options?.to) {
     // Guard against inverted custom ranges (from > to) — silently swap.
@@ -124,39 +123,6 @@ export async function createCategoryOffline(name: string, image: string, userId:
   return { category };
 }
 
-export async function updateCategoryOffline(id: string, updates: { name?: string; image?: string }, userId: string): Promise<{ category: Category }> {
-  const allCats = await offlineCategories.getAll(userId);
-  const existing = allCats.find(c => c.id === id);
-  if (!existing) throw new Error('Category not found');
-
-  const updated = {
-    ...existing,
-    ...updates,
-    updatedAt: new Date().toISOString(),
-  };
-
-  await offlineCategories.put({
-    ...updated,
-    _synced: Date.now(),
-    _dirty: 0,
-  } as OfflineDBSchema['categories']['value']);
-
-  const { _synced, _dirty, ...categoryData } = updated;
-  return { category: categoryData as Category };
-}
-
-export async function deleteCategoryOffline(id: string, userId: string): Promise<{ message: string }> {
-  // Cascade: delete all products in this category (which cascades their transactions too)
-  const allProducts = await offlineProducts.getAll(userId);
-  const catProducts = allProducts.filter(p => p.categoryId === id);
-  for (const prod of catProducts) {
-    await deleteProductOffline(prod.id, userId);
-  }
-
-  await offlineCategories.delete(id);
-  return { message: 'Category deleted successfully' };
-}
-
 // ============ PRODUCTS (Local) ============
 
 export async function getProductsOffline(userId: string, options?: { categoryId?: string; search?: string }): Promise<Product[]> {
@@ -214,14 +180,40 @@ export async function createProductOffline(productData: {
   return { product };
 }
 
+/** Only these keys may be changed by an update — never trust raw spreads. */
+function applyProductUpdates(
+  product: OfflineDBSchema['products']['value'],
+  updates: Partial<Product>
+): OfflineDBSchema['products']['value'] {
+  const next = { ...product };
+  if (updates.name !== undefined) {
+    const name = String(updates.name).trim();
+    if (name) next.name = name;
+  }
+  if (updates.categoryId !== undefined) next.categoryId = updates.categoryId;
+  if (updates.boxNumber !== undefined) next.boxNumber = updates.boxNumber;
+  if (updates.quantity !== undefined) {
+    next.quantity = Math.max(0, Math.floor(Number(updates.quantity)) || 0);
+  }
+  if (updates.purchasePrice !== undefined) {
+    next.purchasePrice = Math.max(0, Number(updates.purchasePrice)) || 0;
+  }
+  if (updates.sellingPrice !== undefined) {
+    next.sellingPrice = Math.max(0, Number(updates.sellingPrice)) || 0;
+  }
+  if (updates.lowStockThreshold !== undefined) {
+    next.lowStockThreshold = Math.max(0, Math.floor(Number(updates.lowStockThreshold)) || 0);
+  }
+  return next;
+}
+
 export async function updateProductOffline(id: string, updates: Partial<Product> & { userId: string }): Promise<{ product: Product }> {
   const existing = await offlineProducts.getAll(updates.userId);
   const product = existing.find(p => p.id === id);
   if (!product) throw new Error('Product not found');
 
   const updatedProduct = {
-    ...product,
-    ...updates,
+    ...applyProductUpdates(product, updates),
     updatedAt: new Date().toISOString(),
   };
 
@@ -236,6 +228,12 @@ export async function updateProductOffline(id: string, updates: Partial<Product>
 }
 
 export async function deleteProductOffline(id: string, userId: string): Promise<{ message: string }> {
+  // Ownership check — a product must never be deleted by a different account
+  // on a shared device.
+  const db = await getOfflineDB();
+  const product = await db.get('products', id);
+  if (!product || (userId && product.userId !== userId)) throw new Error('Not found');
+
   // Delete related transactions first (cascade)
   const localTxns = await offlineTransactions.getAll(userId);
   const relatedTxns = localTxns.filter(t => t.productId === id);
@@ -327,38 +325,6 @@ export async function createTransactionOffline(transactionData: {
   await tx.done;
 
   return { transaction: stripSync<Transaction>(row) };
-}
-
-export async function deleteTransactionOffline(id: string, userId: string): Promise<{ success: boolean }> {
-  const db = await getOfflineDB();
-  const now = new Date().toISOString();
-
-  const tx = db.transaction(['products', 'transactions'], 'readwrite');
-  const productsStore = tx.objectStore('products');
-  const transactionsStore = tx.objectStore('transactions');
-
-  const txn = await transactionsStore.get(id);
-  if (!txn || txn.userId !== userId) {
-    // Nothing to delete — no writes were queued, committing empty is harmless.
-    await tx.done;
-    return { success: true };
-  }
-
-  // Reverse the stock change caused by this transaction (same atomic tx)
-  const product = await productsStore.get(txn.productId);
-  if (product) {
-    const quantityChange = txn.type === 'STOCK_IN' ? -txn.quantity : txn.quantity;
-    await productsStore.put({
-      ...product,
-      quantity: Math.max(0, product.quantity + quantityChange),
-      updatedAt: now,
-    });
-  }
-
-  await transactionsStore.delete(id);
-  await tx.done;
-
-  return { success: true };
 }
 
 export async function getTransactionsOffline(userId: string, options?: { type?: string; productId?: string; from?: string; to?: string }): Promise<Transaction[]> {
@@ -541,7 +507,11 @@ export async function updateExpenseOffline(id: string, updates: { amount?: numbe
   return { expense: stripSync<Expense>(updatedExpense) };
 }
 
-export async function deleteExpenseOffline(id: string, _userId: string): Promise<{ success: boolean }> {
+export async function deleteExpenseOffline(id: string, userId: string): Promise<{ success: boolean }> {
+  // Ownership check — ignore requests for rows belonging to another account.
+  const db = await getOfflineDB();
+  const row = await db.get('expenses', id);
+  if (!row || (userId && row.userId !== userId)) throw new Error('Not found');
   await offlineExpenses.delete(id);
   return { success: true };
 }
@@ -656,7 +626,11 @@ export async function updateCashEntryOffline(id: string, updates: { handCash?: n
   return { entry: stripSync<CashEntry>(updatedEntry) };
 }
 
-export async function deleteCashEntryOffline(id: string, _userId: string): Promise<{ success: boolean }> {
+export async function deleteCashEntryOffline(id: string, userId: string): Promise<{ success: boolean }> {
+  // Ownership check — ignore requests for rows belonging to another account.
+  const db = await getOfflineDB();
+  const row = await db.get('cashEntries', id);
+  if (!row || (userId && row.userId !== userId)) throw new Error('Not found');
   await offlineCashEntries.delete(id);
   return { success: true };
 }
@@ -922,7 +896,11 @@ export async function createServiceTransactionOffline(data: {
   return { serviceTransaction };
 }
 
-export async function deleteServiceTransactionOffline(id: string, _userId: string): Promise<{ success: boolean }> {
+export async function deleteServiceTransactionOffline(id: string, userId: string): Promise<{ success: boolean }> {
+  // Ownership check — ignore requests for rows belonging to another account.
+  const db = await getOfflineDB();
+  const row = await db.get('serviceTransactions', id);
+  if (!row || (userId && row.userId !== userId)) throw new Error('Not found');
   await offlineServiceTransactions.delete(id);
   return { success: true };
 }
@@ -1149,10 +1127,12 @@ export async function exportBackupOffline(userId: string) {
     getBillingSettingsOffline(userId),
   ]);
 
+  // NOTE: the purchase-price snapshot (`product`) on transactions is kept —
+  // stripping it made historical profit silently change after a restore.
   return {
     categories: localCategories.map(c => stripSync(c)),
-    products: localProducts.map(p => { const { category: _c, ...rest } = stripSync<Record<string, unknown>>(p); return rest; }),
-    transactions: localTransactions.map(t => { const { product: _p, ...rest } = stripSync<Record<string, unknown>>(t); return rest; }),
+    products: localProducts.map(p => stripSync(p)),
+    transactions: localTransactions.map(t => stripSync(t)),
     expenses: localExpenses.map(e => stripSync(e)),
     cashEntries: localCashEntries.map(e => stripSync(e)),
     serviceTransactions: localServiceTxns.map(s => stripSync(s)),
@@ -1174,6 +1154,26 @@ export async function importBackupOffline(userId: string, backupData: {
 }) {
   const now = Date.now();
 
+  // ---- Numeric coercion helpers (same clamps the create* functions use) ----
+  const toNum = (v: unknown): number => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  /** Non-negative number — mirrors Math.max(0, Number(x)) || 0 in create*. */
+  const numPos = (v: unknown): number => Math.max(0, toNum(v));
+  /** Non-negative whole number — mirrors Math.max(0, Math.floor(Number(x))) || 0. */
+  const intPos = (v: unknown): number => Math.max(0, Math.floor(toNum(v)) || 0);
+  /** Coerces the listed numeric fields (only when present) on a raw backup row. */
+  const coerce = (row: Record<string, unknown>, fields: Record<string, 'int' | 'num'>): Record<string, unknown> => {
+    const out: Record<string, unknown> = { ...row };
+    for (const [key, kind] of Object.entries(fields)) {
+      if (key in out) out[key] = kind === 'int' ? intPos(out[key]) : numPos(out[key]);
+    }
+    return out;
+  };
+  const hasName = (row: Record<string, unknown>): boolean =>
+    typeof row.name === 'string' && row.name.trim() !== '';
+
   // Validate rows: every row MUST have an id — malformed backups must never
   // be written into IndexedDB.
   const asRows = (rows: unknown[]): Record<string, unknown>[] => {
@@ -1183,8 +1183,8 @@ export async function importBackupOffline(userId: string, backupData: {
     );
   };
 
-  const categories = asRows(backupData.categories || []);
-  const products = asRows(backupData.products || []);
+  const categories = asRows(backupData.categories || []).filter(hasName);
+  const products = asRows(backupData.products || []).filter(hasName);
   const transactions = asRows(backupData.transactions || []);
   const expenses = asRows(backupData.expenses || []);
   const cashEntries = asRows(backupData.cashEntries || []);
@@ -1225,32 +1225,53 @@ export async function importBackupOffline(userId: string, backupData: {
   }
   if (products.length) {
     await offlineProducts.putBulk(
-      products.map((prod) => ({ ...prod, userId, _synced: now, _dirty: 0 })) as OfflineDBSchema['products']['value'][]
+      products.map((prod) => coerce({ ...prod, userId, _synced: now, _dirty: 0 }, {
+        quantity: 'int',
+        purchasePrice: 'num',
+        sellingPrice: 'num',
+        lowStockThreshold: 'int',
+      })) as OfflineDBSchema['products']['value'][]
     );
   }
   if (transactions.length) {
     await offlineTransactions.putBulk(
-      transactions.map((txn) => ({ ...txn, userId, _synced: now, _dirty: 0 })) as OfflineDBSchema['transactions']['value'][]
+      transactions.map((txn) => coerce({ ...txn, userId, _synced: now, _dirty: 0 }, {
+        quantity: 'int',
+        unitPrice: 'num',
+        totalAmount: 'num',
+      })) as OfflineDBSchema['transactions']['value'][]
     );
   }
   if (expenses.length) {
     await offlineExpenses.putBulk(
-      expenses.map((exp) => ({ ...exp, userId, _synced: now, _dirty: 0 })) as OfflineDBSchema['expenses']['value'][]
+      expenses.map((exp) => coerce({ ...exp, userId, _synced: now, _dirty: 0 }, { amount: 'num' })) as OfflineDBSchema['expenses']['value'][]
     );
   }
   if (cashEntries.length) {
     await offlineCashEntries.putBulk(
-      cashEntries.map((entry) => ({ ...entry, userId, _synced: now, _dirty: 0 })) as OfflineDBSchema['cashEntries']['value'][]
+      cashEntries.map((entry) => coerce({ ...entry, userId, _synced: now, _dirty: 0 }, {
+        handCash: 'num',
+        liquidCash: 'num',
+      })) as OfflineDBSchema['cashEntries']['value'][]
     );
   }
   if (serviceTransactions.length) {
     await offlineServiceTransactions.putBulk(
-      serviceTransactions.map((svc) => ({ ...svc, userId, _synced: now, _dirty: 0 })) as OfflineDBSchema['serviceTransactions']['value'][]
+      serviceTransactions.map((svc) => coerce({ ...svc, userId, _synced: now, _dirty: 0 }, { amount: 'num' })) as OfflineDBSchema['serviceTransactions']['value'][]
     );
   }
   if (bills.length) {
     await offlineBills.putBulk(
-      bills.map((bill) => ({ ...bill, userId, createdAt: bill.createdAt || new Date().toISOString(), updatedAt: bill.updatedAt || new Date().toISOString() })) as OfflineDBSchema['bills']['value'][]
+      bills.map((bill) => coerce({ ...bill, userId, createdAt: bill.createdAt || new Date().toISOString(), updatedAt: bill.updatedAt || new Date().toISOString() }, {
+        subtotal: 'num',
+        discountValue: 'num',
+        discountAmount: 'num',
+        gstRate: 'num',
+        gstAmount: 'num',
+        total: 'num',
+        paidAmount: 'num',
+        dueAmount: 'num',
+      })) as OfflineDBSchema['bills']['value'][]
     );
   }
   if (billingSettings) {
@@ -1272,6 +1293,3 @@ export async function resetDataOffline(userId: string) {
   await clearOfflineData(userId);
   return { message: 'All data reset successfully' };
 }
-
-// Keep the syncMeta export used by potential future features (last backup time etc.)
-export { offlineMeta };

@@ -15,7 +15,9 @@ export interface LocalUserRecord {
   id: string;
   name: string;
   email: string; // always stored lowercase
-  password: string; // "salt:sha256(salt+password)" hex
+  // "pbkdf2$310000$<saltB64>$<hashB64>" (current) or legacy "salt:sha256" hex
+  // (still verified; transparently upgraded to PBKDF2 on next successful login)
+  password: string;
   shopName: string;
   role: string;
   language: string;
@@ -331,15 +333,6 @@ async function deleteItem<K extends keyof OfflineDBSchema>(
   await db.delete(storeName, id);
 }
 
-async function getDirtyItems<K extends keyof OfflineDBSchema>(
-  storeName: K
-): Promise<OfflineDBSchema[K]['value'][]> {
-  const db = await getDB();
-  // Get all items where _dirty > 0
-  const range = IDBKeyRange.lowerBound(1);
-  return db.getAllFromIndex(storeName, 'by-dirty', range);
-}
-
 // ============ CATEGORIES ============
 
 export const offlineCategories = {
@@ -347,7 +340,6 @@ export const offlineCategories = {
   put: (cat: OfflineDBSchema['categories']['value']) => putItem('categories', cat),
   putBulk: (cats: OfflineDBSchema['categories']['value'][]) => putBulk('categories', cats),
   delete: (id: string) => deleteItem('categories', id),
-  getDirty: () => getDirtyItems('categories'),
 };
 
 // ============ PRODUCTS ============
@@ -368,7 +360,6 @@ export const offlineProducts = {
     const q = query.toLowerCase();
     return all.filter(p => p.name.toLowerCase().includes(q));
   },
-  getDirty: () => getDirtyItems('products'),
 };
 
 // ============ TRANSACTIONS ============
@@ -378,17 +369,6 @@ export const offlineTransactions = {
   put: (txn: OfflineDBSchema['transactions']['value']) => putItem('transactions', txn),
   putBulk: (txns: OfflineDBSchema['transactions']['value'][]) => putBulk('transactions', txns),
   delete: (id: string) => deleteItem('transactions', id),
-  getByType: async (userId: string, type: string) => {
-    const db = await getDB();
-    const all = await db.getAllFromIndex('transactions', 'by-userId', userId);
-    return all.filter(t => t.type === type);
-  },
-  getByDateRange: async (userId: string, from: string, to: string) => {
-    const db = await getDB();
-    const all = await db.getAllFromIndex('transactions', 'by-userId', userId);
-    return all.filter(t => t.date >= from && t.date <= to);
-  },
-  getDirty: () => getDirtyItems('transactions'),
 };
 
 // ============ EXPENSES ============
@@ -398,7 +378,6 @@ export const offlineExpenses = {
   put: (exp: OfflineDBSchema['expenses']['value']) => putItem('expenses', exp),
   putBulk: (exps: OfflineDBSchema['expenses']['value'][]) => putBulk('expenses', exps),
   delete: (id: string) => deleteItem('expenses', id),
-  getDirty: () => getDirtyItems('expenses'),
 };
 
 // ============ CASH ENTRIES ============
@@ -408,75 +387,7 @@ export const offlineCashEntries = {
   put: (entry: OfflineDBSchema['cashEntries']['value']) => putItem('cashEntries', entry),
   putBulk: (entries: OfflineDBSchema['cashEntries']['value'][]) => putBulk('cashEntries', entries),
   delete: (id: string) => deleteItem('cashEntries', id),
-  getDirty: () => getDirtyItems('cashEntries'),
 };
-
-// ============ SYNC META ============
-
-export const offlineMeta = {
-  get: async (key: string): Promise<OfflineDBSchema['syncMeta']['value'] | undefined> => {
-    const db = await getDB();
-    return db.get('syncMeta', key);
-  },
-  put: async (meta: OfflineDBSchema['syncMeta']['value']) => {
-    const db = await getDB();
-    await db.put('syncMeta', meta);
-  },
-  getLastSync: async (userId: string, key: string): Promise<number> => {
-    const meta = await offlineMeta.get(`${userId}:${key}`);
-    return meta?.lastSync ?? 0;
-  },
-  setLastSync: async (userId: string, key: string, timestamp?: number) => {
-    await offlineMeta.put({
-      key: `${userId}:${key}`,
-      userId,
-      lastSync: timestamp ?? Date.now(),
-      data: null,
-    });
-  },
-};
-
-// ============ PENDING DELETES ============
-
-export const offlinePendingDeletes = {
-  add: async (storeName: string, itemId: string, userId: string) => {
-    const db = await getDB();
-    await db.put('pendingDeletes', {
-      id: `${storeName}:${itemId}`,
-      storeName,
-      itemId,
-      userId,
-      deletedAt: Date.now(),
-    });
-  },
-  getAll: async (userId: string) => {
-    const db = await getDB();
-    return db.getAllFromIndex('pendingDeletes', 'by-userId', userId);
-  },
-  getByStore: async (storeName: string) => {
-    const db = await getDB();
-    return db.getAllFromIndex('pendingDeletes', 'by-storeName', storeName);
-  },
-  remove: async (id: string) => {
-    const db = await getDB();
-    await db.delete('pendingDeletes', id);
-  },
-  removeByItemId: async (storeName: string, itemId: string) => {
-    const db = await getDB();
-    await db.delete('pendingDeletes', `${storeName}:${itemId}`);
-  },
-  clearForUser: async (userId: string) => {
-    const db = await getDB();
-    const items = await db.getAllFromIndex('pendingDeletes', 'by-userId', userId);
-    const tx = db.transaction('pendingDeletes', 'readwrite');
-    for (const item of items) {
-      await tx.store.delete(item.id);
-    }
-    await tx.done;
-  },
-};
-
-// ============ CLEAR ALL ============
 
 // ============ SERVICE TRANSACTIONS ============
 
@@ -485,17 +396,6 @@ export const offlineServiceTransactions = {
   put: (svc: OfflineDBSchema['serviceTransactions']['value']) => putItem('serviceTransactions', svc),
   putBulk: (svcs: OfflineDBSchema['serviceTransactions']['value'][]) => putBulk('serviceTransactions', svcs),
   delete: (id: string) => deleteItem('serviceTransactions', id),
-  getByCategoryType: async (userId: string, categoryType: string) => {
-    const db = await getDB();
-    const all = await db.getAllFromIndex('serviceTransactions', 'by-userId', userId);
-    return all.filter(s => s.categoryType === categoryType);
-  },
-  getByDateRange: async (userId: string, from: string, to: string) => {
-    const db = await getDB();
-    const all = await db.getAllFromIndex('serviceTransactions', 'by-userId', userId);
-    return all.filter(s => s.date >= from && s.date <= to);
-  },
-  getDirty: () => getDirtyItems('serviceTransactions'),
 };
 
 // ============ BILLS (e-Bill / Invoice) ============
@@ -508,6 +408,10 @@ export const offlineBills = {
 };
 
 // ============ CLEAR ALL ============
+
+// NOTE: the legacy `syncMeta` / `pendingDeletes` object stores are kept in the
+// schema (removing them would need a DB version bump); clearOfflineData still
+// wipes them, and the old sync-era helper APIs around them are gone.
 
 export async function clearOfflineData(userId: string): Promise<void> {
   const db = await getDB();

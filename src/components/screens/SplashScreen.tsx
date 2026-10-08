@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAppStore } from '@/store/appStore';
+import { verifyLocalUserId } from '@/lib/local-auth';
 
 const floatingIcons = ['📱', '🎧', '🔌', '⌚', '📺'];
 
@@ -34,14 +35,19 @@ export default function SplashScreen() {
       });
     }, interval);
 
+    // Hoisted so the effect cleanup can ALWAYS clear it — previously a leaked
+    // hydration-wait interval could fire a second navigation after re-render.
+    let hydrationWaiter: ReturnType<typeof setInterval> | null = null;
+
     // Wait for hydration + splash duration before navigating
     const navTimer = setTimeout(() => {
       // If store hasn't hydrated yet, wait a bit more
       if (!_hasHydrated) {
-        const waitTimer = setInterval(() => {
+        hydrationWaiter = setInterval(() => {
           const state = useAppStore.getState();
           if (state._hasHydrated) {
-            clearInterval(waitTimer);
+            if (hydrationWaiter) clearInterval(hydrationWaiter);
+            hydrationWaiter = null;
             navigateToApp(state.hasSeenTutorial, state.isAuthenticated);
           }
         }, 100);
@@ -50,21 +56,28 @@ export default function SplashScreen() {
       navigateToApp(hasSeenTutorial, isAuthenticated);
     }, duration);
 
-    function navigateToApp(seenTutorial: boolean, authenticated: boolean) {
+    async function navigateToApp(seenTutorial: boolean, authenticated: boolean) {
       if (!seenTutorial) {
         // First time user → Welcome + Tutorial + Login flow
         resetNavigation('welcome');
-      } else if (authenticated && useAppStore.getState().user?.id) {
-        // Returning user — session is stored locally, go straight to dashboard
-        resetNavigation('dashboard');
-      } else {
-        resetNavigation('login');
+        return;
       }
+      if (authenticated) {
+        // Defense-in-depth: a hand-edited localStorage session must not
+        // resurrect a deleted local account — verify the user still exists.
+        const id = useAppStore.getState().user?.id;
+        if (id && (await verifyLocalUserId(id).catch(() => false))) {
+          resetNavigation('dashboard');
+          return;
+        }
+      }
+      resetNavigation('login');
     }
 
     return () => {
       clearInterval(timer);
       clearTimeout(navTimer);
+      if (hydrationWaiter) clearInterval(hydrationWaiter);
     };
   }, [resetNavigation, hasSeenTutorial, isAuthenticated, _hasHydrated]);
 

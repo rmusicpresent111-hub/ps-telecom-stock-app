@@ -224,7 +224,10 @@
 .animated-bg {
   background: linear-gradient(135deg, #0B0E18 0%, #10142A 50%, #0D1020 100%);
   will-change: auto;
-  contain: layout style;
+  /* NOTE: no `contain` here — contain:layout makes this element the containing
+     block for `fixed` descendants, which silently re-parents every screen's
+     modal dialog to the (scrollable) page instead of the viewport, dropping
+     dialogs behind the bottom nav on tall screens. */
 }
 
 .light-theme .animated-bg {

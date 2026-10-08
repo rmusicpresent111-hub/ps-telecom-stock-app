@@ -3,21 +3,24 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { Screen } from '@/lib/types';
+import { closeTopBackModal } from '@/lib/modal-back';
 
-// Auth/onboarding screens — hardware back does nothing there
-const AUTH_SCREENS: Screen[] = ['splash', 'welcome', 'tutorial', 'language', 'login', 'signup', 'forgot-password'];
+// Auth/onboarding flow screens — hardware back does nothing there
+const AUTH_FLOW_SCREENS: Screen[] = ['splash', 'welcome', 'tutorial', 'login', 'signup', 'forgot-password'];
 
 /**
- * NATIVE BACK NAVIGATION
+ * NATIVE BACK NAVIGATION (stack-based)
  *
  * Behaviour (hardware back button / browser back / Escape):
- *   1. Any page  → goes STRAIGHT to the home page (dashboard).
- *   2. Home page → shows the Exit / Continue confirmation dialog.
- *   3. Dialog open → back closes the dialog.
+ *   1. In-screen dialog/modal open → closes the dialog (Android standard).
+ *   2. Any page with navigation history → PREVIOUS page (store.goBack).
+ *   3. Page with empty history (bottom-nav tab) → HOME page (dashboard).
+ *   4. Home page → shows the Exit / Continue confirmation dialog.
+ *   5. Exit dialog open → back closes it.
  *
- * The in-app ← header arrows still navigate step-by-step through the
- * navigation stack (store.goBack) — this handler only re-maps the SYSTEM
- * back button to the simple "home first, then exit" flow.
+ * This matches the in-app ← header arrows which also walk the navigation
+ * stack step-by-step (store.goBack) — so hardware back and on-screen back
+ * always behave identically.
  *
  * Wiring:
  *   - Android APK: capacitor-init.ts listens to App 'backButton' and
@@ -43,39 +46,41 @@ export function useBackHandler() {
   // The core back-navigation logic
   const handleBack = useCallback(() => {
     const now = Date.now();
-    if (now - lastBackTimeRef.current < DEBOUNCE_MS) {
-      console.log('[BackHandler] Debounced - ignoring rapid back press');
-      return;
-    }
+    if (now - lastBackTimeRef.current < DEBOUNCE_MS) return;
     lastBackTimeRef.current = now;
 
     const state = useAppStore.getState();
     const { currentScreen } = state;
 
-    console.log('[BackHandler] Back pressed. Current:', currentScreen);
-
-    // 3. Exit dialog open → back press closes it (standard Android behaviour)
+    // 5. Exit dialog open → back press closes it (standard Android behaviour)
     if (exitDialogRef.current) {
-      console.log('[BackHandler] Exit dialog open → close it');
       setDialog(false);
       return;
     }
 
-    // Don't handle back on auth/onboarding screens
-    if (AUTH_SCREENS.includes(currentScreen)) {
-      console.log('[BackHandler] Auth screen - ignoring back');
-      return;
-    }
+    // 1. An in-screen dialog/modal is open → close the topmost one,
+    //    never navigate the screen beneath it.
+    if (closeTopBackModal()) return;
 
-    // 2. HOME page → exit confirmation dialog (Exit / Continue)
+    // Don't handle back on auth/onboarding flow screens
+    if (AUTH_FLOW_SCREENS.includes(currentScreen)) return;
+
+    // Language screen during first-run onboarding has no history → ignore
+    if (currentScreen === 'language' && !state.isAuthenticated) return;
+
+    // 4. HOME page → exit confirmation dialog (Exit / Continue)
     if (currentScreen === 'dashboard') {
-      console.log('[BackHandler] Home page → show exit dialog');
       setDialog(true);
       return;
     }
 
-    // 1. ANY other page → go STRAIGHT to the home page
-    console.log('[BackHandler]', currentScreen, '→ straight to home (dashboard)');
+    // 3. Navigation history exists → go to the PREVIOUS page
+    if (state.previousScreens.length > 0) {
+      state.goBack();
+      return;
+    }
+
+    // 2. No history (bottom-nav tab with cleared stack) → HOME page first
     state.resetNavigation('dashboard');
   }, [setDialog]);
 
@@ -85,7 +90,6 @@ export function useBackHandler() {
     window.history.pushState({ appState: true, screenIndex: 0 }, '');
 
     const handlePopState = () => {
-      console.log('[BackHandler] popstate event fired');
       handleBack();
       // Re-push state to prevent actual navigation away
       window.history.pushState({ appState: true }, '');
@@ -98,10 +102,7 @@ export function useBackHandler() {
   // ===== 2. Keyboard Escape key handler (testing in browser) =====
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        console.log('[BackHandler] Escape key pressed');
-        handleBack();
-      }
+      if (e.key === 'Escape') handleBack();
     };
 
     document.addEventListener('keydown', handleKeyDown);
@@ -115,7 +116,6 @@ export function useBackHandler() {
 
   // ===== Exit handlers =====
   const handleExitConfirm = useCallback(() => {
-    console.log('[BackHandler] Exit confirmed');
     setDialog(false);
 
     // Try Capacitor App exit first (for native Android)
@@ -131,7 +131,6 @@ export function useBackHandler() {
   }, [setDialog]);
 
   const handleExitCancel = useCallback(() => {
-    console.log('[BackHandler] Exit cancelled');
     setDialog(false);
   }, [setDialog]);
 

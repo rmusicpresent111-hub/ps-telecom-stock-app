@@ -5,21 +5,7 @@ type TranslationKeys = {
   appName: string;
   // Splash
   loading: string;
-  // Onboarding
-  onboarding1Title: string;
-  onboarding1Desc: string;
-  onboarding2Title: string;
-  onboarding2Desc: string;
-  onboarding3Title: string;
-  onboarding3Desc: string;
-  onboarding4Title: string;
-  onboarding4Desc: string;
-  onboarding5Title: string;
-  onboarding5Desc: string;
-  onboarding6Title: string;
-  onboarding6Desc: string;
-  onboarding7Title: string;
-  onboarding7Desc: string;
+  // Tutorial
   next: string;
   skip: string;
   getStarted: string;
@@ -268,26 +254,19 @@ type TranslationKeys = {
   cloudDbEmpty: string;
   fillAllFields: string;
   cloudInfo: string;
+  // Password re-auth + backup-owner safety
+  reauthTitle: string;
+  reauthDesc: string;
+  wrongPassword: string;
+  cloudBackupOwner: string;
+  restoreDifferentAccountWarn: string;
+  tokenSavedHint: string;
 };
 
 const translations: Record<Language, TranslationKeys> = {
   bn: {
     appName: 'PS TELECOM',
     loading: 'লোড হচ্ছে...',
-    onboarding1Title: 'স্টক ট্র্যাক',
-    onboarding1Desc: 'সব প্রোডাক্টের স্টক সহজে ট্র্যাক করুন',
-    onboarding2Title: 'প্রোডাক্ট যোগ',
-    onboarding2Desc: 'দ্রুত প্রোডাক্ট যোগ করুন ও ম্যানেজ করুন',
-    onboarding3Title: 'প্রফিট ট্র্যাকিং',
-    onboarding3Desc: 'প্রতিদিনের লাভ-ক্ষতি সহজে দেখুন',
-    onboarding4Title: 'রিপোর্ট',
-    onboarding4Desc: 'বিস্তারিত রিপোর্ট তৈরি করুন',
-    onboarding5Title: 'ব্যাকআপ সিস্টেম',
-    onboarding5Desc: 'ডেটা ব্যাকআপ ও রিস্টোর করুন',
-    onboarding6Title: 'মাল্টি ল্যাঙ্গুয়েজ',
-    onboarding6Desc: 'বাংলা, ইংরেজি ও হিন্দিতে ব্যবহার করুন',
-    onboarding7Title: 'ফাস্ট সার্চ',
-    onboarding7Desc: 'প্রোডাক্ট দ্রুত খুঁজে বের করুন',
     next: 'পরবর্তী',
     skip: 'এড়িয়ে যান',
     getStarted: 'শুরু করুন',
@@ -519,24 +498,16 @@ const translations: Record<Language, TranslationKeys> = {
     cloudDbEmpty: 'ক্লাউড ডেটাবেস খালি — আগে ব্যাকআপ করুন',
     fillAllFields: 'তিনটি তথ্যই পূরণ করুন',
     cloudInfo: 'আপনার ডেটা আপনার নিজের Cloudflare অ্যাকাউন্টে থাকে — ফোন হারালেও ডেটা নিরাপদ।',
+    reauthTitle: 'পাসওয়ার্ড দিয়ে নিশ্চিত করুন',
+    reauthDesc: 'এই সংবেদনশীল কাজটি করতে আপনার পাসওয়ার্ড লিখুন',
+    wrongPassword: 'ভুল পাসওয়ার্ড — কাজটি বাতিল হয়েছে',
+    cloudBackupOwner: 'ব্যাকআপের মালিক',
+    restoreDifferentAccountWarn: 'এই ক্লাউড ব্যাকআপটি {email} অ্যাকাউন্টের — রিস্টোর করলে এই ফোনের সব ডেটা তা দিয়ে বদলে যাবে। চালিয়ে যাবেন?',
+    tokenSavedHint: 'টোকেন সংরক্ষিত আছে — আগেরটি রাখতে খালি রাখুন',
   },
   en: {
     appName: 'PS TELECOM',
     loading: 'Loading...',
-    onboarding1Title: 'Stock Track',
-    onboarding1Desc: 'Track all your product stock easily',
-    onboarding2Title: 'Easy Add Product',
-    onboarding2Desc: 'Quickly add and manage products',
-    onboarding3Title: 'Profit Tracking',
-    onboarding3Desc: 'View daily profit and loss easily',
-    onboarding4Title: 'Reports',
-    onboarding4Desc: 'Generate detailed reports',
-    onboarding5Title: 'Backup System',
-    onboarding5Desc: 'Backup and restore your data',
-    onboarding6Title: 'Multi Language',
-    onboarding6Desc: 'Use in Bengali, English & Hindi',
-    onboarding7Title: 'Fast Search',
-    onboarding7Desc: 'Find products quickly',
     next: 'Next',
     skip: 'Skip',
     getStarted: 'Get Started',
@@ -768,24 +739,16 @@ const translations: Record<Language, TranslationKeys> = {
     cloudDbEmpty: 'Cloud database is empty — run a backup first',
     fillAllFields: 'Please fill in all three fields',
     cloudInfo: 'Your data lives in your own Cloudflare account — safe even if the phone is lost.',
+    reauthTitle: 'Confirm with password',
+    reauthDesc: 'Enter your password to continue with this action',
+    wrongPassword: 'Wrong password — action cancelled',
+    cloudBackupOwner: 'Backup owner',
+    restoreDifferentAccountWarn: 'This cloud backup was made by {email} — restoring will replace this device\'s data with it. Continue?',
+    tokenSavedHint: 'Token saved — leave empty to keep the current one',
   },
   hi: {
     appName: 'PS TELECOM',
     loading: 'लोड हो रहा है...',
-    onboarding1Title: 'स्टॉक ट्रैक',
-    onboarding1Desc: 'सभी प्रोडक्ट का स्टॉक आसानी से ट्रैक करें',
-    onboarding2Title: 'प्रोडक्ट जोड़ें',
-    onboarding2Desc: 'जल्दी से प्रोडक्ट जोड़ें और मैनेज करें',
-    onboarding3Title: 'लाभ ट्रैकिंग',
-    onboarding3Desc: 'दैनिक लाभ-हानि आसानी से देखें',
-    onboarding4Title: 'रिपोर्ट',
-    onboarding4Desc: 'विस्तृत रिपोर्ट बनाएं',
-    onboarding5Title: 'बैकअप सिस्टम',
-    onboarding5Desc: 'डेटा बैकअप और रिस्टोर करें',
-    onboarding6Title: 'बहुभाषी',
-    onboarding6Desc: 'बांग्ला, अंग्रेजी और हिंदी में उपयोग करें',
-    onboarding7Title: 'तेज़ खोज',
-    onboarding7Desc: 'प्रोडक्ट जल्दी खोजें',
     next: 'अगला',
     skip: 'छोड़ें',
     getStarted: 'शुरू करें',
@@ -1017,11 +980,15 @@ const translations: Record<Language, TranslationKeys> = {
     cloudDbEmpty: 'क्लाउड डेटाबेस खाली है — पहले बैकअप करें',
     fillAllFields: 'तीनों जानकारी भरें',
     cloudInfo: 'आपका डेटा आपके ही Cloudflare अकाउंट में रहता है — फोन खोने पर भी डेटा सुरक्षित।',
+    reauthTitle: 'पासवर्ड से पुष्टि करें',
+    reauthDesc: 'इस संवेदनशील काम के लिए अपना पासवर्ड दर्ज करें',
+    wrongPassword: 'गलत पासवर्ड — काम रद्द कर दिया गया',
+    cloudBackupOwner: 'बैकअप का मालिक',
+    restoreDifferentAccountWarn: 'यह क्लाउड बैकअप {email} अकाउंट का है — रिस्टोर करने पर इस फोन का पूरा डेटा उससे बदल जाएगा। जारी रखें?',
+    tokenSavedHint: 'टोकन सहेजा गया है — मौजूदा टोकन रखने के लिए खाली छोड़ें',
   },
 };
 
 export function t(key: keyof TranslationKeys, lang: Language): string {
   return translations[lang]?.[key] || translations.en[key] || key;
 }
-
-export default translations;

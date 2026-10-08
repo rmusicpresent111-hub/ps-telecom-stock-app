@@ -1,0 +1,710 @@
+     1→     1→/**
+     2→     2→ * Bill PDF generation (jsPDF) + sharing helpers.
+     3→     3→ *
+     4→     4→ * The e-bill is generated 100% on-device. Sharing strategy:
+     5→     5→ *  1. Web Share API WITH the actual PDF file → user picks WhatsApp + the customer
+     6→     6→ *     chat, and the PDF travels natively attached with the pre-filled message.
+     7→     7→ *  2. Fallback: download the PDF + open wa.me chat with a formatted bill summary,
+     8→     8→ *     so the user just attaches the downloaded file.
+     9→     9→ *
+    10→    10→ * PDF design: premium "gold on midnight" certificate style — serif shop
+    11→    11→ * monogram + name, proprietor line, gold gradient bands, ornamental page
+    12→    12→ * frame, subtle watermark, diamond footer divider.
+    13→    13→ */
+    14→    14→
+    15→    15→import { jsPDF } from 'jspdf';
+    16→    16→import { Bill } from './types';
+    17→    17→
+    18→    18→type RGB = [number, number, number];
+    19→    19→
+    20→    20→const GOLD: RGB = [212, 168, 83];
+    21→    21→const GOLD_LIGHT: RGB = [238, 210, 140];
+    22→    22→const GOLD_DEEP: RGB = [158, 116, 46];
+    23→    23→const DARK: RGB = [22, 26, 38];
+    24→    24→const DARK2: RGB = [32, 38, 54];
+    25→    25→const GREEN: RGB = [16, 140, 90];
+    26→    26→const RED: RGB = [214, 58, 58];
+    27→    27→const GRAY: RGB = [110, 116, 130];
+    28→    28→const IVORY: RGB = [250, 247, 240];
+    29→    29→const WATERMARK: RGB = [246, 241, 230];
+    30→    30→
+    31→    31→const PROPRIETOR_FALLBACK = 'Avijit Maity & Brother';
+    32→    32→
+    33→    33→// ============ HELPERS ============
+    34→    34→
+    35→    35→export function formatMoney(n: number): string {
+    36→    36→  const num = Number(n) || 0;
+    37→    37→  return num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    38→    38→}
+    39→    39→
+    40→    40→export function formatDate(iso: string): string {
+    41→    41→  const d = new Date(`${iso.slice(0, 10)}T00:00:00`);
+    42→    42→  if (Number.isNaN(d.getTime())) return iso;
+    43→    43→  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    44→    44→}
+    45→    45→
+    46→    46→/**
+    47→    47→ * Normalize a mobile number for wa.me: digits only, ensure country code.
+    48→    48→ * 10-digit Indian numbers get 91 prefixed.
+    49→    49→ */
+    50→    50→export function normalizeMobile(mobile: string): string {
+    51→    51→  let digits = (mobile || '').replace(/\D/g, '');
+    52→    52→  if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
+    53→    53→  if (digits.length === 10) digits = `91${digits}`;
+    54→    54→  return digits;
+    55→    55→}
+    56→    56→
+    57→    57→/** Indian-format number to words, e.g. 1250.50 → "One Thousand Two Hundred Fifty Rupees and 50 Paise" */
+    58→    58→export function amountInWords(amount: number): string {
+    59→    59→  const rupees = Math.floor(amount);
+    60→    60→  const paise = Math.round((amount - rupees) * 100);
+    61→    61→  const rupeeWords = rupees === 0 ? 'Zero' : numberToWordsIndian(rupees);
+    62→    62→  let out = `${rupeeWords} Rupees`;
+    63→    63→  if (paise > 0) out += ` and ${numberToWordsIndian(paise)} Paise`;
+    64→    64→  return `${out} Only`;
+    65→    65→}
+    66→    66→
+    67→    67→function numberToWordsIndian(n: number): string {
+    68→    68→  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+    69→    69→    'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    70→    70→  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+    71→    71→
+    72→    72→  const twoDigits = (num: number): string => {
+    73→    73→    if (num < 20) return ones[num];
+    74→    74→    return `${tens[Math.floor(num / 10)]}${num % 10 ? ` ${ones[num % 10]}` : ''}`;
+    75→    75→  };
+    76→    76→  const threeDigits = (num: number): string => {
+    77→    77→    const hundreds = Math.floor(num / 100);
+    78→    78→    const rest = num % 100;
+    79→    79→    return `${hundreds ? `${ones[hundreds]} Hundred${rest ? ' ' : ''}` : ''}${rest ? twoDigits(rest) : ''}`;
+    80→    80→  };
+    81→    81→
+    82→    82→  if (n === 0) return 'Zero';
+    83→    83→  const parts: string[] = [];
+    84→    84→  const crore = Math.floor(n / 10000000);
+    85→    85→  const lakh = Math.floor((n % 10000000) / 100000);
+    86→    86→  const thousand = Math.floor((n % 100000) / 1000);
+    87→    87→  const rest = n % 1000;
+    88→    88→  if (crore) parts.push(`${numberToWordsIndian(crore)} Crore`);
+    89→    89→  if (lakh) parts.push(`${twoDigits(lakh)} Lakh`);
+    90→    90→  if (thousand) parts.push(`${twoDigits(thousand)} Thousand`);
+    91→    91→  if (rest) parts.push(threeDigits(rest));
+    92→    92→  return parts.join(' ');
+    93→    93→}
+    94→    94→
+    95→    95→/** First letters of up to 2 words — monogram initials, e.g. "PS TELECOM" → "PS". */
+    96→    96→export function shopInitials(name: string): string {
+    97→    97→  const words = (name || '').trim().split(/\s+/).filter(Boolean);
+    98→    98→  if (!words.length) return 'PS';
+    99→    99→  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+   100→   100→  return ((words[0][0] || '') + (words[1][0] || '')).toUpperCase();
+   101→   101→}
+   102→   102→
+   103→   103→const lerp = (a: number, b: number, t: number) => Math.round(a + (b - a) * t);
+   104→   104→
+   105→   105→/** Paints a vertical gold gradient band by stacking thin interpolated strips. */
+   106→   106→function goldGradient(doc: jsPDF, x: number, y: number, w: number, h: number): void {
+   107→   107→  const steps = Math.max(10, Math.min(64, Math.round(h)));
+   108→   108→  const stepH = h / steps;
+   109→   109→  for (let i = 0; i < steps; i++) {
+   110→   110→    const t = i / (steps - 1);
+   111→   111→    doc.setFillColor(
+   112→   112→      lerp(GOLD_LIGHT[0], GOLD_DEEP[0], t),
+   113→   113→      lerp(GOLD_LIGHT[1], GOLD_DEEP[1], t),
+   114→   114→      lerp(GOLD_LIGHT[2], GOLD_DEEP[2], t),
+   115→   115→    );
+   116→   116→    doc.rect(x, y + stepH * i, w, stepH + 0.4, 'F');
+   117→   117→  }
+   118→   118→}
+   119→   119→
+   120→   120→/** Small gold diamond ornament (two triangles) centered at (cx, cy). */
+   121→   121→function diamond(doc: jsPDF, cx: number, cy: number, r: number): void {
+   122→   122→  doc.setFillColor(...GOLD);
+   123→   123→  doc.triangle(cx - r, cy, cx, cy - r, cx, cy, 'F');
+   124→   124→  doc.triangle(cx, cy - r, cx + r, cy, cx, cy, 'F');
+   125→   125→  doc.triangle(cx - r, cy, cx, cy + r, cx, cy, 'F');
+   126→   126→  doc.triangle(cx, cy + r, cx + r, cy, cx, cy, 'F');
+   127→   127→}
+   128→   128→
+   129→   129→// ============ PDF ============
+   130→   130→
+   131→   131→export interface GeneratedPdf {
+   132→   132→  blob: Blob;
+   133→   133→  fileName: string;
+   134→   134→}
+   135→   135→
+   136→   136→export interface BillPdfImages {
+   137→   137→  signatureDataUrl?: string;
+   138→   138→  qrCodeDataUrl?: string;
+   139→   139→  upiId?: string;
+   140→   140→  thankYouNote?: string;
+   141→   141→  termsText?: string;
+   142→   142→  proprietorName?: string;
+   143→   143→}
+   144→   144→
+   145→   145→/**
+   146→   146→ * Draws a premium A5 invoice PDF for the bill.
+   147→   147→ * shopSnapshot (frozen at bill time) drives the header; signature/QR come
+   148→   148→ * from current billing settings.
+   149→   149→ */
+   150→   150→export async function generateBillPdf(
+   151→   151→  bill: Bill,
+   152→   152→  images: BillPdfImages = {},
+   153→   153→): Promise<GeneratedPdf> {
+   154→   154→  const doc = new jsPDF({ unit: 'pt', format: 'a5', orientation: 'portrait' });
+   155→   155→  const W = doc.internal.pageSize.getWidth();   // 419.5 pt
+   156→   156→  const H = doc.internal.pageSize.getHeight();  // 595.3 pt
+   157→   157→  const M = 26; // margin
+   158→   158→
+   159→   159→  const shop = bill.shopSnapshot || { name: 'PS TELECOM', address: '', phone: '', gstNumber: '' };
+   160→   160→  const shopName = shop.name || 'PS TELECOM';
+   161→   161→  const proprietor = shop.proprietorName ?? images.proprietorName ?? PROPRIETOR_FALLBACK;
+   162→   162→
+   163→   163→  // ---- Page frame (double gold certificate border) ----
+   164→   164→  doc.setDrawColor(...GOLD);
+   165→   165→  doc.setLineWidth(1.1);
+   166→   166→  doc.rect(8, 8, W - 16, H - 16, 'S');
+   167→   167→  doc.setDrawColor(...GOLD_LIGHT);
+   168→   168→  doc.setLineWidth(0.4);
+   169→   169→  doc.rect(12, 12, W - 24, H - 24, 'S');
+   170→   170→
+   171→   171→  // ---- Corner ornaments ----
+   172→   172→  const corner = (cx: number, cy: number, sx: number, sy: number) => {
+   173→   173→    doc.setFillColor(...GOLD);
+   174→   174→    doc.circle(cx, cy, 1.6, 'F');
+   175→   175→    doc.setDrawColor(...GOLD);
+   176→   176→    doc.setLineWidth(0.7);
+   177→   177→    doc.line(cx + sx * 5, cy, cx + sx * 14, cy);
+   178→   178→    doc.line(cx, cy + sy * 5, cx, cy + sy * 14);
+   179→   179→  };
+   180→   180→  corner(18, 18, 1, 1);
+   181→   181→  corner(W - 18, 18, -1, 1);
+   182→   182→  corner(18, H - 18, 1, -1);
+   183→   183→  corner(W - 18, H - 18, -1, -1);
+   184→   184→
+   185→   185→  // ---- Watermark (behind everything on the body) ----
+   186→   186→  doc.setFont('times', 'bold');
+   187→   187→  doc.setFontSize(42);
+   188→   188→  doc.setTextColor(...WATERMARK);
+   189→   189→  doc.text(shopName, W / 2, H * 0.58, { align: 'center', angle: 28 });
+   190→   190→
+   191→   191→  // ---- Header band ----
+   192→   192→  const HEAD_H = 116;
+   193→   193→  doc.setFillColor(...DARK);
+   194→   194→  doc.rect(0, 0, W, HEAD_H, 'F');
+   195→   195→  // subtle darker vignette strip
+   196→   196→  doc.setFillColor(...DARK2);
+   197→   197→  doc.rect(0, 0, W, 22, 'F');
+   198→   198→  goldGradient(doc, 0, HEAD_H, W, 4);
+   199→   199→  doc.setFillColor(...GOLD_DEEP);
+   200→   200→  doc.rect(0, HEAD_H + 4, W, 0.8, 'F');
+   201→   201→
+   202→   202→  // Monogram medallion
+   203→   203→  const mcx = M + 17, mcy = 32, mr = 16;
+   204→   204→  doc.setFillColor(...GOLD);
+   205→   205→  doc.circle(mcx, mcy, mr, 'F');
+   206→   206→  doc.setDrawColor(...GOLD_LIGHT);
+   207→   207→  doc.setLineWidth(0.9);
+   208→   208→  doc.circle(mcx, mcy, mr - 2.4, 'S');
+   209→   209→  doc.setTextColor(...DARK);
+   210→   210→  doc.setFont('times', 'bold');
+   211→   211→  doc.setFontSize(13);
+   212→   212→  doc.text(shopInitials(shopName), mcx, mcy + 4.5, { align: 'center' });
+   213→   213→
+   214→   214→  // Shop name — serif, letter-spaced, auto-shrink to fit
+   215→   215→  const nameX = M + 44;
+   216→   216→  const nameMaxW = W - nameX - M - 84;
+   217→   217→  let nameSize = 19;
+   218→   218→  doc.setFont('times', 'bold');
+   219→   219→  doc.setTextColor(255, 255, 255);
+   220→   220→  do {
+   221→   221→    doc.setFontSize(nameSize);
+   222→   222→    doc.setCharSpace(1.1);
+   223→   223→    if (doc.getTextWidth(shopName) <= nameMaxW) break;
+   224→   224→    doc.setCharSpace(0);
+   225→   225→    nameSize -= 0.5;
+   226→   226→  } while (nameSize > 11);
+   227→   227→  doc.text(shopName, nameX, 36);
+   228→   228→  doc.setCharSpace(0);
+   229→   229→
+   230→   230→  // Proprietor line
+   231→   231→  let headerY = 50;
+   232→   232→  if (proprietor) {
+   233→   233→    doc.setFont('times', 'italic');
+   234→   234→    doc.setFontSize(8.8);
+   235→   235→    doc.setTextColor(238, 208, 140);
+   236→   236→    doc.text(`Proprietor: ${proprietor}`, nameX, headerY);
+   237→   237→    headerY += 12;
+   238→   238→  }
+   239→   239→
+   240→   240→  // Address / contact
+   241→   241→  doc.setFont('helvetica', 'normal');
+   242→   242→  doc.setFontSize(7.8);
+   243→   243→  doc.setTextColor(214, 216, 226);
+   244→   244→  if (shop.address) {
+   245→   245→    const addressLines = doc.splitTextToSize(shop.address, W - nameX - M - 84) as string[];
+   246→   246→    doc.text(addressLines, nameX, headerY);
+   247→   247→    headerY += addressLines.length * 9.5;
+   248→   248→  }
+   249→   249→  const contactBits: string[] = [];
+   250→   250→  if (shop.phone) contactBits.push(`Ph: ${shop.phone}`);
+   251→   251→  if (shop.gstNumber) contactBits.push(`GSTIN: ${shop.gstNumber}`);
+   252→   252→  if (contactBits.length) doc.text(contactBits.join('  |  '), nameX, headerY);
+   253→   253→
+   254→   254→  // INVOICE plate (right, gold gradient with engraved border)
+   255→   255→  const plateW = 78, plateH = 20, plateX = W - M - plateW, plateY = 16;
+   256→   256→  goldGradient(doc, plateX, plateY, plateW, plateH);
+   257→   257→  doc.setDrawColor(...DARK);
+   258→   258→  doc.setLineWidth(0.9);
+   259→   259→  doc.rect(plateX + 2, plateY + 2, plateW - 4, plateH - 4, 'S');
+   260→   260→  doc.setTextColor(...DARK);
+   261→   261→  doc.setFont('helvetica', 'bold');
+   262→   262→  doc.setFontSize(8.6);
+   263→   263→  doc.text(bill.gstEnabled ? 'TAX INVOICE' : 'INVOICE', plateX + plateW / 2, plateY + 13.5, { align: 'center' });
+   264→   264→
+   265→   265→  // Bill meta (right column)
+   266→   266→  doc.setTextColor(226, 228, 238);
+   267→   267→  doc.setFont('helvetica', 'normal');
+   268→   268→  doc.setFontSize(8.4);
+   269→   269→  doc.text(`Bill No: ${bill.billNumber}`, W - M, 52, { align: 'right' });
+   270→   270→  doc.text(`Date: ${formatDate(bill.date)}`, W - M, 63.5, { align: 'right' });
+   271→   271→
+   272→   272→  // ---- Bill To (with gold accent bar) ----
+   273→   273→  let y = 142;
+   274→   274→  doc.setFillColor(...GOLD);
+   275→   275→  doc.roundedRect(M, y - 14, 2.6, 44, 1.2, 1.2, 'F');
+   276→   276→  doc.setDrawColor(226, 219, 200);
+   277→   277→  doc.setLineWidth(0.7);
+   278→   278→  doc.roundedRect(M + 6, y - 14, W - M * 2 - 6, 44, 6, 6, 'S');
+   279→   279→  doc.setTextColor(...GRAY);
+   280→   280→  doc.setFontSize(7.4);
+   281→   281→  doc.setFont('helvetica', 'bold');
+   282→   282→  doc.setCharSpace(1);
+   283→   283→  doc.text('BILL TO', M + 16, y - 1);
+   284→   284→  doc.setCharSpace(0);
+   285→   285→  doc.setTextColor(...DARK);
+   286→   286→  doc.setFont('times', 'bold');
+   287→   287→  doc.setFontSize(12);
+   288→   288→  doc.text(bill.customerName || 'Walk-in Customer', M + 16, y + 14);
+   289→   289→  if (bill.customerMobile) {
+   290→   290→    doc.setFont('helvetica', 'normal');
+   291→   291→    doc.setFontSize(9);
+   292→   292→    doc.setTextColor(84, 88, 100);
+   293→   293→    doc.text(`Mob: ${bill.customerMobile}`, W - M - 14, y + 14, { align: 'right' });
+   294→   294→  }
+   295→   295→
+   296→   296→  y += 50;
+   297→   297→
+   298→   298→  // ---- Items table ----
+   299→   299→  const colItem = M + 10;
+   300→   300→  const colQty = W * 0.52;
+   301→   301→  const colRate = W * 0.66;
+   302→   302→  const colAmount = W - M - 12;
+   303→   303→  const tableTop = y;
+   304→   304→
+   305→   305→  doc.setFillColor(...DARK);
+   306→   306→  doc.rect(M, tableTop, W - M * 2, 23, 'F');
+   307→   307→  doc.setFillColor(...GOLD);
+   308→   308→  doc.rect(M, tableTop + 23, W - M * 2, 1.4, 'F');
+   309→   309→  doc.setTextColor(...GOLD_LIGHT);
+   310→   310→  doc.setFontSize(8.2);
+   311→   311→  doc.setFont('helvetica', 'bold');
+   312→   312→  doc.setCharSpace(0.6);
+   313→   313→  doc.text('ITEM', colItem, tableTop + 15.5);
+   314→   314→  doc.text('QTY', colQty, tableTop + 15.5, { align: 'center' });
+   315→   315→  doc.text('RATE', colRate, tableTop + 15.5, { align: 'right' });
+   316→   316→  doc.text('AMOUNT', colAmount, tableTop + 15.5, { align: 'right' });
+   317→   317→  doc.setCharSpace(0);
+   318→   318→
+   319→   319→  let rowY = tableTop + 24.4;
+   320→   320→  doc.setFont('helvetica', 'normal');
+   321→   321→  doc.setTextColor(...DARK);
+   322→   322→  for (const item of bill.items) {
+   323→   323→    const nameLines = doc.splitTextToSize(item.name, colQty - colItem - 14) as string[];
+   324→   324→    const rowHeight = Math.max(24, nameLines.length * 11 + 10);
+   325→   325→
+   326→   326→    if (bill.items.indexOf(item) % 2 === 1) {
+   327→   327→      doc.setFillColor(...IVORY);
+   328→   328→      doc.rect(M, rowY, W - M * 2, rowHeight, 'F');
+   329→   329→    }
+   330→   330→
+   331→   331→    doc.setFontSize(9.4);
+   332→   332→    doc.text(nameLines, colItem, rowY + 15);
+   333→   333→    doc.text(String(item.quantity), colQty, rowY + 15, { align: 'center' });
+   334→   334→    doc.text(`Rs. ${formatMoney(item.unitPrice)}`, colRate, rowY + 15, { align: 'right' });
+   335→   335→    doc.setFont('times', 'bold');
+   336→   336→    doc.setFontSize(10);
+   337→   337→    doc.text(`Rs. ${formatMoney(item.total)}`, colAmount, rowY + 15, { align: 'right' });
+   338→   338→    doc.setFont('helvetica', 'normal');
+   339→   339→    doc.setFontSize(9.4);
+   340→   340→
+   341→   341→    rowY += rowHeight;
+   342→   342→    doc.setDrawColor(228, 224, 214);
+   343→   343→    doc.setLineWidth(0.5);
+   344→   344→    doc.line(M, rowY, W - M, rowY);
+   345→   345→  }
+   346→   346→
+   347→   347→  // ---- Totals ----
+   348→   348→  y = rowY + 14;
+   349→   349→  const totalsX = W * 0.5;
+   350→   350→  const totalsLabelX = totalsX + 12;
+   351→   351→  const totalsValueX = W - M - 12;
+   352→   352→  const line = (label: string, value: string, opts?: { bold?: boolean; color?: RGB }) => {
+   353→   353→    doc.setFont('helvetica', opts?.bold ? 'bold' : 'normal');
+   354→   354→    doc.setFontSize(opts?.bold ? 10.5 : 9);
+   355→   355→    if (opts?.color) doc.setTextColor(...opts.color); else doc.setTextColor(70, 74, 86);
+   356→   356→    doc.text(label, totalsLabelX, y);
+   357→   357→    doc.text(value, totalsValueX, y, { align: 'right' });
+   358→   358→    y += opts?.bold ? 18 : 15;
+   359→   359→  };
+   360→   360→
+   361→   361→  line('Subtotal', `Rs. ${formatMoney(bill.subtotal)}`);
+   362→   362→  if (bill.discountAmount > 0) {
+   363→   363→    const pct = bill.discountType === 'percent' ? ` (${bill.discountValue}%)` : '';
+   364→   364→    line(`Discount${pct}`, `- Rs. ${formatMoney(bill.discountAmount)}`, { color: GREEN });
+   365→   365→  }
+   366→   366→  if (bill.gstEnabled && bill.gstAmount > 0) {
+   367→   367→    line(`GST (${bill.gstRate}%)`, `Rs. ${formatMoney(bill.gstAmount)}`);
+   368→   368→  }
+   369→   369→
+   370→   370→  // Grand total — engraved gold plate
+   371→   371→  y += 2;
+   372→   372→  const bandH = 28;
+   373→   373→  goldGradient(doc, totalsX, y, W - M - totalsX, bandH);
+   374→   374→  doc.setDrawColor(...DARK);
+   375→   375→  doc.setLineWidth(0.9);
+   376→   376→  doc.rect(totalsX + 2, y + 2, W - M - totalsX - 4, bandH - 4, 'S');
+   377→   377→  doc.setTextColor(...DARK);
+   378→   378→  doc.setFont('times', 'bold');
+   379→   379→  doc.setFontSize(11);
+   380→   380→  doc.text('GRAND TOTAL', totalsLabelX, y + 18.5);
+   381→   381→  doc.setFontSize(13.5);
+   382→   382→  doc.text(`Rs. ${formatMoney(bill.total)}`, totalsValueX, y + 18.5, { align: 'right' });
+   383→   383→  y += bandH + 8;
+   384→   384→
+   385→   385→  if (bill.paidAmount > 0 || bill.dueAmount > 0) {
+   386→   386→    line('Paid', `Rs. ${formatMoney(bill.paidAmount)}`, { color: GREEN });
+   387→   387→    if (bill.dueAmount > 0) {
+   388→   388→      line('Balance Due', `Rs. ${formatMoney(bill.dueAmount)}`, { color: RED, bold: true });
+   389→   389→    }
+   390→   390→  }
+   391→   391→  const pmLabel: Record<string, string> = { cash: 'Cash', upi: 'UPI', card: 'Card', due: 'Due (Credit)' };
+   392→   392→  line('Payment Method', pmLabel[bill.paymentMethod] || bill.paymentMethod);
+   393→   393→
+   394→   394→  // Amount in words (left column, next to totals)
+   395→   395→  const wordsY = tableTop + 22 + Math.max(bill.items.length * 26, 30) + 12;
+   396→   396→  doc.setFont('times', 'bolditalic');
+   397→   397→  doc.setFontSize(8.4);
+   398→   398→  doc.setTextColor(...GRAY);
+   399→   399→  const wordsLines = doc.splitTextToSize(`In Words: ${amountInWords(bill.total)}`, W * 0.46) as string[];
+   400→   400→  doc.text(wordsLines, M + 2, Math.min(wordsY, rowY + 24));
+   401→   401→
+   402→   402→  if (bill.note) {
+   403→   403→    doc.setFont('helvetica', 'italic');
+   404→   404→    doc.setFontSize(8.5);
+   405→   405→    doc.setTextColor(90, 94, 106);
+   406→   406→    const noteLines = doc.splitTextToSize(`Note: ${bill.note}`, W - M * 2) as string[];
+   407→   407→    doc.text(noteLines, M, y + 6);
+   408→   408→    y += noteLines.length * 11 + 8;
+   409→   409→  }
+   410→   410→
+   411→   411→  // ---- QR + Signature row (pinned near bottom) ----
+   412→   412→  const bottomZone = H - 104;
+   413→   413→  if (y < bottomZone - 8) y = bottomZone;
+   414→   414→
+   415→   415→  if (images.qrCodeDataUrl) {
+   416→   416→    try {
+   417→   417→      const qrSize = 62;
+   418→   418→      doc.setFillColor(255, 255, 255);
+   419→   419→      doc.setDrawColor(...GOLD);
+   420→   420→      doc.setLineWidth(0.8);
+   421→   421→      doc.roundedRect(M - 2, y - 2, qrSize + 4, qrSize + 4, 4, 4, 'FD');
+   422→   422→      doc.addImage(images.qrCodeDataUrl, 'PNG', M, y, qrSize, qrSize);
+   423→   423→      doc.setFont('helvetica', 'normal');
+   424→   424→      doc.setFontSize(7);
+   425→   425→      doc.setTextColor(...GRAY);
+   426→   426→      doc.text(images.upiId ? `Scan to pay  |  UPI: ${images.upiId}` : 'Scan to pay', M + qrSize / 2, y + qrSize + 12, { align: 'center' });
+   427→   427→    } catch {
+   428→   428→      // invalid image data — skip QR silently
+   429→   429→    }
+   430→   430→  }
+   431→   431→
+   432→   432→  // Signature block
+   433→   433→  if (images.signatureDataUrl) {
+   434→   434→    try {
+   435→   435→      doc.addImage(images.signatureDataUrl, 'PNG', W - M - 92, y - 14, 92, 32);
+   436→   436→    } catch {
+   437→   437→      // invalid image data — skip signature silently
+   438→   438→    }
+   439→   439→  }
+   440→   440→  doc.setDrawColor(140, 144, 156);
+   441→   441→  doc.setLineWidth(0.6);
+   442→   442→  doc.line(W - M - 102, y + 26, W - M, y + 26);
+   443→   443→  doc.setFont('helvetica', 'normal');
+   444→   444→  doc.setFontSize(8);
+   445→   445→  doc.setTextColor(...GRAY);
+   446→   446→  doc.text(`For ${shopName}`, W - M, y + 12, { align: 'right' });
+   447→   447→  if (proprietor) {
+   448→   448→    doc.setFont('times', 'bold');
+   449→   449→    doc.setFontSize(9.5);
+   450→   450→    doc.setTextColor(...DARK);
+   451→   451→    doc.text(proprietor, W - M, y + 38, { align: 'right' });
+   452→   452→    doc.setFont('helvetica', 'normal');
+   453→   453→    doc.setFontSize(7.2);
+   454→   454→    doc.setTextColor(...GRAY);
+   455→   455→    doc.text('Proprietor', W - M, y + 47, { align: 'right' });
+   456→   456→  }
+   457→   457→
+   458→   458→  // ---- Footer: ornament divider + thank you + terms ----
+   459→   459→  const divY = H - 44;
+   460→   460→  doc.setDrawColor(...GOLD);
+   461→   461→  doc.setLineWidth(0.6);
+   462→   462→  doc.line(M + 4, divY, W / 2 - 9, divY);
+   463→   463→  doc.line(W / 2 + 9, divY, W - M - 4, divY);
+   464→   464→  diamond(doc, W / 2, divY, 3);
+   465→   465→
+   466→   466→  doc.setFont('times', 'bolditalic');
+   467→   467→  doc.setFontSize(10);
+   468→   468→  doc.setTextColor(...DARK);
+   469→   469→  const thanks = images.thankYouNote || 'Thank you for your business!';
+   470→   470→  doc.text(thanks, W / 2, H - 31, { align: 'center' });
+   471→   471→
+   472→   472→  doc.setFont('helvetica', 'normal');
+   473→   473→  doc.setFontSize(6.6);
+   474→   474→  doc.setTextColor(150, 154, 166);
+   475→   475→  let footer = `Generated on ${new Date().toLocaleString('en-GB')} — PS TELECOM App`;
+   476→   476→  if (images.termsText) {
+   477→   477→    footer = `${images.termsText}  |  ${footer}`;
+   478→   478→  }
+   479→   479→  doc.text(doc.splitTextToSize(footer, W - M * 2 - 20) as string[], W / 2, H - 19.5, { align: 'center' });
+   480→   480→
+   481→   481→  const blob = doc.output('blob');
+   482→   482→  const fileName = `${shopName.replace(/[^a-zA-Z0-9]+/g, '-')}-${bill.billNumber}.pdf`;
+   483→   483→  return { blob, fileName };
+   484→   484→}
+   485→   485→
+   486→   486→// ============ SHARE ============
+   487→   487→
+   488→   488→export function downloadBlob(blob: Blob, fileName: string): void {
+   489→   489→  const url = URL.createObjectURL(blob);
+   490→   490→  const a = document.createElement('a');
+   491→   491→  a.href = url;
+   492→   492→  a.download = fileName;
+   493→   493→  document.body.appendChild(a);
+   494→   494→  a.click();
+   495→   495→  a.remove();
+   496→   496→  setTimeout(() => URL.revokeObjectURL(url), 4000);
+   497→   497→}
+   498→   498→
+   499→   499→/** True when the app runs inside an iframe (e.g. an embedded preview panel) —
+   500→   500→ * sharing files from a framed page is blocked unless the frame is explicitly
+   501→   501→ * allowed, so we tell the user to open the app in its own tab instead. */
+   502→   502→export function isEmbeddedFrame(): boolean {
+   503→   503→  try {
+   504→   504→    return window.self !== window.top;
+   505→   505→  } catch {
+   506→   506→    return true; // cross-origin access threw → definitely framed
+   507→   507→  }
+   508→   508→}
+   509→   509→
+   510→   510→/**
+   511→   511→ * Sync native-app detection. @capacitor/core registers a global
+   512→   512→ * `window.Capacitor` in BOTH the APK WebView and the web build (it's loaded
+   513→   513→ * by capacitor-init), so the tell is `isNativePlatform()`: false in normal
+   514→   514→ * browsers, true inside the APK. Deciding this WITHOUT awaiting anything
+   515→   515→ * matters — waiting would burn the tap's transient user activation and
+   516→   516→ * mobile browsers would reject navigator.share with NotAllowedError → the
+   517→   517→ * PDF silently never reaches WhatsApp.
+   518→   518→ */
+   519→   519→function isNativeApp(): boolean {
+   520→   520→  if (typeof window === 'undefined') return false;
+   521→   521→  const cap = (window as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+   522→   522→  return !!cap?.isNativePlatform?.();
+   523→   523→}
+   524→   524→
+   525→   525→/**
+   526→   526→ * Blob → base64 (no data-url prefix) — needed by Capacitor Filesystem.writeFile.
+   527→   527→ */
+   528→   528→function blobToBase64(blob: Blob): Promise<string> {
+   529→   529→  return new Promise((resolve, reject) => {
+   530→   530→    const reader = new FileReader();
+   531→   531→    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+   532→   532→    reader.onerror = () => reject(new Error('Could not read the PDF file'));
+   533→   533→    reader.readAsDataURL(blob);
+   534→   534→  });
+   535→   535→}
+   536→   536→
+   537→   537→export type FileShareResult =
+   538→   538→  | 'shared'      // the real PDF file was handed to the OS share sheet
+   539→   539→  | 'cancelled'   // user closed the share sheet without sending
+   540→   540→  | 'unsupported' // this browser cannot share files (share sheet unavailable)
+   541→   541→  | 'blocked';    // share rejected (NotAllowedError / SecurityError / …)
+   542→   542→
+   543→   543→/**
+   544→   544→ * Hand the ACTUAL PDF file to the OS share sheet, choosing the right
+   545→   545→ * transport without ever delaying the first share attempt:
+   546→   546→ *
+   547→   547→ *  1. Mobile/desktop browser — `navigator.share({ files })` is the FIRST
+   548→   548→ *     thing that runs, before ANY await, so the call happens while the
+   549→   549→ *     user's tap activation is still fresh. This is what makes the PDF
+   550→   550→ *     actually attach in WhatsApp on phones.
+   551→   551→ *  2. Capacitor APK — Android WebView has no navigator.share; we write the
+   552→   552→ *     PDF to the app cache and hand the real file to the Android share
+   553→   553→ *     sheet via @capacitor/share.
+   554→   554→ */
+   555→   555→export async function sharePdfFile(blob: Blob, fileName: string, text: string): Promise<FileShareResult> {
+   556→   556→  const file = new File([blob], fileName, { type: 'application/pdf' });
+   557→   557→  const nav = navigator as Navigator;
+   558→   558→
+   559→   559→  // ---- 1. Browser: Web Share API Level 2 (files) — called instantly ----
+   560→   560→  if (!isNativeApp() && typeof nav.share === 'function') {
+   561→   561→    try {
+   562→   562→      await nav.share({ files: [file], title: fileName, text });
+   563→   563→      return 'shared';
+   564→   564→    } catch (err) {
+   565→   565→      const name = (err as Error)?.name || '';
+   566→   566→      if (name === 'AbortError') return 'cancelled'; // user closed the sheet
+   567→   567→      // TypeError/NotSupportedError → this browser cannot share FILES
+   568→   568→      if (name === 'TypeError' || name === 'NotSupportedError') return 'unsupported';
+   569→   569→      return 'blocked'; // NotAllowedError / SecurityError (e.g. framed page)
+   570→   570→    }
+   571→   571→  }
+   572→   572→
+   573→   573→  // ---- 2. Native APK (WebView: no navigator.share) ----
+   574→   574→  if (isNativeApp()) {
+   575→   575→    try {
+   576→   576→      const [{ Directory, Filesystem }, { Share }] = await Promise.all([
+   577→   577→        import('@capacitor/filesystem'),
+   578→   578→        import('@capacitor/share'),
+   579→   579→      ]);
+   580→   580→      const base64Data = await blobToBase64(blob);
+   581→   581→      const written = await Filesystem.writeFile({
+   582→   582→        path: fileName,
+   583→   583→        data: base64Data,
+   584→   584→        directory: Directory.Cache,
+   585→   585→        recursive: true,
+   586→   586→      });
+   587→   587→      await Share.share({
+   588→   588→        title: fileName,
+   589→   589→        text,
+   590→   590→        files: [written.uri],
+   591→   591→        dialogTitle: 'Send bill via…',
+   592→   592→      });
+   593→   593→      return 'shared';
+   594→   594→    } catch (err) {
+   595→   595→      const msg = String((err as Error)?.message || '').toLowerCase();
+   596→   596→      if (msg.includes('cancel')) return 'cancelled';
+   597→   597→      return 'blocked';
+   598→   598→    }
+   599→   599→  }
+   600→   600→
+   601→   601→  return 'unsupported';
+   602→   602→}
+   603→   603→
+   604→   604→/** Build the WhatsApp text summary for a bill. */
+   605→   605→export function buildBillMessage(bill: Bill, opts?: { withPdfNote?: boolean }): string {
+   606→   606→  const shop = bill.shopSnapshot || { name: 'PS TELECOM', address: '', phone: '', gstNumber: '' };
+   607→   607→  const shopName = shop.name || 'PS TELECOM';
+   608→   608→  const proprietor = shop.proprietorName ?? PROPRIETOR_FALLBACK;
+   609→   609→  const lines: string[] = [];
+   610→   610→
+   611→   611→  lines.push(`*${shopName}*`);
+   612→   612→  if (proprietor) lines.push(`_${proprietor}_`);
+   613→   613→  if (shop.address) lines.push(shop.address.replace(/\n+/g, ', '));
+   614→   614→  const contact: string[] = [];
+   615→   615→  if (shop.phone) contact.push(`Ph: ${shop.phone}`);
+   616→   616→  if (shop.gstNumber) contact.push(`GSTIN: ${shop.gstNumber}`);
+   617→   617→  if (contact.length) lines.push(contact.join(' | '));
+   618→   618→
+   619→   619→  lines.push('━━━━━━━━━━━━━━━━━━');
+   620→   620→  // NOTE: no astral-plane (4-byte UTF-8) emoji here — some network proxies
+   621→   621→  // mangle them into U+FFFD. BMP symbols (━ • — ₹ ⚠) travel safely.
+   622→   622→  lines.push(`*${bill.gstEnabled ? 'TAX INVOICE' : 'INVOICE'}*`);
+   623→   623→  lines.push(`Bill No: ${bill.billNumber}`);
+   624→   624→  lines.push(`Date: ${formatDate(bill.date)}`);
+   625→   625→  lines.push(`Customer: ${bill.customerName || 'Walk-in Customer'}${bill.customerMobile ? ` (${bill.customerMobile})` : ''}`);
+   626→   626→  lines.push('━━━━━━━━━━━━━━━━━━');
+   627→   627→  for (const item of bill.items) {
+   628→   628→    lines.push(`• ${item.name} — ${item.quantity} × ₹${formatMoney(item.unitPrice)} = *₹${formatMoney(item.total)}*`);
+   629→   629→  }
+   630→   630→  lines.push('━━━━━━━━━━━━━━━━━━');
+   631→   631→  lines.push(`Subtotal: ₹${formatMoney(bill.subtotal)}`);
+   632→   632→  if (bill.discountAmount > 0) {
+   633→   633→    const pct = bill.discountType === 'percent' ? ` (${bill.discountValue}%)` : '';
+   634→   634→    lines.push(`Discount${pct}: -₹${formatMoney(bill.discountAmount)}`);
+   635→   635→  }
+   636→   636→  if (bill.gstEnabled && bill.gstAmount > 0) lines.push(`GST (${bill.gstRate}%): ₹${formatMoney(bill.gstAmount)}`);
+   637→   637→  lines.push(`*GRAND TOTAL: ₹${formatMoney(bill.total)}*`);
+   638→   638→  if (bill.paidAmount > 0) lines.push(`Paid: ₹${formatMoney(bill.paidAmount)}`);
+   639→   639→  if (bill.dueAmount > 0) lines.push(`⚠ Balance Due: ₹${formatMoney(bill.dueAmount)}`);
+   640→   640→  const pmLabel: Record<string, string> = { cash: 'Cash', upi: 'UPI', card: 'Card', due: 'Due (Credit)' };
+   641→   641→  lines.push(`Payment: ${pmLabel[bill.paymentMethod] || bill.paymentMethod}`);
+   642→   642→  lines.push('━━━━━━━━━━━━━━━━━━');
+   643→   643→  lines.push('Thank you for shopping with us!');
+   644→   644→  if (opts?.withPdfNote) lines.push('— PDF bill attached —');
+   645→   645→  return lines.join('\n');
+   646→   646→}
+   647→   647→
+   648→   648→/** wa.me deep link that opens the customer's chat with the bill summary pre-filled. */
+   649→   649→export function whatsappUrl(mobile: string, message: string): string {
+   650→   650→  const normalized = normalizeMobile(mobile);
+   651→   651→  return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
+   652→   652→}
+   653→   653→
+   654→   654→/**
+   655→   655→ * Open the customer's WhatsApp chat. window.open can be blocked as a popup
+   656→   656→ * when it runs after async work — fall back to navigating this tab directly
+   657→   657→ * so the chat ALWAYS opens.
+   658→   658→ */
+   659→   659→export function openWhatsappChat(mobile: string, message: string): void {
+   660→   660→  const url = whatsappUrl(mobile, message);
+   661→   661→  const win = window.open(url, '_blank');
+   662→   662→  if (!win) window.location.href = url;
+   663→   663→}
+   664→   664→
+   665→   665→export type WhatsappSendResult =
+   666→   666→  | 'shared'          // PDF handed to the OS share sheet → user picks WhatsApp
+   667→   667→  | 'cancelled'       // user closed the share sheet
+   668→   668→  | 'iframe-blocked'  // blocked because the app runs inside an iframe (preview)
+   669→   669→  | 'fallback'        // PDF downloaded + wa.me chat opened → attach the file manually
+   670→   670→  | 'no-mobile';      // PDF downloaded, but customer has no WhatsApp number
+   671→   671→
+   672→   672→/**
+   673→   673→ * Fallback when the file share is impossible: download the PDF and open the
+   674→   674→ * customer's WhatsApp chat with the bill summary, so the user only has to
+   675→   675→ * attach the downloaded file with the 📎 button.
+   676→   676→ */
+   677→   677→export async function fallbackDownloadAndChat(
+   678→   678→  bill: Bill,
+   679→   679→  pdf: GeneratedPdf,
+   680→   680→): Promise<'fallback' | 'no-mobile'> {
+   681→   681→  downloadBlob(pdf.blob, pdf.fileName);
+   682→   682→  if (bill.customerMobile) {
+   683→   683→    openWhatsappChat(bill.customerMobile, buildBillMessage(bill));
+   684→   684→    return 'fallback';
+   685→   685→  }
+   686→   686→  return 'no-mobile';
+   687→   687→}
+   688→   688→
+   689→   689→/**
+   690→   690→ * One-tap WhatsApp flow WITH the PDF attached:
+   691→   691→ *  1. Mobile browser (HTTPS): Web Share API Level 2 — the share sheet opens
+   692→   692→ *     carrying the REAL PDF file + pre-filled bill message; the user taps
+   693→   693→ *     WhatsApp, picks the customer chat, and the PDF travels attached.
+   694→   694→ *  2. Native APK: Android share sheet carrying the real PDF file.
+   695→   695→ *  3. Fallback (desktop / files unsupported / share blocked): downloads the
+   696→   696→ *     PDF and opens the customer's wa.me chat with the bill summary so the
+   697→   697→ *     user attaches the downloaded file manually.
+   698→   698→ */
+   699→   699→export async function sendBillViaWhatsapp(
+   700→   700→  bill: Bill,
+   701→   701→  pdf: GeneratedPdf,
+   702→   702→  opts?: { pdfNote?: boolean },
+   703→   703→): Promise<WhatsappSendResult> {
+   704→   704→  const message = buildBillMessage(bill, { withPdfNote: opts?.pdfNote !== false });
+   705→   705→  const res = await sharePdfFile(pdf.blob, pdf.fileName, message);
+   706→   706→  if (res === 'shared' || res === 'cancelled') return res;
+   707→   707→  if (res === 'blocked' && isEmbeddedFrame()) return 'iframe-blocked';
+   708→   708→  return fallbackDownloadAndChat(bill, pdf);
+   709→   709→}
+   710→   710→

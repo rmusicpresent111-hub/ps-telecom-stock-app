@@ -1,0 +1,303 @@
+     1→    70→- Backup/restore works offline using local data
+     2→    71→- Delete operations tracked in pendingDeletes queue and synced to Supabase when back online
+     3→    72→- Auto-sync runs every 30 seconds when online + triggers on online event
+     4→    73→- App fully functional in offline mode with instant local data access
+     5→    74→---
+     6→    75→Task ID: 1
+     7→    76→Agent: main
+     8→    77→Task: Add success sound tunes after stock out, instant sell, and product add operations
+     9→    78→
+    10→    79→Work Log:
+    11→    80→- Created `/home/z/my-project/src/lib/sound-service.ts` — Web Audio API-based sound synthesizer with 5 distinct sounds:
+    12→    81→  - `playSuccessSound()` — Premium C5→E5→G5 major chord arpeggio with shimmer harmonics (for product add/edit)
+    13→    82→  - `playSellSound()` — Cash-register "ka-ching" style with bell ding + success chime (for instant sell)
+    14→    83→  - `playStockOutSound()` — Firm two-note descending then resolving upward (for stock out)
+    15→    84→  - `playStockInSound()` — Ascending positive tone (for stock in)
+    16→    85→  - `playErrorSound()` — Short descending sawtooth tone (for errors)
+    17→    86→- Updated `StockOperationScreen.tsx`:
+    18→    87→  - Added imports for `playStockOutSound`, `playSellSound`, `playStockInSound`
+    19→    88→  - Fixed BUG: `createTransaction()` → `createTransactionOffline()` (was calling undefined function)
+    20→    89→  - Fixed BUG: `getProducts()` → `getProductsOffline()` (was calling undefined function)
+    21→    90→  - Fixed BUG: `data.products` → direct array (getProductsOffline returns `Product[]` not `{products: Product[]}`)
+    22→    91→  - Fixed BUG: Missing `selectedCategoryId` option pass-through
+    23→    92→  - Added sound playback after successful transaction based on operation type
+    24→    93→- Updated `AddProductScreen.tsx`:
+    25→    94→  - Added import for `playSuccessSound`
+    26→    95→  - Added `playSuccessSound()` call before toast on successful product add/edit
+    27→    96→  - Navigation back (goBack) was already working correctly
+    28→    97→
+    29→    98→Stage Summary:
+    30→    99→- All stock operations now play distinct pleasant sounds on success
+    31→   100→- Fixed 4 critical bugs in StockOperationScreen that would have caused runtime errors
+    32→   101→- AddProductScreen already had goBack() on success — confirmed working
+    33→   102→- Lint passes clean, dev server running with 200 status
+    34→   103→---
+    35→   104→Task ID: 2
+    36→   105→Agent: main
+    37→   106→Task: Add light animations to all category displays in the app
+    38→   107→
+    39→   108→Work Log:
+    40→   109→- Added Framer Motion staggered entry animation to DashboardScreen category grid:
+    41→   110→  - `categoryContainerVariants` with staggerChildren: 0.06, delayChildren: 0.1
+    42→   111→  - `categoryItemVariants` with opacity, y, scale spring animation
+    43→   112→  - CategoryCard now wrapped with `motion.div` with whileHover (scale 1.06, y -2) and whileTap (scale 0.95)
+    44→   113→  - Both user categories grid and default categories grid use motion containers
+    45→   114→- Enhanced CSS for category cards:
+    46→   115→  - `.category-card` now has cubic-bezier spring transition + box-shadow on hover (golden glow)
+    47→   116→  - `.category-img-zoom` class: image zooms to 1.12x on card hover
+    48→   117→  - `.category-emoji-bounce` class: emoji scales up 1.2x and lifts on hover
+    49→   118→  - `.category-img-overlay` fades on hover for more image visibility
+    50→   119→  - `@keyframes categoryGlow` defined for potential use
+    51→   120→- Added animation to CategoryDetailScreen:
+    52→   121→  - Category banner image now has spring scale-in animation
+    53→   122→  - Product list items now have staggered slide-in (delay: idx * 0.04)
+    54→   123→  - Product items have whileHover (scale 1.01, x 3) and whileTap (scale 0.98)
+    55→   124→- Added stagger animation to AddCategoryScreen:
+    56→   125→  - Preset image picker grid: stagger 0.04s, spring scale-in
+    57→   126→  - Emoji picker grid: same stagger pattern
+    58→   127→  - Both have whileHover (scale 1.08/1.15) and whileTap effects
+    59→   128→
+    60→   129→Stage Summary:
+    61→   130→- All category displays now have smooth, premium-quality animations
+    62→   131→- Dashboard: staggered fade+scale+slide entry with hover lift & image zoom
+    63→   132→- Category Detail: banner spring-in + product list staggered slide
+    64→   133→- Add Category: preset grid stagger pop-in with hover bounce
+    65→   134→- CSS enhancements: golden glow hover, image zoom, emoji float
+    66→   135→- Lint passes, dev server running 200
+    67→   136→
+    68→   137→---
+    69→   138→Task ID: 1
+    70→   139→Agent: Main Agent
+    71→   140→Task: Clone user's GitHub repo (ps-telecom-stock-app) into sandbox and get it running for preview
+    72→   141→
+    73→   142→Work Log:
+    74→   143→- Cloned https://github.com/rmusicpresent111-hub/ps-telecom-stock-app.git into /tmp (initially 404/private, succeeded after user made it public)
+    75→   144→- Replaced sandbox default project files with the cloned repo (kept .git, remote origin intact)
+    76→   145→- Installed 926 packages via bun install
+    77→   146→- Prisma: schema already matched db/custom.db (db:generate + db:push - already in sync)
+    78→   147→- Fixed next.config.ts: removed `turbopack: { root: ".." }` which resolved to /home/z and caused dev server compile to hang/crash
+    79→   148→- Started dev server on port 3000, page compiles and returns HTTP 200
+    80→   149→- Verified via agent-browser: Welcome screen renders, Get Started → Onboarding → Login screen all work
+    81→   150→- Screenshots saved: upload/preview-welcome.png, preview-login.png, preview-desktop.png
+    82→   151→- Lint passes with no errors
+    83→   152→
+    84→   153→Stage Summary:
+    85→   154→- PS TELECOM Stock Management app fully running on port 3000
+    86→   155→- One config change: next.config.ts turbopack.root removed (fixes dev server hang)
+    87→   156→- App architecture: Next.js 16 + Supabase (client-side) + IndexedDB offline-first + Capacitor (APK)
+    88→   157→- Git remote origin preserved for future push of modifications
+    89→   158→
+    90→   159→---
+    91→   160→Task ID: 3-a
+    92→   161→Agent: Explore (senior code auditor)
+    93→   162→Task: Deep audit of core lib files (offline-service, offline-db, sync-engine, supabase-service, supabase, auth, cache, sound-service, appStore, types, capacitor-init, i18n) + screen consumption cross-check. RESEARCH ONLY - no source files modified.
+    94→   163→
+    95→   164→Work Log:
+    96→   165→- Read all 12 in-scope lib/store files end-to-end, plus supabase-schema.sql, SplashScreen, DashboardScreen, DailyBookScreen, StockOperationScreen, AddProductScreen, ProductDetailScreen, ProfileScreen, SetupScreen, LoginScreen, ProfitScreen, ServiceCategoryScreen (usage sites)
+    97→   166→- Cross-checked every screen import against lib exports (function names, arg shapes, return shapes): no missing/wrong-signature calls found this pass; getDashboard alias, updateProductOffline(id, updates+userId), deleteProductOffline(id, userId), updateCashEntryOffline(id, updates, userId), all cash/expense/service fns verified matching
+    98→   167→- Traced full sync lifecycle: local write -> dirty flag -> syncAll (pendingDeletes -> syncToSupabase -> syncPendingProfile -> syncFromSupabase) and the per-getter fire-and-forget syncFromSupabase calls
+    99→   168→- Verified schema constraints (FK CASCADE on products/transactions) against delete/resurrection flows
+   100→   169→- Identified 22 findings: 4 critical, 5 high, 7 medium, 6 low
+   101→   170→
+   102→   171→Stage Summary:
+   103→   172→- CRITICAL 1: sync-engine.ts:296-318 double-applies stock changes for offline-created transactions (dirty product uploaded with absolute quantity, then txn upload adds quantityChange again -> server+local stock corrupted by +/- qty per offline txn)
+   104→   173→- CRITICAL 2: Security - RLS "Allow all USING(true)" on every table + unsalted SHA-256 password hashes selectable by anon client + hardcoded anon key in public repo = full DB read/write/delete and account takeover by anyone
+   105→   174→- CRITICAL 3: No sync concurrency guard - 30s interval + online-event + every getter fires syncFromSupabase; overlapping downloads putBulk with _dirty:0 and clobber unsynced local edits (lost data)
+   106→   175→- CRITICAL 4: syncToSupabase ignores Supabase {error} on insert/update for all 6 stores and marks items _dirty:0 anyway -> silent permanent data loss on any write failure
+   107→   176→- HIGH: txn marked synced even when insert skipped (product not on server); DailyBook period filter ignored by offline getters (wrong money totals); service_transactions table missing from both schema files (sync broken if DB built from them); deleted rows resurrect (no local reconciliation of server deletes); importBackup unchecked delete+insert errors can wipe DB silently
+   108→   177→- MEDIUM: resetData misses service_transactions (resurrection after reset); pending profile updates held in RAM only (lost on restart) + offline updateProfileOffline returns sparse user corrupting persisted store; non-atomic stock updates (server & local); backup export/import omit serviceTransactions; UTC day boundaries mis-bucket transactions after midnight local (IST); IndexedDB getDB caches rejected promise forever; SplashScreen waitTimer leak
+   109→   178→- LOW: stopAutoSync never called on logout; auth.ts dead code w/ Node crypto import; updateCategory missing cache invalidation; online-fallback getters never persist fetched data to IndexedDB; stale language dep in DashboardScreen fetchDashboard; unused generateId import in sync-engine
+   110→   179→- Top 3 fixes to apply first: (1) make syncFromSupabase skip/merge _dirty>0 rows and add a sync mutex; (2) stop applying quantityChange on txn upload when product was uploaded in same pass (or use atomic RPC for stock); (3) check {error} everywhere in syncToSupabase and only mark synced on success
+   111→   180→
+   112→   181→---
+   113→   182→Task ID: 3-b
+   114→   183→Agent: Explore (senior code auditor)
+   115→   184→Task: Deep audit of core screens (auth, dashboard, product/stock flows) + nav/exit logic — RESEARCH ONLY, no source files modified
+   116→   185→
+   117→   186→Work Log:
+   118→   187→- Read worklog history (Tasks 1, 2, sound-tunes, animations, clone) for context on offline-service migration
+   119→   188→- Read all 10 in-scope screens + BottomNav.tsx + useBackHandler.ts + page.tsx + appStore.ts line by line
+   120→   189→- Cross-checked every imported lib function exists with correct signature: getDashboard (offline-service.ts:587 alias ✅), getProductsOffline (:161), createProductOffline (:196), updateProductOffline (:248), deleteProductOffline (:288), createTransactionOffline (:319), getTransactionsOffline (:447), getDashboardOffline (:480), getProfileOffline (:1162), login/signup (supabase-service.ts:18/44), isOnline/initialSyncForUser (sync-engine.ts:29/467), invalidateCache/cacheKeys (cache.ts:37/50), all 5 sound fns (sound-service.ts:66-149), t() (i18n.ts:665)
+   121→   190→- Verified all i18n keys used by screens exist (script checked ~60 keys → all present)
+   122→   191→- Verified page.tsx screen registry maps 1:1 with the Screen union in lib/types.ts (24/24, Record<Screen,…> compile-enforced)
+   123→   192→- Ran full `tsc --noEmit`: ZERO errors in src/ (only stray sandbox examples/ + skills/ errors, not part of app) — confirmed no identifier mismatches, no wrong imports
+   124→   193→- Verified oversell protection EXISTS: createTransactionOffline throws 'Insufficient stock' (offline-service.ts:338-340) and supabase-service.createTransaction re-checks server-side
+   125→   194→- Traced state lifecycles with rg: selectedProductId cleared only on save/cancel/delete; selectedCategoryId set ONLY in DashboardScreen:295 and NEVER cleared; searchQuery only ever SET (DashboardScreen:300), never cleared
+   126→   195→- Byte-verified suspicious identifier spellings in StockOperationScreen via rg/od (file is internally consistent; earlier suspicion of mismatched names was wrong)
+   127→   196→
+   128→   197→Findings: 20 (1 critical, 5 high, 9 medium, 5 low) — full list with file:line and fixes returned in audit report
+   129→   198→
+   130→   199→Stage Summary:
+   131→   200→- CRITICAL: StockOperationScreen.tsx:44-46 filters product list by stale selectedCategoryId (set once in DashboardScreen:295, never cleared) → stock-in/sell blocked with "Product not found" for any product outside the last-visited category
+   132→   201→- HIGH: StockOperationScreen.tsx:23 selects selectedProductId but never uses it → product preselection from Product Detail / Category Detail completely broken (exact-name retyping required)
+   133→   202→- HIGH: AddProductScreen edit-mode trap — stale selectedProductId (not cleared on hardware back or on "+" buttons in Dashboard/ProductList/CategoryDetail) silently reopens Add form in EDIT mode → user overwrites an existing product thinking they're adding a new one
+   134→   203→- HIGH: ForgotPasswordScreen.tsx:26-37 is a placeholder that fakes success ("reset link sent") — no reset function exists anywhere
+   135→   204→- HIGH: No email normalization anywhere (supabase-service.ts login :25 / signup :53; screens pass raw input) → case/space mismatches cause permanent "Invalid email or password"
+   136→   205→- HIGH: StockOperationScreen confirms transactions with empty/zero/negative price (only qty validated) → ₹0 sales and negative totals corrupt profit/report math
+   137→   206→- MEDIUM: UTC-vs-local date bugs (toISOString().split('T')[0]) in DashboardScreen:235, offline-service:351/499-537 → "Today's Profit" wrong 00:00-05:30 IST; sale chart labels (toLocaleDateString local) misaligned with UTC date buckets
+   138→   207→- MEDIUM: Dashboard today-profit uses CURRENT purchasePrice instead of sale-time snapshot (tx.product.purchasePrice is already stored by createTransactionOffline)
+   139→   208→- MEDIUM: CategoryDetailScreen:94 stale-ID guard + hardcoded "Today's Transactions: 0" (:167); DashboardScreen:229-231 never clears categories when list empties; appStore.logout:106 resets neither nav history, selected*, searchQuery nor cached data
+   140→   209→- MEDIUM: ProductListScreen:65 seeds search from never-cleared store searchQuery → stale filter on every Products-tab visit; ProductDetail delete has no busy guard (double-submit); fetch races/setState-after-unmount in 5 screens; no email format validation at signup; negative product prices/qty accepted in AddProductScreen; SplashScreen waitTimer interval leaks (cleanup can't reach it)
+   141→   210→- Cross-checks PASSED: all lib imports/signatures correct, all Screen types registered, all i18n keys exist, oversell guard present, AddProductScreen duplicate-name check present (bypassable only if local read throws), BottomNav/useBackHandler/page.tsx back+exit logic sound (auth screens ignore back; exit dialog only on dashboard root)
+   142→   211→
+   143→   212→---
+   144→   213→Task ID: 3-c
+   145→   214→Agent: Explore (senior code auditor)
+   146→   215→Task: Audit secondary screens for bugs (AddCategoryScreen, ProfitScreen, HistoryScreen, ProfileScreen, ReportsScreen, DailyBookScreen, WelcomeScreen, TutorialScreen, ServiceCategoryScreen, OnboardingScreen, LanguageScreen, SetupScreen + use-toast, i18n usage, layout/globals.css)
+   147→   216→
+   148→   217→Work Log:
+   149→   218→- Verified whole-project typecheck first: `tsc --noEmit` clean for src/ (only unrelated examples/ + skills/ errors) — so all findings below are runtime/logic bugs, not compile errors
+   150→   219→- Cross-checked every service call in scope against lib signatures: getTransactionsOffline, getProductsOffline, getServiceTransactionsOffline, createServiceTransactionOffline, deleteServiceTransactionOffline, getExpensesOffline, getCashEntriesOffline, upsert/update/deleteCashEntryOffline, create/update/deleteExpenseOffline, getProfileOffline, updateProfileOffline, export/importBackupOffline, resetDataOffline, createCategoryOffline — all names/signatures/return shapes match supabase-service (getProfile→{user}, updateProfile→{user}, getServiceTransactions→{serviceTransactions}, upsertCashEntry, resetData:1530, importBackup:1566 all exist)
+   151→   220→- Navigation cross-check: all screens used in page.tsx registry exist; navigateTo targets valid; useBackHandler/BottomNav/tab set consistent; 'setup' NOT in Screen union nor registry (SetupScreen unreachable dead code)
+   152→   221→- i18n audit: read i18n.ts fully (669 lines); t() is typed keyof TranslationKeys so missing keys are impossible at compile time; all bn/en/hi blocks complete. Real issue is the opposite: DailyBookScreen uses ZERO t() while matching keys (dailyBook, handCash, liquidCash, totalCash, netCash, totalExpenses, noEntries…) sit unused; ProfitScreen/ProfileScreen/ServiceCategoryScreen mix t() with hardcoded inline ternaries; TutorialScreen descriptions English-only; Hindi typo 'राशन' (ration) for 'राशि' (amount) in ServiceCategoryScreen:64
+   153→   222→- Traced DailyBook period filter: supabase-service getExpenses/getCashEntries honor { period } via getDateRange; offline-service.ts accepts period in options (lines 597, 743) but NEVER applies it — confirmed root cause of Today/Week/Month showing all-time data
+   154→   223→- Traced date logic: ProfitScreen getDateRange uses toISOString (UTC) incl. month-start bug; same pattern in DailyBookScreen/ReportsScreen filenames
+   155→   224→- Traced backup/restore: exportBackupOffline (offline-service:1361) and supabase exportBackup (1546) both omit serviceTransactions; importBackupOffline (1387) does no row validation, merges via putBulk while server importBackup (1566) deletes-then-inserts (replace) — divergence confirmed
+   156→   225→- Traced reset flow: resetDataOffline (1474) clears local stores always but calls supabase resetData only when online → offline reset resurrects on next background syncFromSupabase
+   157→   226→- Checked expense/cash forms: negative amounts accepted in DailyBook (no min, no sign check) vs ServiceCategoryScreen which correctly rejects <=0
+   158→   227→- Checked intervals/lifecycles: SplashScreen waitTimer not cleared in effect cleanup; sync-engine auto-sync interval never stopped on logout (stopAutoSync has 0 callers); no setState-after-unmount issues found in the 12 screens themselves; no stale-closure bugs in useCallback deps (ProfitScreen/HistoryScreen deps correct)
+   159→   228→- Checked theme: page.tsx toggles .light-theme; globals.css provides light vars only for glass/nav/animated-bg; every screen hardcodes text-white/xx → light mode unreadable; layout.tsx hardcodes html class="dark" + Toaster theme="dark"
+   160→   229→- use-toast.ts is stock shadcn implementation (listeners effect dep [state] quirk is upstream-standard; TOAST_REMOVE_DELAY=1000000 intentional) — app uses sonner everywhere anyway
+   161→   230→- Asset check: all tutorial/welcome/category images referenced exist in public/ (tutorial-1..6(+new), ps-telecom-shop.png, categories/*) — no broken images found
+   162→   231→
+   163→   232→Stage Summary:
+   164→   233→- 15 findings: 4 high, 3 medium, 8 low/deficiency. No crash-level bugs found in the audited screens; the damage is concentrated in offline filter logic, date math, and backup/restore integrity
+   165→   234→- TOP CRITICAL: (1) DailyBook period filter silently ignored in offline-service → Today/Week/Month shows all-time data (offline-service.ts:597/743 vs DailyBookScreen.tsx:93/104); (2) light theme broken app-wide (hardcoded text-white/xx); (3) offline profile rename clobbers cached user object (offline-service.ts:1347 + ProfileScreen.tsx:46); (4) Reset All Data while offline resurrects data on next sync (offline-service.ts:1474)
+   166→   235→- Backup/restore gaps: serviceTransactions excluded from export/import, no JSON validation, merge-vs-replace divergence (potential stale-record resurrection)
+   167→   236→- Date bugs: UTC-based "today"/month-start in ProfitScreen.getDateRange (IST 00:00–05:30 window wrong; month start = last day of prev month on the 1st)
+   168→   237→- Negative expense/cash amounts accepted in DailyBookScreen forms
+   169→   238→- Dead code: SetupScreen unreachable (not in Screen union/registry), 'shine' keyframes missing for WelcomeScreen:112, glass-shine class no-op, 'invoice' placeholder route
+   170→   239→- i18n: keys complete (compile-enforced), but heavily bypassed with hardcoded ternaries + 1 Hindi typo
+   171→   240→- Recommended fix order: 1 (period) → 4 (reset) → 6 (backup) → 3 (profile) → 5 (dates) → 2 (theme pass) → rest
+   172→   241→
+   173→   242→---
+   174→   243→Task ID: 2
+   175→   244→Agent: Z.ai Code (main agent)
+   176→   245→Task: Remove database from app + fix all bugs/loopholes ("Prothome tumi app theke detabase remove koro ar app er moddhe ja ja khamti ache sob puron koro, jaja bug, luphole ache fix koro")
+   177→   246→
+   178→   247→Work Log:
+   179→   248→- Verified codebase: NO Prisma/SQLite anywhere (no prisma/, db/, DATABASE_URL, no /api usage). The app's "database" = Supabase cloud (auth + sync) + IndexedDB offline layer. Decision: convert app to 100% local (IndexedDB-only), removing all Supabase dependency.
+   180→   249→- DELETED: src/lib/supabase.ts, src/lib/supabase-service.ts, src/lib/sync-engine.ts, src/lib/cache.ts, src/lib/auth.ts (Node crypto - browser-incompatible), src/components/screens/SetupScreen.tsx (dead code), src/components/screens/OnboardingScreen.tsx (unreachable dead code, audit #22), supabase-schema.sql, tool-results/ junk
+   181→   250→- package.json: removed @supabase/supabase-js, pg, next-auth; bun install updated lockfile
+   182→   251→- offline-db.ts: DB_VERSION 5→6, added `users` object store (keyPath id, by-email index) + LocalUserRecord type; exported getOfflineDB() for atomic multi-store transactions. Existing user data preserved (additive upgrade).
+   183→   252→- CREATED src/lib/id.ts (generateId/generateRecordId shared helpers), src/lib/local-auth.ts (local auth: signup/login/getLocalUser/updateLocalUser/resetLocalPassword/deleteLocalUser; passwords = per-user random salt + SHA-256(salt:password) via Web Crypto; constant-time-ish verify; email lowercased)
+   184→   253→- offline-service.ts: FULL REWRITE as 100% local. Kept all exported function names/signatures so 18 screens unchanged. Removed every isOnline()/syncFromSupabase()/supabase fallback/pendingDeletes path. Added: atomic stock transactions (products+transactions in ONE IndexedDB tx via `await tx.done`), purchase-price SNAPSHOT on every transaction (historical profit immutable), sorted transaction getters, numeric validation in all create/update functions, backup import REPLACE semantics with row validation, serviceTransactions included in backup round-trip.
+   185→   254→- CRITICAL BUG FOUND & FIXED during browser verification: idb v8's db.transaction() has NO callback parameter (3rd arg = options). My initial callback-style atomic write silently did nothing (TS doesn't typecheck in dev). Rewrote both createTransactionOffline + deleteTransactionOffline to correct pattern: open tx → await requests → await tx.done.
+   186→   255→- Screens updated: LoginScreen/SignupScreen (local-auth import), SplashScreen (no sync; session check), ForgotPasswordScreen (REAL local password reset — was a FAKE email sender), DashboardScreen (removed sync-engine/cache/offline badge; localDateStr for today's profit; profit uses snapshot; add-product clears selectedProductId), ProfileScreen (restore now includes serviceTransactions — data-loss fix), StockOperationScreen (no stale category filter — HIGH bug; product preselect from detail; price validation SELL/STOCK_IN > 0; auto-price no longer clobbers user edits), ProfitScreen (localDateStr everywhere; snapshot cost basis; deleted products count via snapshot; margin = productProfit/revenue; inverted custom range swap), CategoryDetailScreen (real today's transactions count, localized subtitle, add-product clears selection), ProductListScreen (consumes dashboard search handoff once; sign-aware profit), AddProductScreen (numeric validation, ?? '' for boxNumber), AddCategoryScreen (duplicate name check, empty-image fallback to emoji), ProductDetailScreen (delete busy-guard, sign-aware profit), DailyBookScreen (localDateStr, negative/NaN amount validation, date disabled in edit mode, delete confirmation dialog, error details in toasts), ServiceCategoryScreen (delete confirmation dialog, Hindi typo রাশন→राशि), ReportsScreen (proper CSV quote/comma escaping, dedicated csvDownloaded/jsonDownloaded i18n keys), appStore (logout now clears ALL session state — selection/search/cache/history), capacitor-init.ts (back-button flag set synchronously — HMR double-registration race), i18n.ts (+newPassword, +csvDownloaded, +jsonDownloaded in bn/en/hi), page.tsx + types.ts (removed onboarding screen)
+   187→   256→- Ran parallel Explore agent audit (Task 6-a) — 33 findings; HIGH/MEDIUM items all addressed above.
+   188→   257→
+   189→   258→Stage Summary:
+   190→   259→- App is now 100% LOCAL: no Supabase, no cloud, no server. All data in IndexedDB (ps-telecom-offline v6). Login/signup/password-reset work fully offline.
+   191→   260→- Lint: 0 errors, 0 warnings. HTTP 200, no compile errors.
+   192→   261→- Browser-verified end-to-end (agent-browser, mobile 390x844 + desktop 1440x900): splash→welcome→tutorial→signup→dashboard→add category→add product→stock-in (atomic, qty 10→15)→instant sell (insufficient-stock guard + successful SELL 3×₹750)→profit screen (₹2,250 rev − ₹1,500 cost = ₹750, 33% margin, snapshot-based)→daily book (cash 5000/2000, expense add+delete with confirm)→backup→logout→wrong-password rejected→case-insensitive login→forgot-password reset→re-login with new password. Data persists across logout/login. No console errors.
+   193→   262→- Screenshots: upload/v2-welcome.png, v2-dashboard.png, v2-category-added.png, v2-sell-done.png, v2-desktop.png
+   194→   263→- Known remaining LOW items (not blocking, listed in audit): DailyBook uses inline ternaries instead of t() keys; dead 'shine' CSS animation refs; TutorialScreen descriptions English-only; some hardcoded EN strings (Profit/Unit, Threshold etc.)
+   195→   264→
+   196→   265→---
+   197→   266→Task ID: 3
+   198→   267→Agent: Z.ai Code (main agent)
+   199→   268→Task: e-Bill system + date-wise history + billing settings + WhatsApp sharing ("History page e date by history, product load fast, stock out er somoy ebill billing, profile e billing settings (shop name/address/GST/signature/QR/discount), ebill WhatsApp e jabe, history te save thakbe PDF share soho")
+   200→   269→
+   201→   270→Work Log:
+   202→   271→- Installed jspdf@4.2.1 (client-side PDF generation, no server needed)
+   203→   272→- types.ts: added Bill, BillItem, BillingSettings, PaymentMethod types + 'billing-settings' Screen
+   204→   273→- offline-db.ts: DB_VERSION 6→7, added `bills` store (by-userId, by-date indexes) + `billingSettings` store (keyed by userId); clearOfflineData now wipes bills + settings too
+   205→   274→- offline-service.ts: added DEFAULT_BILLING_SETTINGS (shopName 'PS TELECOM'), getBillingSettingsOffline, saveBillingSettingsOffline, createBillOffline (validates qty/price, computes discount %/flat + GST + paid/due, duplicate-transaction guard, sequential bill number PREFIX-YYMM-0001, shop snapshot frozen at bill time), getBillsOffline (search by customer/mobile/billNo/product), getBillByIdOffline, deleteBillOffline; backup export/import now includes bills + billingSettings
+   206→   275→- CREATED src/lib/bill-pdf.ts: jsPDF A5 invoice (dark header + gold band, shop name/address/phone/GSTIN, TAX INVOICE badge, items table with zebra stripes, subtotal/discount/GST/grand-total gold band, paid/balance-due, amount in Indian words, QR image, signature image, thank-you note, terms footer); helpers: formatMoney, formatDate, normalizeMobile (10-digit → 91xx for wa.me), amountInWords, downloadBlob, sharePdfFile (Web Share API with PDF file, AbortError-safe), buildBillMessage (WhatsApp text summary), whatsappUrl, sendBillViaWhatsapp (download + wa.me)
+   207→   276→- CREATED src/lib/image-utils.ts: fileToResizedDataUrl (canvas resize, PNG for transparency, progressive JPEG downscale under 120KB/250KB budgets) for signature/QR uploads
+   208→   277→- appStore.ts: pendingBillData/setPendingBillData, selectedBillId, selectedBill, historyView ('transactions'|'bills'), all cleared on logout
+   209→   278→- i18n.ts: 47 new keys × bn/en/hi (billing settings, e-bill prompt, bills tab, payment methods, share actions, today/yesterday, totals)
+   210→   279→- CREATED BillingSettingsScreen: shop name/address/phone, GST toggle + number + rate, default discount %, UPI ID, signature & QR image upload with live preview + remove, bill prefix, thank-you note, terms; sticky save bar
+   211→   280→- CREATED InvoiceScreen: 3 modes — create (from pendingBillData: item summary card, customer name/mobile/note, ₹/% discount toggle, Cash/UPI/Card/Due segmented control, partial paid amount, live totals incl. GST from settings), success + view (receipt-style preview with shop header/bill no/QR/signature; WhatsApp button, Share PDF, View PDF (blob new tab), Download PDF, delete with confirm, History→ shortcut)
+   212→   281→- StockOperationScreen: after successful STOCK_OUT/SELL the transaction result is held and an "e-Bill?" dialog appears (Create e-Bill / Skip); Create → setPendingBillData + goBack + navigateTo('invoice'); Skip → goBack; STOCK_IN unchanged
+   213→   282→- HistoryScreen: full rewrite — segmented Transactions|Bills switch with count badge, shared search box, single parallel fetch (txns + bills + settings) with client-side filtering (no refetch per filter), date-grouped lists (Today/Yesterday/weekday, DD MMM YYYY) with sticky day headers + day summaries (txn count, sales ₹ / bill count, total ₹, due ₹), bill cards with billNo/customer/items/mobile/payment/total/due-badge and 4 actions (WhatsApp, Share PDF, Download PDF, Delete), unbilled SELL/STOCK_OUT rows show "Make e-Bill" button (billedTxnIds Set prevents duplicates), delete confirmation dialog
+   214→   283→- ProfileScreen: added "Billing Settings" menu item (ReceiptText icon, subtitle); restore now passes bills + billingSettings
+   215→   284→- page.tsx: invoice → InvoiceScreen (was DashboardScreen placeholder), 'billing-settings' → BillingSettingsScreen
+   216→   285→- FIXED pre-existing type bugs: useBackHandler.ts referenced removed 'onboarding' screen; ReportsScreen.tsx grandTotal union-type assignment
+   217→   286→- Lint: 0 errors/warnings. tsc --noEmit src/: clean. Dev server HTTP 200, no console errors.
+   218→   287→
+   219→   288→Stage Summary:
+   220→   289→- Verified end-to-end in browser (mobile 390×844 + desktop 1440×900, Bengali + English UI):
+   221→   290→  signup → add category/product (20×₹800/₹1200) → Stock Out 2×₹1200 → success toast → "e-Bill?" prompt → Create → customer Rahim/9876543210, ₹100 flat discount → Generate → bill PS-2610-0001 ₹2,300 saved, receipt preview + share buttons
+   222→   291→- Billing Settings: address/GST 19ABCDE1234F1Z5/rate 18/phone saved; QR image uploaded via hidden file input → preview rendered
+   223→   292→- Instant Sell 1×₹1200 → e-Bill prompt → bill PS-2610-0002: TAX INVOICE badge, GST 18% = ₹216, total ₹1,416, Due method → due ₹1,416; QR visible on preview & PDF
+   224→   293→- PDF verified visually in new tab (blob URL): dark header, gold total band, "In Words: One Thousand Four Hundred Sixteen Rupees Only", QR, signature line, footer
+   225→   294→- WhatsApp button → downloads PDF + opens api.whatsapp.com/send/?phone=919123456780&text=<formatted bill> (10-digit auto 91-prefix)
+   226→   295→- History: Transactions tab groups by date ("Today • 3 transactions • বিক্রয় ₹1,200") with Make e-Bill only on unbilled rows; Bills tab ("আজ • 2 বিলসমূহ • ₹3,716 • বাকি ₹1,416"); delete bill works with confirm + badge/summary update
+   227→   296→- Skip flow: stock-out → Skip → returns without bill; stock math verified (20→17→16)
+   228→   297→- Logout → login: bills + settings persist (IndexedDB); product loading instant (100% local)
+   229→   298→- Screenshots: upload/bill-success.png, bill-gst-qr.png, bill-pdf-rendered.png, bills-desktop.png, final-dashboard-bn.png
+   230→   299→---
+   231→   300→Task ID: 4
+   232→   301→Agent: Z.ai Code (main agent)
+   233→   302→Task: WhatsApp bill with PDF attached + premium bill style + proprietor name "Avijit Maity & Brother"
+   234→   303→
+   235→   304→Work Log:
+   236→   305→- types.ts / offline-db.ts / offline-service.ts: added `proprietorName` to BillingSettings (default 'Avijit Maity & Brother'), to bills shopSnapshot (optional, backward-compatible) and to billingSettings store schema type; createBillOffline now freezes proprietor into the snapshot
+   237→   306→- i18n.ts: +proprietorName (bn/en/hi), +billSharedWithPdf (bn/en/hi)
+   238→   307→- bill-pdf.ts FULL premium redesign of generateBillPdf: double gold certificate page frame + corner ornaments, diagonal shop-name watermark, gold-gradient helper (strip-interpolated bands), monogram medallion (shopInitials), serif (times) letter-spaced shop name with auto-shrink, gold italic "Proprietor:" line, gradient INVOICE plate with engraved border, gold column headers + gold accent BILL TO bar, engraved gradient GRAND TOTAL plate, QR in gold-bordered white tile, signature block now shows proprietor name + "Proprietor" designation, diamond-ornament footer divider, serif thank-you
+   239→   308→- bill-pdf.ts: buildBillMessage upgraded (shop header with proprietor, formatted items qty×₹rate, bold totals, withPdfNote option); NEW sendBillViaWhatsapp → Web Share API WITH PDF file attached (mobile: user picks WhatsApp + chat, PDF travels natively) with fallback download + wa.me; returns 'shared'|'fallback'|'no-mobile'
+   240→   309→- CRITICAL FIX: 4-byte UTF-8 emoji (🧾🙏📄) got mangled to U+FFFD through the wa.me chain in this environment — replaced all astral emoji in the WhatsApp message with BMP-safe glyphs (━ • — ₹ ⚠); verified byte-clean (0 astral chars)
+   241→   310→- InvoiceScreen: premium receipt preview (monogram, gradient-gold serif shop name via bg-clip-text, proprietor line, watermark, gold gradient grand-total band, signature block with proprietor, gold top/bottom bands); WhatsApp button now uses sendBillViaWhatsapp with result-specific toasts
+   242→   311→- HistoryScreen: bill-card WhatsApp action switched to the same PDF-attached flow; generateBillPdf call passes proprietorName
+   243→   312→- BillingSettingsScreen: +Proprietor Name field (UserRound icon) in shop identity section
+   244→   313→- Verified in browser (mobile 390×844 + desktop 1440×900): signup → category → product → stock-out 2×₹1200 → e-Bill prompt → bill PS-2610-0001 → premium receipt + premium PDF (blob tab screenshot) → WhatsApp fallback opens wa.me with clean UTF-8 message incl. proprietor line; Billing Settings shows proprietor default
+   245→   314→- Screenshots: upload/v3-premium-receipt.png, upload/v3-premium-pdf.png, upload/v3-billing-settings.png, upload/v3-desktop-bill.png
+   246→   315→
+   247→   316→Stage Summary:
+   248→   317→- WhatsApp bill flow now carries the actual PDF file (native share sheet on mobile) with graceful desktop fallback; bill message is proxy-safe UTF-8
+   249→   318→- Bill design (PDF + in-app preview) upgraded to premium gold-on-midnight certificate style with proprietor "Avijit Maity & Brother" featured under the shop name and above the signature
+   250→   319→- Proprietor name is editable in Profile → Billing Settings and frozen into each bill's snapshot
+   251→   320→- Lint clean, tsc clean, no console errors, HTTP 200
+   252→   321→
+   253→   322→---
+   254→   323→Task ID: 5
+   255→   324→Agent: Z.ai Code (main)
+   256→   325→Task: Fix "PDF never reaches WhatsApp" on mobile — native share must carry the real PDF file
+   257→   326→
+   258→   327→Work Log:
+   259→   328→- Root-caused: (1) handleWhatsApp awaited makePdf() then sendBillViaWhatsapp awaited a Capacitor dynamic import BEFORE navigator.share — the tap's transient user activation expired → NotAllowedError → silent fallback to download+wa.me text → PDF never attached. (2) canShare({files}) gate silently fell back (e.g. inside preview iframe). (3) window.open fallback could be popup-blocked.
+   260→   329→- Rewrote src/lib/bill-pdf.ts share engine: sharePdfFile now returns FileShareResult ('shared'|'cancelled'|'unsupported'|'blocked') and calls navigator.share({files}) as the FIRST statement (no await before it). Sync isNativeApp() via window.Capacitor.isNativePlatform() (window.Capacitor exists on web too — isNativePlatform() is the correct discriminator, verified in browser: false on web). Capacitor native path only for APK. Added isEmbeddedFrame(), openWhatsappChat() (window.open → location.href fallback), fallbackDownloadAndChat(); sendBillViaWhatsapp(bill, pdf, {pdfNote}) now returns 'shared'|'cancelled'|'iframe-blocked'|'fallback'|'no-mobile'.
+   261→   330→- src/lib/share-toasts.ts: toastWhatsappResult() maps results to toasts (shared→success, iframe-blocked→"Open in New Tab" warning, fallback→"PDF downloaded — attach with 📎" info, no-mobile→error).
+   262→   331→- i18n.ts: added pdfAttachManually + shareOpenInNewTab (bn/en/hi).
+   263→   332→- InvoiceScreen: PDF is now PRE-GENERATED and cached in a ref the moment the success/view screen shows (useEffect), so tapping "Send on WhatsApp" calls share instantly within the user gesture; getPdf() returns cache or regenerates; handleWhatsApp/handleShare use toastWhatsappResult.
+   264→   333→- HistoryScreen: whatsapp/share actions use the new engine + toastWhatsappResult.
+   265→   334→- Verified via agent-browser: desktop fallback path (download + wa.me chat opened with full bill text incl. proprietor, toast instruction shown); stubbed navigator.share to simulate mobile → share called instantly with real File (PS-TELECOM-PS-2610-0001.pdf, application/pdf, 18.9KB) + full bill text with "— PDF bill attached —"; History path same; success toast "Bill shared — PDF goes with it on WhatsApp ✓"; iPhone-14 viewport renders fine; lint + tsc clean; no console errors.
+   266→   335→
+   267→   336→Stage Summary:
+   268→   337→- On mobile browsers (HTTPS) tapping "Send on WhatsApp" now opens the native share sheet carrying the REAL PDF file + bill message → picking WhatsApp and the customer chat sends the PDF attached with the text. In embedded preview iframes the browser blocks sharing; the app now explicitly tells the user to tap "Open in New Tab" instead of failing silently. If a browser truly can't share files, PDF is auto-downloaded, the customer's WhatsApp chat opens, and a toast explains to attach the 📎 file. APK build uses @capacitor/share natively.
+   269→   338→
+   270→   339→---
+   271→   340→Task ID: 6
+   272→   341→Agent: Z.ai Code (main)
+   273→   342→Task: Native back navigation — back from any page → home page first; back on home → Exit/Continue dialog
+   274→   343→
+   275→   344→Work Log:
+   276→   345→- Reviewed existing wiring: capacitor-init.ts (App 'backButton' → 'app:back-button' event), page.tsx (event → handleBack, exit dialog UI), useBackHandler.ts (popstate + Escape + logic), appStore (navigateTo/navigateToTab/goBack/resetNavigation stack).
+   277→   346→- Rewrote src/hooks/useBackHandler.ts to the requested simple native flow: (1) back on ANY non-auth page → resetNavigation('dashboard') — straight to home in one step, no step-through-stack; (2) back on dashboard → exit confirmation dialog (Exit / Continue); (3) back while the dialog is open → closes the dialog (Android convention, tracked via exitDialogRef so handleBack stays stable). Removed old TAB_SCREENS/stack-pop logic. In-app header ← arrows still use store.goBack() step-by-step as before.
+   278→   347→- Verified with agent-browser (fresh profile, signup, Escape key simulates system back): home+back → "Exit App?" dialog appears; Continue closes it; back again reopens; category-detail inner page + back → dashboard in one step; history tab + back → dashboard (logs: "[BackHandler] history → straight to home (dashboard)"); dialog + back → dialog closes. Screenshot upload/v4-exit-dialog.png. Lint clean.
+   279→   348→
+   280→   349→Stage Summary:
+   281→   350→- System back button (APK hardware back via capacitor bridge, browser back gesture via popstate, Escape on desktop) now behaves: any page → HOME → Exit/Continue dialog → back closes dialog / Exit exits app (App.exitApp on Android). No changes needed in capacitor-init.ts or page.tsx — only useBackHandler.ts rewritten.
+   282→   351→
+   283→   352→---
+   284→   353→Task ID: 7
+   285→   354→Agent: Z.ai Code (main)
+   286→   355→Task: Connect app to Cloudflare database (Cloudflare D1) — cloud backup/restore for shop data
+   287→   356→
+   288→   357→Work Log:
+   289→   358→- New API route src/app/api/cloud/d1/route.ts: server-side proxy to the official Cloudflare REST API (POST /accounts/{id}/d1/database/{id}/query). Validates input, 30s timeout, normalizes multi-statement results (flatMap rows + changes), maps CF errors {success:false, errors[]} and network/abort failures into a single {ok, rows, error} JSON. Credentials are relayed per-request only, never stored server-side. CLOUDFLARE_API_BASE env override exists for the local mock (defaults to real API).
+   290→   359→- New client engine src/lib/cloud-d1.ts: D1 credentials manager (localStorage ps-d1-creds, masked token input, Disconnect), d1Query via proxy, runStatements (multi-statement in one call with per-statement retry fallback), ensureD1Schema (8 data tables + ps_backup_meta + 7 indexes, all CREATE IF NOT EXISTS), backupToD1 (exportBackupOffline → DELETE user rows → chunked multi-row INSERT OR REPLACE, 25 rows/48KB per statement, 10 statements/call, progress callback; billingSettings sent as ONE param-bound statement so huge signature/QR dataURLs bypass the SQL length limit; meta row records user_id/email/shop/total_rows/counts), restoreFromD1 (reads meta to find backup owner → SELECT * WHERE user_id → snake_case→camelCase mapping, JSON parse items/shopSnapshot, gst_enabled→boolean → importBackupOffline replaces local data and REMAPS all rows to the CURRENT user id = phone-loss/new-device migration safe; returns empty flag when cloud has no backup), testD1Connection (SELECT 1 + schema ensure + meta read). sqlVal escapes strings ('→''), strips NUL + unpaired surrogates; numbers/NULL unquoted.
+   291→   360→- New screen src/components/screens/CloudSyncScreen.tsx (Profile → "Cloud Backup" row): status card (Connected/Not connected badge, last backup time local+cloud meta with account email/rows), 3 credential inputs (token masked with eye toggle), Save & Test Connection, big emerald Backup to Cloud with progress bar (rows done/total), Restore from Cloud with replace-warning dialog (amber), auto-reconnect on screen mount when credentials saved (auto test → buttons enabled instantly), 5-step Cloudflare setup guide (dash.cloudflare.com → Workers & Pages → D1 → Create database → Database ID + Account ID → API Token custom: Account→D1→Edit → paste & test), Disconnect link.
+   292→   361→- Wiring: types.ts + 'cloud-sync' Screen; page.tsx lazy import + map; ProfileScreen new Cloud Upload row under Backup & Restore; i18n +33 keys × bn/en/hi (cloudSync, cloudSyncDesc, accountId, databaseId, apiToken, saveTestConnection, connecting, connectionOk/Failed, cloudStatus*, backupToCloud, restoreFromCloud, backingUp/restoring, cloudBackupDone/RestoreDone, cloudRestoreTitle/Desc, lastCloudBackup, never, setupGuide, setupStep1-5, clearCredentials, cloudDbEmpty, fillAllFields, cloudInfo).
+   293→   362→- New mini-services/d1-mock: in-memory Cloudflare D1 API emulator (bun --hot, port 3030) used ONLY for end-to-end verification: quote-aware statement splitter, ?-param binder, INSERT tuple parser (escaped ''/NULL/numbers), SELECT/DELETE handlers, GET /debug dump, POST /reset, auth-error simulation. Fixed tuple-splitting bug during self-test (2-char separator → paren-depth splitTop).
+   294→   363→- Verified end-to-end with agent-browser: signup → category "Accessories" → product "Rahim's 25W Charger ⚡" (apostrophe+emoji) → Cloud Backup → Save & Test (mock: "Connected! Tables ready") → Backup to Cloud (debug dump shows exact rows: emoji/apostrophe intact, numbers typed, proprietor "Avijit Maity & Brother", meta total_rows=2) → Profile → Reset All Data (wiped) → Cloud Backup auto-reconnected → Restore → confirm dialog → "Restored from cloud!" → dashboard shows Accessories 1 item → product detail "Rahim's 25W Charger ⚡ Qty:10 ₹800 ₹1200" → Billing Settings shows restored proprietor/prefix/thank-you. REAL API error path verified after clean dev-server restart: mock creds → real CF message "Could not route to .../query, perhaps your object identifier is invalid?"; fake token → "Authentication error" (both surfaced in UI error box). Disconnect clears creds. iPhone-14 viewport renders clean. No console errors.
+   295→   364→- Final state: dev server restarted CLEAN (no env override → real Cloudflare API), mock stopped. Screenshots: upload/d1-screen-initial.png, d1-connected.png, d1-backup-done.png, d1-restore-dialog.png, d1-billing-restored.png, d1-real-error.png, d1-mobile.png.
+   296→   365→
+   297→   366→Stage Summary:
+   298→   367→- App now has real cloud database backup via the user's OWN Cloudflare D1 (free tier SQLite): Profile → Cloud Backup → paste Account ID + Database ID + API Token → Save & Test → Backup/Restore with progress and safety dialogs.
+   299→   368→- Data model fully typed in D1 (8 tables + meta), escape-safe (apostrophes/emoji/dataURLs), restore works even on a lost phone (meta row identifies backup owner; rows remap to the new account on import).
+   300→   369→- API route is the only server piece; credentials never stored server-side; works on web AND in the APK (same-origin /api/cloud/d1 fetch from the WebView).
+   301→   370→- lint + tsc clean; app on port 3000 hitting the REAL Cloudflare API (mock available via mini-services/d1-mock: `cd mini-services/d1-mock && bun run dev` + start dev with CLOUDFLARE_API_BASE=http://127.0.0.1:3030/client/v4).
+   302→
+   303→[showing lines 70-370 of 371; use offset=371 with limit to continue reading]

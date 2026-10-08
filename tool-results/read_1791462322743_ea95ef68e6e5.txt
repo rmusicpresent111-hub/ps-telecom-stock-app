@@ -1,0 +1,1278 @@
+     1→     1→/**
+     2→     2→ * Local-First Service Layer — 100% offline, NO cloud database.
+     3→     3→ *
+     4→     4→ * READ STRATEGY:  Always served from local IndexedDB (instant, works with zero internet).
+     5→     5→ * WRITE STRATEGY: Written to local IndexedDB immediately (atomic where it matters).
+     6→     6→ * DELETE STRATEGY: Deleted from local IndexedDB (with cascades where required).
+     7→     7→ *
+     8→     8→ * Stock transactions are applied atomically (products + transactions stores in a
+     9→     9→ * single IndexedDB transaction) so rapid taps can never create negative stock.
+    10→    10→ * Profit/report math uses the purchase-price SNAPSHOT captured on each transaction,
+    11→    11→ * so later price edits never rewrite historical profit.
+    12→    12→ */
+    13→    13→
+    14→    14→import {
+    15→    15→  offlineCategories,
+    16→    16→  offlineProducts,
+    17→    17→  offlineTransactions,
+    18→    18→  offlineExpenses,
+    19→    19→  offlineCashEntries,
+    20→    20→  offlineServiceTransactions,
+    21→    21→  offlineBills,
+    22→    22→  offlineMeta,
+    23→    23→  clearOfflineData,
+    24→    24→  getOfflineDB,
+    25→    25→  type OfflineDBSchema,
+    26→    26→} from './offline-db';
+    27→    27→import { getLocalUser, updateLocalUser } from './local-auth';
+    28→    28→import { generateRecordId } from './id';
+    29→    29→import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillingSettings, PaymentMethod } from './types';
+    30→    30→
+    31→    31→// ============ DATE HELPERS (local timezone — never use UTC for business days) ============
+    32→    32→
+    33→    33→/**
+    34→    34→ * Returns YYYY-MM-DD for a Date in LOCAL time.
+    35→    35→ * toISOString() uses UTC — for IST (UTC+5:30) sales between 00:00–05:30 local
+    36→    36→ * would land on the previous day. This helper fixes that class of bugs.
+    37→    37→ */
+    38→    38→export function localDateStr(d: Date = new Date()): string {
+    39→    39→  const y = d.getFullYear();
+    40→    40→  const m = String(d.getMonth() + 1).padStart(2, '0');
+    41→    41→  const day = String(d.getDate()).padStart(2, '0');
+    42→    42→  return `${y}-${m}-${day}`;
+    43→    43→}
+    44→    44→
+    45→    45→/**
+    46→    46→ * Resolves a reporting period to a [from, to] date range (local time).
+    47→    47→ */
+    48→    48→export function resolvePeriodRange(options?: { period?: string; date?: string; from?: string; to?: string }): { from: string; to: string } {
+    49→    49→  const now = new Date();
+    50→    50→  if (options?.from && options?.to) {
+    51→    51→    // Guard against inverted custom ranges (from > to) — silently swap.
+    52→    52→    return options.from <= options.to
+    53→    53→      ? { from: options.from, to: options.to }
+    54→    54→      : { from: options.to, to: options.from };
+    55→    55→  }
+    56→    56→  if (options?.date) return { from: options.date, to: options.date };
+    57→    57→
+    58→    58→  const todayStr = localDateStr(now);
+    59→    59→  const period = options?.period || 'today';
+    60→    60→  if (period === 'week') {
+    61→    61→    const weekStart = new Date(now);
+    62→    62→    const day = weekStart.getDay();
+    63→    63→    const diff = weekStart.getDate() - day + (day === 0 ? -6 : 1); // Monday start
+    64→    64→    weekStart.setDate(diff);
+    65→    65→    return { from: localDateStr(weekStart), to: todayStr };
+    66→    66→  }
+    67→    67→  if (period === 'month') {
+    68→    68→    return { from: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`, to: todayStr };
+    69→    69→  }
+    70→    70→  // today (default) or any unknown period
+    71→    71→  return { from: todayStr, to: todayStr };
+    72→    72→}
+    73→    73→
+    74→    74→// ============ SHARED STRIP HELPERS ============
+    75→    75→
+    76→    76→function stripSync<T>(row: Record<string, unknown>): T {
+    77→    77→  const { _synced: _s, _dirty: _d, ...rest } = row;
+    78→    78→  return rest as T;
+    79→    79→}
+    80→    80→
+    81→    81→function sortTxnsDesc(rows: OfflineDBSchema['transactions']['value'][]): OfflineDBSchema['transactions']['value'][] {
+    82→    82→  return [...rows].sort((a, b) => {
+    83→    83→    if (a.date !== b.date) return b.date.localeCompare(a.date);
+    84→    84→    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    85→    85→  });
+    86→    86→}
+    87→    87→
+    88→    88→function localTxnsToTransactions(localTxns: OfflineDBSchema['transactions']['value'][]): Transaction[] {
+    89→    89→  return sortTxnsDesc(localTxns).map(t => stripSync<Transaction>(t));
+    90→    90→}
+    91→    91→
+    92→    92→/** Cost basis for a transaction: the SNAPSHOT taken at sale time, falling back to the current product. */
+    93→    93→function txnCostBasis(t: Transaction, products: Product[]): number {
+    94→    94→  return t.product?.purchasePrice ?? products.find(p => p.id === t.productId)?.purchasePrice ?? 0;
+    95→    95→}
+    96→    96→
+    97→    97→// ============ CATEGORIES (Local) ============
+    98→    98→
+    99→    99→export async function getCategoriesOffline(userId: string): Promise<Category[]> {
+   100→   100→  const localCats = await offlineCategories.getAll(userId);
+   101→   101→  return localCats.map(c => stripSync<Category>(c));
+   102→   102→}
+   103→   103→
+   104→   104→export async function createCategoryOffline(name: string, image: string, userId: string): Promise<{ category: Category }> {
+   105→   105→  if (!name.trim()) throw new Error('Category name is required');
+   106→   106→
+   107→   107→  const now = new Date().toISOString();
+   108→   108→  const category = {
+   109→   109→    id: generateRecordId(),
+   110→   110→    name: name.trim(),
+   111→   111→    image: image || '',
+   112→   112→    userId,
+   113→   113→    createdAt: now,
+   114→   114→    updatedAt: now,
+   115→   115→    _count: { products: 0 },
+   116→   116→  };
+   117→   117→
+   118→   118→  await offlineCategories.put({
+   119→   119→    ...category,
+   120→   120→    _synced: Date.now(),
+   121→   121→    _dirty: 0,
+   122→   122→  } as OfflineDBSchema['categories']['value']);
+   123→   123→
+   124→   124→  return { category };
+   125→   125→}
+   126→   126→
+   127→   127→export async function updateCategoryOffline(id: string, updates: { name?: string; image?: string }, userId: string): Promise<{ category: Category }> {
+   128→   128→  const allCats = await offlineCategories.getAll(userId);
+   129→   129→  const existing = allCats.find(c => c.id === id);
+   130→   130→  if (!existing) throw new Error('Category not found');
+   131→   131→
+   132→   132→  const updated = {
+   133→   133→    ...existing,
+   134→   134→    ...updates,
+   135→   135→    updatedAt: new Date().toISOString(),
+   136→   136→  };
+   137→   137→
+   138→   138→  await offlineCategories.put({
+   139→   139→    ...updated,
+   140→   140→    _synced: Date.now(),
+   141→   141→    _dirty: 0,
+   142→   142→  } as OfflineDBSchema['categories']['value']);
+   143→   143→
+   144→   144→  const { _synced, _dirty, ...categoryData } = updated;
+   145→   145→  return { category: categoryData as Category };
+   146→   146→}
+   147→   147→
+   148→   148→export async function deleteCategoryOffline(id: string, userId: string): Promise<{ message: string }> {
+   149→   149→  // Cascade: delete all products in this category (which cascades their transactions too)
+   150→   150→  const allProducts = await offlineProducts.getAll(userId);
+   151→   151→  const catProducts = allProducts.filter(p => p.categoryId === id);
+   152→   152→  for (const prod of catProducts) {
+   153→   153→    await deleteProductOffline(prod.id, userId);
+   154→   154→  }
+   155→   155→
+   156→   156→  await offlineCategories.delete(id);
+   157→   157→  return { message: 'Category deleted successfully' };
+   158→   158→}
+   159→   159→
+   160→   160→// ============ PRODUCTS (Local) ============
+   161→   161→
+   162→   162→export async function getProductsOffline(userId: string, options?: { categoryId?: string; search?: string }): Promise<Product[]> {
+   163→   163→  let localProducts: OfflineDBSchema['products']['value'][];
+   164→   164→
+   165→   165→  if (options?.categoryId) {
+   166→   166→    localProducts = await offlineProducts.getByCategory(userId, options.categoryId);
+   167→   167→  } else if (options?.search) {
+   168→   168→    localProducts = await offlineProducts.search(userId, options.search);
+   169→   169→  } else {
+   170→   170→    localProducts = await offlineProducts.getAll(userId);
+   171→   171→  }
+   172→   172→
+   173→   173→  return localProducts.map(p => stripSync<Product>(p));
+   174→   174→}
+   175→   175→
+   176→   176→export async function createProductOffline(productData: {
+   177→   177→  name: string;
+   178→   178→  categoryId: string;
+   179→   179→  quantity?: number;
+   180→   180→  boxNumber?: string;
+   181→   181→  purchasePrice?: number;
+   182→   182→  sellingPrice?: number;
+   183→   183→  lowStockThreshold?: number;
+   184→   184→  userId: string;
+   185→   185→}): Promise<{ product: Product }> {
+   186→   186→  if (!productData.name.trim()) throw new Error('Product name is required');
+   187→   187→
+   188→   188→  const quantity = Math.max(0, Math.floor(Number(productData.quantity ?? 0)) || 0);
+   189→   189→  const purchasePrice = Math.max(0, Number(productData.purchasePrice ?? 0)) || 0;
+   190→   190→  const sellingPrice = Math.max(0, Number(productData.sellingPrice ?? 0)) || 0;
+   191→   191→  const lowStockThreshold = Math.max(0, Math.floor(Number(productData.lowStockThreshold ?? 5)) || 0);
+   192→   192→
+   193→   193→  const now = new Date().toISOString();
+   194→   194→  const product = {
+   195→   195→    id: generateRecordId(),
+   196→   196→    name: productData.name.trim(),
+   197→   197→    categoryId: productData.categoryId,
+   198→   198→    quantity,
+   199→   199→    boxNumber: productData.boxNumber ?? '',
+   200→   200→    purchasePrice,
+   201→   201→    sellingPrice,
+   202→   202→    lowStockThreshold,
+   203→   203→    userId: productData.userId,
+   204→   204→    createdAt: now,
+   205→   205→    updatedAt: now,
+   206→   206→  };
+   207→   207→
+   208→   208→  await offlineProducts.put({
+   209→   209→    ...product,
+   210→   210→    _synced: Date.now(),
+   211→   211→    _dirty: 0,
+   212→   212→  } as OfflineDBSchema['products']['value']);
+   213→   213→
+   214→   214→  return { product };
+   215→   215→}
+   216→   216→
+   217→   217→export async function updateProductOffline(id: string, updates: Partial<Product> & { userId: string }): Promise<{ product: Product }> {
+   218→   218→  const existing = await offlineProducts.getAll(updates.userId);
+   219→   219→  const product = existing.find(p => p.id === id);
+   220→   220→  if (!product) throw new Error('Product not found');
+   221→   221→
+   222→   222→  const updatedProduct = {
+   223→   223→    ...product,
+   224→   224→    ...updates,
+   225→   225→    updatedAt: new Date().toISOString(),
+   226→   226→  };
+   227→   227→
+   228→   228→  await offlineProducts.put({
+   229→   229→    ...updatedProduct,
+   230→   230→    _synced: Date.now(),
+   231→   231→    _dirty: 0,
+   232→   232→  } as OfflineDBSchema['products']['value']);
+   233→   233→
+   234→   234→  const { _synced, _dirty, ...prodData } = updatedProduct;
+   235→   235→  return { product: prodData as Product };
+   236→   236→}
+   237→   237→
+   238→   238→export async function deleteProductOffline(id: string, userId: string): Promise<{ message: string }> {
+   239→   239→  // Delete related transactions first (cascade)
+   240→   240→  const localTxns = await offlineTransactions.getAll(userId);
+   241→   241→  const relatedTxns = localTxns.filter(t => t.productId === id);
+   242→   242→  for (const txn of relatedTxns) {
+   243→   243→    await offlineTransactions.delete(txn.id);
+   244→   244→  }
+   245→   245→
+   246→   246→  await offlineProducts.delete(id);
+   247→   247→  return { message: 'Product deleted successfully' };
+   248→   248→}
+   249→   249→
+   250→   250→// ============ TRANSACTIONS (Local, ATOMIC stock updates) ============
+   251→   251→
+   252→   252→/**
+   253→   253→ * Creates a transaction AND applies the stock change in ONE atomic IndexedDB
+   254→   254→ * transaction. Two rapid sells can never both pass the same stock check.
+   255→   255→ *
+   256→   256→ * NOTE: idb v8's db.transaction() has NO callback parameter — the correct
+   257→   257→ * atomic pattern is: open tx → await requests → `await tx.done`.
+   258→   258→ */
+   259→   259→export async function createTransactionOffline(transactionData: {
+   260→   260→  type: 'STOCK_IN' | 'STOCK_OUT' | 'SELL';
+   261→   261→  productId: string;
+   262→   262→  quantity: number;
+   263→   263→  unitPrice?: number;
+   264→   264→  totalAmount?: number;
+   265→   265→  date?: string;
+   266→   266→  userId: string;
+   267→   267→}): Promise<{ transaction: Transaction }> {
+   268→   268→  const quantity = Math.floor(Number(transactionData.quantity));
+   269→   269→  if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('Quantity must be a positive whole number');
+   270→   270→
+   271→   271→  const unitPrice = Number(transactionData.unitPrice ?? 0);
+   272→   272→  const totalAmount = Number(transactionData.totalAmount ?? 0);
+   273→   273→  if (!Number.isFinite(unitPrice) || unitPrice < 0) throw new Error('Price cannot be negative');
+   274→   274→  if (!Number.isFinite(totalAmount) || totalAmount < 0) throw new Error('Total amount cannot be negative');
+   275→   275→
+   276→   276→  const db = await getOfflineDB();
+   277→   277→  const now = new Date().toISOString();
+   278→   278→  const id = generateRecordId();
+   279→   279→
+   280→   280→  const tx = db.transaction(['products', 'transactions'], 'readwrite');
+   281→   281→  const productsStore = tx.objectStore('products');
+   282→   282→  const transactionsStore = tx.objectStore('transactions');
+   283→   283→
+   284→   284→  // Validate BEFORE writing anything — a readwrite tx with no writes commits empty.
+   285→   285→  const product = await productsStore.get(transactionData.productId);
+   286→   286→  if (!product) {
+   287→   287→    throw new Error('Product not found');
+   288→   288→  }
+   289→   289→
+   290→   290→  const isOut = transactionData.type === 'STOCK_OUT' || transactionData.type === 'SELL';
+   291→   291→  if (isOut && product.quantity < quantity) {
+   292→   292→    throw new Error(`Insufficient stock — only ${product.quantity} left`);
+   293→   293→  }
+   294→   294→
+   295→   295→  const quantityChange = transactionData.type === 'STOCK_IN' ? quantity : -quantity;
+   296→   296→
+   297→   297→  const row: OfflineDBSchema['transactions']['value'] = {
+   298→   298→    id,
+   299→   299→    productId: transactionData.productId,
+   300→   300→    type: transactionData.type,
+   301→   301→    quantity,
+   302→   302→    unitPrice,
+   303→   303→    totalAmount,
+   304→   304→    date: transactionData.date || localDateStr(),
+   305→   305→    userId: transactionData.userId,
+   306→   306→    createdAt: now,
+   307→   307→    // Snapshot the product prices at transaction time — historical profit must
+   308→   308→    // never change when the user later edits the product's prices.
+   309→   309→    product: {
+   310→   310→      id: product.id,
+   311→   311→      name: product.name,
+   312→   312→      purchasePrice: product.purchasePrice,
+   313→   313→      sellingPrice: product.sellingPrice,
+   314→   314→    },
+   315→   315→    _synced: Date.now(),
+   316→   316→    _dirty: 0,
+   317→   317→  };
+   318→   318→
+   319→   319→  await transactionsStore.put(row);
+   320→   320→  await productsStore.put({
+   321→   321→    ...product,
+   322→   322→    quantity: product.quantity + quantityChange,
+   323→   323→    updatedAt: now,
+   324→   324→  });
+   325→   325→
+   326→   326→  // Commit — rejects (and rolls back both stores) if anything failed.
+   327→   327→  await tx.done;
+   328→   328→
+   329→   329→  return { transaction: stripSync<Transaction>(row) };
+   330→   330→}
+   331→   331→
+   332→   332→export async function deleteTransactionOffline(id: string, userId: string): Promise<{ success: boolean }> {
+   333→   333→  const db = await getOfflineDB();
+   334→   334→  const now = new Date().toISOString();
+   335→   335→
+   336→   336→  const tx = db.transaction(['products', 'transactions'], 'readwrite');
+   337→   337→  const productsStore = tx.objectStore('products');
+   338→   338→  const transactionsStore = tx.objectStore('transactions');
+   339→   339→
+   340→   340→  const txn = await transactionsStore.get(id);
+   341→   341→  if (!txn || txn.userId !== userId) {
+   342→   342→    // Nothing to delete — no writes were queued, committing empty is harmless.
+   343→   343→    await tx.done;
+   344→   344→    return { success: true };
+   345→   345→  }
+   346→   346→
+   347→   347→  // Reverse the stock change caused by this transaction (same atomic tx)
+   348→   348→  const product = await productsStore.get(txn.productId);
+   349→   349→  if (product) {
+   350→   350→    const quantityChange = txn.type === 'STOCK_IN' ? -txn.quantity : txn.quantity;
+   351→   351→    await productsStore.put({
+   352→   352→      ...product,
+   353→   353→      quantity: Math.max(0, product.quantity + quantityChange),
+   354→   354→      updatedAt: now,
+   355→   355→    });
+   356→   356→  }
+   357→   357→
+   358→   358→  await transactionsStore.delete(id);
+   359→   359→  await tx.done;
+   360→   360→
+   361→   361→  return { success: true };
+   362→   362→}
+   363→   363→
+   364→   364→export async function getTransactionsOffline(userId: string, options?: { type?: string; productId?: string; from?: string; to?: string }): Promise<Transaction[]> {
+   365→   365→  let localTxns = await offlineTransactions.getAll(userId);
+   366→   366→
+   367→   367→  if (options?.type) localTxns = localTxns.filter(t => t.type === options.type);
+   368→   368→  if (options?.productId) localTxns = localTxns.filter(t => t.productId === options.productId);
+   369→   369→  if (options?.from) localTxns = localTxns.filter(t => t.date >= options.from!);
+   370→   370→  if (options?.to) localTxns = localTxns.filter(t => t.date <= options.to!);
+   371→   371→
+   372→   372→  return localTxnsToTransactions(localTxns);
+   373→   373→}
+   374→   374→
+   375→   375→// ============ DASHBOARD (Local) ============
+   376→   376→
+   377→   377→export async function getDashboardOffline(userId: string) {
+   378→   378→  const [localProducts, localCategories, localTransactions] = await Promise.all([
+   379→   379→    offlineProducts.getAll(userId),
+   380→   380→    offlineCategories.getAll(userId),
+   381→   381→    offlineTransactions.getAll(userId),
+   382→   382→  ]);
+   383→   383→
+   384→   384→  const products = localProducts.map(p => stripSync<Product>(p));
+   385→   385→  const categories = localCategories.map(c => stripSync<Category>(c));
+   386→   386→  const transactions = localTxnsToTransactions(localTransactions);
+   387→   387→
+   388→   388→  const today = localDateStr();
+   389→   389→  const todayTxns = transactions.filter(t => t.date === today);
+   390→   390→
+   391→   391→  const lowItems = products.filter(p => p.quantity <= p.lowStockThreshold).length;
+   392→   392→  const stockValue = products.reduce((sum, p) => sum + p.quantity * p.purchasePrice, 0);
+   393→   393→  const lowStockProducts = products.filter(p => p.quantity <= p.lowStockThreshold).slice(0, 10);
+   394→   394→  const recentTransactions = transactions.slice(0, 5);
+   395→   395→
+   396→   396→  const productCountMap: Record<string, number> = {};
+   397→   397→  for (const p of products) {
+   398→   398→    productCountMap[p.categoryId] = (productCountMap[p.categoryId] || 0) + 1;
+   399→   399→  }
+   400→   400→  const catsWithCount = categories.map(c => ({
+   401→   401→    ...c,
+   402→   402→    _count: { products: productCountMap[c.id] || 0 },
+   403→   403→  }));
+   404→   404→
+   405→   405→  const sevenDaysAgo = new Date();
+   406→   406→  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+   407→   407→  const sevenDaysAgoStr = localDateStr(sevenDaysAgo);
+   408→   408→
+   409→   409→  const saleTxns = transactions.filter(t => t.type === 'SELL' && t.date >= sevenDaysAgoStr);
+   410→   410→  const saleMap = new Map<string, { sales: number; quantity: number }>();
+   411→   411→  for (const t of saleTxns) {
+   412→   412→    const existing = saleMap.get(t.date) || { sales: 0, quantity: 0 };
+   413→   413→    existing.sales += t.totalAmount;
+   414→   414→    existing.quantity += t.quantity;
+   415→   415→    saleMap.set(t.date, existing);
+   416→   416→  }
+   417→   417→
+   418→   418→  const saleOverview: { date: string; label: string; sales: number; quantity: number }[] = [];
+   419→   419→  for (let i = 6; i >= 0; i--) {
+   420→   420→    const d = new Date();
+   421→   421→    d.setDate(d.getDate() - i);
+   422→   422→    const dateStr = localDateStr(d);
+   423→   423→    const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' });
+   424→   424→    const dayData = saleMap.get(dateStr) || { sales: 0, quantity: 0 };
+   425→   425→    saleOverview.push({ date: dateStr, label: dayLabel, ...dayData });
+   426→   426→  }
+   427→   427→
+   428→   428→  const stockByCategory = new Map<string, { quantity: number; value: number }>();
+   429→   429→  for (const p of products) {
+   430→   430→    const cat = catsWithCount.find(c => c.id === p.categoryId);
+   431→   431→    const catName = cat?.name || 'Unknown';
+   432→   432→    const existing = stockByCategory.get(catName) || { quantity: 0, value: 0 };
+   433→   433→    existing.quantity += p.quantity;
+   434→   434→    existing.value += p.quantity * p.purchasePrice;
+   435→   435→    stockByCategory.set(catName, existing);
+   436→   436→  }
+   437→   437→
+   438→   438→  const stockOverview = Array.from(stockByCategory.entries())
+   439→   439→    .filter(([_, data]) => data.quantity > 0)
+   440→   440→    .map(([category, data]) => ({ category, ...data }));
+   441→   441→
+   442→   442→  return {
+   443→   443→    stats: {
+   444→   444→      totalItems: products.length,
+   445→   445→      lowItems,
+   446→   446→      todayTransactions: todayTxns.length,
+   447→   447→      stockValue,
+   448→   448→    },
+   449→   449→    lowStockProducts,
+   450→   450→    recentTransactions,
+   451→   451→    categories: catsWithCount,
+   452→   452→    saleOverview,
+   453→   453→    stockOverview,
+   454→   454→  };
+   455→   455→}
+   456→   456→
+   457→   457→// Alias for backward compatibility with existing imports
+   458→   458→export { getDashboardOffline as getDashboard };
+   459→   459→
+   460→   460→// ============ EXPENSES (Local) ============
+   461→   461→
+   462→   462→export async function getExpensesOffline(userId: string, options?: { period?: string; date?: string; from?: string; to?: string; category?: string }) {
+   463→   463→  let localExpenses = await offlineExpenses.getAll(userId);
+   464→   464→
+   465→   465→  // Honor the reporting period exactly — otherwise "Today" would show all-time totals.
+   466→   466→  const { from, to } = resolvePeriodRange(options);
+   467→   467→  localExpenses = localExpenses.filter(e => e.date >= from && e.date <= to);
+   468→   468→  if (options?.category) localExpenses = localExpenses.filter(e => e.category === options.category);
+   469→   469→
+   470→   470→  const expenses = localExpenses
+   471→   471→    .map(e => stripSync<Expense>(e))
+   472→   472→    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+   473→   473→  const totalExpense = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+   474→   474→  const byCategory = expenses.reduce((acc, e) => {
+   475→   475→    const cat = e.category || 'other';
+   476→   476→    acc[cat] = (acc[cat] || 0) + (e.amount || 0);
+   477→   477→    return acc;
+   478→   478→  }, {} as Record<string, number>);
+   479→   479→
+   480→   480→  return {
+   481→   481→    expenses,
+   482→   482→    summary: { totalExpense, byCategory, count: expenses.length },
+   483→   483→  };
+   484→   484→}
+   485→   485→
+   486→   486→export async function createExpenseOffline(expenseData: {
+   487→   487→  userId: string;
+   488→   488→  date: string;
+   489→   489→  amount: number;
+   490→   490→  category?: string;
+   491→   491→  description?: string;
+   492→   492→}): Promise<{ expense: Expense }> {
+   493→   493→  const amount = Number(expenseData.amount);
+   494→   494→  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Expense amount must be greater than 0');
+   495→   495→
+   496→   496→  const now = new Date().toISOString();
+   497→   497→  const expense = {
+   498→   498→    id: generateRecordId(),
+   499→   499→    userId: expenseData.userId,
+   500→   500→    date: expenseData.date || localDateStr(),
+   501→   501→    amount,
+   502→   502→    category: expenseData.category || 'other',
+   503→   503→    description: expenseData.description || '',
+   504→   504→    createdAt: now,
+   505→   505→    updatedAt: now,
+   506→   506→  };
+   507→   507→
+   508→   508→  await offlineExpenses.put({
+   509→   509→    ...expense,
+   510→   510→    _synced: Date.now(),
+   511→   511→    _dirty: 0,
+   512→   512→  });
+   513→   513→
+   514→   514→  return { expense };
+   515→   515→}
+   516→   516→
+   517→   517→export async function updateExpenseOffline(id: string, updates: { amount?: number; category?: string; description?: string }, userId: string): Promise<{ expense: Expense }> {
+   518→   518→  const allExpenses = await offlineExpenses.getAll(userId);
+   519→   519→  const existing = allExpenses.find(e => e.id === id);
+   520→   520→  if (!existing) throw new Error('Expense not found');
+   521→   521→
+   522→   522→  if (updates.amount !== undefined) {
+   523→   523→    const amount = Number(updates.amount);
+   524→   524→    if (!Number.isFinite(amount) || amount <= 0) throw new Error('Expense amount must be greater than 0');
+   525→   525→  }
+   526→   526→
+   527→   527→  const updatedExpense = {
+   528→   528→    ...existing,
+   529→   529→    ...(updates.amount !== undefined ? { amount: Number(updates.amount) } : {}),
+   530→   530→    ...(updates.category !== undefined ? { category: updates.category } : {}),
+   531→   531→    ...(updates.description !== undefined ? { description: updates.description } : {}),
+   532→   532→    updatedAt: new Date().toISOString(),
+   533→   533→  };
+   534→   534→
+   535→   535→  await offlineExpenses.put({
+   536→   536→    ...updatedExpense,
+   537→   537→    _synced: Date.now(),
+   538→   538→    _dirty: 0,
+   539→   539→  });
+   540→   540→
+   541→   541→  return { expense: stripSync<Expense>(updatedExpense) };
+   542→   542→}
+   543→   543→
+   544→   544→export async function deleteExpenseOffline(id: string, _userId: string): Promise<{ success: boolean }> {
+   545→   545→  await offlineExpenses.delete(id);
+   546→   546→  return { success: true };
+   547→   547→}
+   548→   548→
+   549→   549→// ============ CASH ENTRIES (Local) ============
+   550→   550→
+   551→   551→export async function getCashEntriesOffline(userId: string, options?: { period?: string; date?: string; from?: string; to?: string }) {
+   552→   552→  let localEntries = await offlineCashEntries.getAll(userId);
+   553→   553→
+   554→   554→  // Honor the reporting period.
+   555→   555→  const { from, to } = resolvePeriodRange(options);
+   556→   556→  localEntries = localEntries.filter(e => e.date >= from && e.date <= to);
+   557→   557→
+   558→   558→  const entries = localEntries
+   559→   559→    .map(e => stripSync<CashEntry>(e))
+   560→   560→    .sort((a, b) => b.date.localeCompare(a.date));
+   561→   561→  // Balance semantics: the LATEST entry in the filtered period holds the running balance.
+   562→   562→  const latest = entries[0];
+   563→   563→  const totalHandCash = latest?.handCash || 0;
+   564→   564→  const totalLiquidCash = latest?.liquidCash || 0;
+   565→   565→
+   566→   566→  return {
+   567→   567→    entries,
+   568→   568→    summary: { totalHandCash, totalLiquidCash, totalCash: totalHandCash + totalLiquidCash },
+   569→   569→  };
+   570→   570→}
+   571→   571→
+   572→   572→export async function upsertCashEntryOffline(entryData: {
+   573→   573→  userId: string;
+   574→   574→  date: string;
+   575→   575→  handCash?: number;
+   576→   576→  liquidCash?: number;
+   577→   577→  note?: string;
+   578→   578→}): Promise<{ entry: CashEntry }> {
+   579→   579→  for (const value of [entryData.handCash, entryData.liquidCash]) {
+   580→   580→    if (value !== undefined) {
+   581→   581→      const num = Number(value);
+   582→   582→      if (!Number.isFinite(num) || num < 0) throw new Error('Cash amounts cannot be negative');
+   583→   583→    }
+   584→   584→  }
+   585→   585→
+   586→   586→  const now = new Date().toISOString();
+   587→   587→
+   588→   588→  // One balance entry per date — upsert by date
+   589→   589→  const allEntries = await offlineCashEntries.getAll(entryData.userId);
+   590→   590→  const existing = allEntries.find(e => e.date === entryData.date);
+   591→   591→
+   592→   592→  if (existing) {
+   593→   593→    const updated = {
+   594→   594→      ...existing,
+   595→   595→      handCash: entryData.handCash !== undefined ? Number(entryData.handCash) : existing.handCash,
+   596→   596→      liquidCash: entryData.liquidCash !== undefined ? Number(entryData.liquidCash) : existing.liquidCash,
+   597→   597→      note: entryData.note !== undefined ? entryData.note : existing.note,
+   598→   598→      updatedAt: now,
+   599→   599→    };
+   600→   600→
+   601→   601→    await offlineCashEntries.put({
+   602→   602→      ...updated,
+   603→   603→      _synced: Date.now(),
+   604→   604→      _dirty: 0,
+   605→   605→    });
+   606→   606→
+   607→   607→    return { entry: stripSync<CashEntry>(updated) };
+   608→   608→  }
+   609→   609→
+   610→   610→  const newEntry = {
+   611→   611→    id: generateRecordId(),
+   612→   612→    userId: entryData.userId,
+   613→   613→    date: entryData.date,
+   614→   614→    handCash: Number(entryData.handCash ?? 0),
+   615→   615→    liquidCash: Number(entryData.liquidCash ?? 0),
+   616→   616→    note: entryData.note || '',
+   617→   617→    createdAt: now,
+   618→   618→    updatedAt: now,
+   619→   619→  };
+   620→   620→
+   621→   621→  await offlineCashEntries.put({
+   622→   622→    ...newEntry,
+   623→   623→    _synced: Date.now(),
+   624→   624→    _dirty: 0,
+   625→   625→  });
+   626→   626→
+   627→   627→  return { entry: newEntry };
+   628→   628→}
+   629→   629→
+   630→   630→export async function updateCashEntryOffline(id: string, updates: { handCash?: number; liquidCash?: number; note?: string }, userId: string): Promise<{ entry: CashEntry }> {
+   631→   631→  const allEntries = await offlineCashEntries.getAll(userId);
+   632→   632→  const existing = allEntries.find(e => e.id === id);
+   633→   633→  if (!existing) throw new Error('Cash entry not found');
+   634→   634→
+   635→   635→  for (const value of [updates.handCash, updates.liquidCash]) {
+   636→   636→    if (value !== undefined) {
+   637→   637→      const num = Number(value);
+   638→   638→      if (!Number.isFinite(num) || num < 0) throw new Error('Cash amounts cannot be negative');
+   639→   639→    }
+   640→   640→  }
+   641→   641→
+   642→   642→  const updatedEntry = {
+   643→   643→    ...existing,
+   644→   644→    ...(updates.handCash !== undefined ? { handCash: Number(updates.handCash) } : {}),
+   645→   645→    ...(updates.liquidCash !== undefined ? { liquidCash: Number(updates.liquidCash) } : {}),
+   646→   646→    ...(updates.note !== undefined ? { note: updates.note } : {}),
+   647→   647→    updatedAt: new Date().toISOString(),
+   648→   648→  };
+   649→   649→
+   650→   650→  await offlineCashEntries.put({
+   651→   651→    ...updatedEntry,
+   652→   652→    _synced: Date.now(),
+   653→   653→    _dirty: 0,
+   654→   654→  });
+   655→   655→
+   656→   656→  return { entry: stripSync<CashEntry>(updatedEntry) };
+   657→   657→}
+   658→   658→
+   659→   659→export async function deleteCashEntryOffline(id: string, _userId: string): Promise<{ success: boolean }> {
+   660→   660→  await offlineCashEntries.delete(id);
+   661→   661→  return { success: true };
+   662→   662→}
+   663→   663→
+   664→   664→// ============ REPORTS (Local) ============
+   665→   665→
+   666→   666→export async function getReportsOffline(userId: string, type: string, options?: { from?: string; to?: string }) {
+   667→   667→  const [localProducts, localCategories, localTransactions] = await Promise.all([
+   668→   668→    offlineProducts.getAll(userId),
+   669→   669→    offlineCategories.getAll(userId),
+   670→   670→    offlineTransactions.getAll(userId),
+   671→   671→  ]);
+   672→   672→
+   673→   673→  const products = localProducts.map(p => stripSync<Product>(p));
+   674→   674→  const categories = localCategories.map(c => stripSync<Category>(c));
+   675→   675→  const transactions = localTxnsToTransactions(localTransactions);
+   676→   676→
+   677→   677→  // Apply date filters
+   678→   678→  let filteredTxns = transactions;
+   679→   679→  if (options?.from) filteredTxns = filteredTxns.filter(t => t.date >= options.from!);
+   680→   680→  if (options?.to) filteredTxns = filteredTxns.filter(t => t.date <= options.to!);
+   681→   681→
+   682→   682→  if (type === 'stock-value') {
+   683→   683→    const stockValueData = categories.map(cat => {
+   684→   684→      const catProducts = products.filter(p => p.categoryId === cat.id);
+   685→   685→      const totalQty = catProducts.reduce((sum, p) => sum + p.quantity, 0);
+   686→   686→      const totalPurchaseValue = catProducts.reduce((sum, p) => sum + p.quantity * p.purchasePrice, 0);
+   687→   687→      const totalSellingValue = catProducts.reduce((sum, p) => sum + p.quantity * p.sellingPrice, 0);
+   688→   688→      const totalProfit = totalSellingValue - totalPurchaseValue;
+   689→   689→      const lowStockCount = catProducts.filter(p => p.quantity <= p.lowStockThreshold).length;
+   690→   690→
+   691→   691→      return {
+   692→   692→        categoryId: cat.id,
+   693→   693→        categoryName: cat.name,
+   694→   694→        categoryImage: cat.image,
+   695→   695→        productCount: catProducts.length,
+   696→   696→        totalQty,
+   697→   697→        totalPurchaseValue,
+   698→   698→        totalSellingValue,
+   699→   699→        totalProfit,
+   700→   700→        lowStockCount,
+   701→   701→        products: catProducts.map(p => ({
+   702→   702→          id: p.id,
+   703→   703→          name: p.name,
+   704→   704→          quantity: p.quantity,
+   705→   705→          purchasePrice: p.purchasePrice,
+   706→   706→          sellingPrice: p.sellingPrice,
+   707→   707→          stockValue: p.quantity * p.purchasePrice,
+   708→   708→          purchaseValue: p.quantity * p.purchasePrice,
+   709→   709→          lowStock: p.quantity <= p.lowStockThreshold,
+   710→   710→        })),
+   711→   711→      };
+   712→   712→    }).filter(item => item.productCount > 0);
+   713→   713→
+   714→   714→    const grandTotal = {
+   715→   715→      totalProducts: stockValueData.reduce((s, d) => s + d.productCount, 0),
+   716→   716→      totalQty: stockValueData.reduce((s, d) => s + d.totalQty, 0),
+   717→   717→      totalPurchaseValue: stockValueData.reduce((s, d) => s + d.totalPurchaseValue, 0),
+   718→   718→      totalSellingValue: stockValueData.reduce((s, d) => s + d.totalSellingValue, 0),
+   719→   719→      totalProfit: stockValueData.reduce((s, d) => s + d.totalProfit, 0),
+   720→   720→      totalLowStock: stockValueData.reduce((s, d) => s + d.lowStockCount, 0),
+   721→   721→    };
+   722→   722→
+   723→   723→    return { type: 'stock-value', data: stockValueData, grandTotal };
+   724→   724→  }
+   725→   725→
+   726→   726→  // Daily report
+   727→   727→  if (type === 'daily') {
+   728→   728→    const dailyMap = new Map<string, {
+   729→   729→      date: string; revenue: number; cost: number; profit: number;
+   730→   730→      stockIn: number; stockOut: number; sell: number;
+   731→   731→    }>();
+   732→   732→
+   733→   733→    for (const t of filteredTxns) {
+   734→   734→      if (!dailyMap.has(t.date)) {
+   735→   735→        dailyMap.set(t.date, { date: t.date, revenue: 0, cost: 0, profit: 0, stockIn: 0, stockOut: 0, sell: 0 });
+   736→   736→      }
+   737→   737→      const entry = dailyMap.get(t.date)!;
+   738→   738→      const costBasis = txnCostBasis(t, products);
+   739→   739→
+   740→   740→      if (t.type === 'SELL') {
+   741→   741→        entry.revenue += t.totalAmount || 0;
+   742→   742→        entry.cost += (t.quantity || 0) * costBasis;
+   743→   743→        entry.profit += (t.totalAmount || 0) - (t.quantity || 0) * costBasis;
+   744→   744→        entry.sell += t.quantity || 0;
+   745→   745→      } else if (t.type === 'STOCK_IN') {
+   746→   746→        entry.cost += (t.quantity || 0) * (t.unitPrice || 0);
+   747→   747→        entry.stockIn += t.quantity || 0;
+   748→   748→      } else if (t.type === 'STOCK_OUT') {
+   749→   749→        entry.stockOut += t.quantity || 0;
+   750→   750→      }
+   751→   751→    }
+   752→   752→
+   753→   753→    const values = Array.from(dailyMap.values());
+   754→   754→    return {
+   755→   755→      type: 'daily',
+   756→   756→      data: values.sort((a, b) => b.date.localeCompare(a.date)),
+   757→   757→      grandTotal: {
+   758→   758→        totalRevenue: values.reduce((s, d) => s + d.revenue, 0),
+   759→   759→        totalCost: values.reduce((s, d) => s + d.cost, 0),
+   760→   760→        totalProfit: values.reduce((s, d) => s + d.profit, 0),
+   761→   761→        totalStockIn: values.reduce((s, d) => s + d.stockIn, 0),
+   762→   762→        totalStockOut: values.reduce((s, d) => s + d.stockOut, 0),
+   763→   763→        totalSell: values.reduce((s, d) => s + d.sell, 0),
+   764→   764→      },
+   765→   765→    };
+   766→   766→  }
+   767→   767→
+   768→   768→  // Monthly report
+   769→   769→  if (type === 'monthly') {
+   770→   770→    const monthlyMap = new Map<string, {
+   771→   771→      month: string; revenue: number; cost: number; profit: number;
+   772→   772→      stockIn: number; stockOut: number; sell: number;
+   773→   773→    }>();
+   774→   774→
+   775→   775→    for (const t of filteredTxns) {
+   776→   776→      const month = t.date.substring(0, 7); // YYYY-MM
+   777→   777→      if (!monthlyMap.has(month)) {
+   778→   778→        monthlyMap.set(month, { month, revenue: 0, cost: 0, profit: 0, stockIn: 0, stockOut: 0, sell: 0 });
+   779→   779→      }
+   780→   780→      const entry = monthlyMap.get(month)!;
+   781→   781→      const costBasis = txnCostBasis(t, products);
+   782→   782→
+   783→   783→      if (t.type === 'SELL') {
+   784→   784→        entry.revenue += t.totalAmount || 0;
+   785→   785→        entry.cost += (t.quantity || 0) * costBasis;
+   786→   786→        entry.profit += (t.totalAmount || 0) - (t.quantity || 0) * costBasis;
+   787→   787→        entry.sell += t.quantity || 0;
+   788→   788→      } else if (t.type === 'STOCK_IN') {
+   789→   789→        entry.cost += (t.quantity || 0) * (t.unitPrice || 0);
+   790→   790→        entry.stockIn += t.quantity || 0;
+   791→   791→      } else if (t.type === 'STOCK_OUT') {
+   792→   792→        entry.stockOut += t.quantity || 0;
+   793→   793→      }
+   794→   794→    }
+   795→   795→
+   796→   796→    const values = Array.from(monthlyMap.values());
+   797→   797→    return {
+   798→   798→      type: 'monthly',
+   799→   799→      data: values.sort((a, b) => b.month.localeCompare(a.month)),
+   800→   800→      grandTotal: {
+   801→   801→        totalRevenue: values.reduce((s, d) => s + d.revenue, 0),
+   802→   802→        totalCost: values.reduce((s, d) => s + d.cost, 0),
+   803→   803→        totalProfit: values.reduce((s, d) => s + d.profit, 0),
+   804→   804→        totalStockIn: values.reduce((s, d) => s + d.stockIn, 0),
+   805→   805→        totalStockOut: values.reduce((s, d) => s + d.stockOut, 0),
+   806→   806→        totalSell: values.reduce((s, d) => s + d.sell, 0),
+   807→   807→      },
+   808→   808→    };
+   809→   809→  }
+   810→   810→
+   811→   811→  // Category report
+   812→   812→  if (type === 'category') {
+   813→   813→    const categoryMap = new Map<string, {
+   814→   814→      categoryId: string; categoryName: string;
+   815→   815→      revenue: number; cost: number; profit: number;
+   816→   816→      stockIn: number; stockOut: number; sell: number; quantity: number;
+   817→   817→    }>();
+   818→   818→
+   819→   819→    for (const t of filteredTxns) {
+   820→   820→      const product = products.find(p => p.id === t.productId) ?? (t.product ? ({ ...t.product, categoryId: '', createdAt: '', updatedAt: '', boxNumber: '', lowStockThreshold: 0, quantity: 0, userId: '' } as Product) : undefined);
+   821→   821→      const cat = categories.find(c => c.id === product?.categoryId);
+   822→   822→      const catId = cat?.id || 'unknown';
+   823→   823→      const catName = cat?.name || 'Unknown';
+   824→   824→
+   825→   825→      if (!categoryMap.has(catId)) {
+   826→   826→        categoryMap.set(catId, { categoryId: catId, categoryName: catName, revenue: 0, cost: 0, profit: 0, stockIn: 0, stockOut: 0, sell: 0, quantity: 0 });
+   827→   827→      }
+   828→   828→      const entry = categoryMap.get(catId)!;
+   829→   829→      const costBasis = txnCostBasis(t, products);
+   830→   830→
+   831→   831→      if (t.type === 'SELL') {
+   832→   832→        entry.revenue += t.totalAmount || 0;
+   833→   833→        entry.cost += (t.quantity || 0) * costBasis;
+   834→   834→        entry.profit += (t.totalAmount || 0) - (t.quantity || 0) * costBasis;
+   835→   835→        entry.sell += t.quantity || 0;
+   836→   836→        entry.quantity += t.quantity || 0;
+   837→   837→      } else if (t.type === 'STOCK_IN') {
+   838→   838→        entry.cost += (t.quantity || 0) * (t.unitPrice || 0);
+   839→   839→        entry.stockIn += t.quantity || 0;
+   840→   840→        entry.quantity += t.quantity || 0;
+   841→   841→      } else if (t.type === 'STOCK_OUT') {
+   842→   842→        entry.stockOut += t.quantity || 0;
+   843→   843→        entry.quantity += t.quantity || 0;
+   844→   844→      }
+   845→   845→    }
+   846→   846→
+   847→   847→    const values = Array.from(categoryMap.values());
+   848→   848→    return {
+   849→   849→      type: 'category',
+   850→   850→      data: values.sort((a, b) => b.revenue - a.revenue),
+   851→   851→      grandTotal: {
+   852→   852→        totalRevenue: values.reduce((s, d) => s + d.revenue, 0),
+   853→   853→        totalCost: values.reduce((s, d) => s + d.cost, 0),
+   854→   854→        totalProfit: values.reduce((s, d) => s + d.profit, 0),
+   855→   855→        totalStockIn: values.reduce((s, d) => s + d.stockIn, 0),
+   856→   856→        totalStockOut: values.reduce((s, d) => s + d.stockOut, 0),
+   857→   857→        totalSell: values.reduce((s, d) => s + d.sell, 0),
+   858→   858→        totalQuantity: values.reduce((s, d) => s + d.quantity, 0),
+   859→   859→      },
+   860→   860→    };
+   861→   861→  }
+   862→   862→
+   863→   863→  return { type, data: [], grandTotal: {} };
+   864→   864→}
+   865→   865→
+   866→   866→// ============ PROFILE (Local) ============
+   867→   867→
+   868→   868→export async function getProfileOffline(userId: string) {
+   869→   869→  const user = await getLocalUser(userId);
+   870→   870→  return user ? { user } : null;
+   871→   871→}
+   872→   872→
+   873→   873→export async function updateProfileOffline(id: string, updates: { name?: string; shopName?: string; language?: string; theme?: string }) {
+   874→   874→  const user = await updateLocalUser(id, updates);
+   875→   875→  return { user };
+   876→   876→}
+   877→   877→
+   878→   878→// ============ SERVICE TRANSACTIONS (Local) ============
+   879→   879→
+   880→   880→export async function getServiceTransactionsOffline(userId: string, options?: { categoryType?: ServiceCategoryType; from?: string; to?: string }): Promise<ServiceTransaction[]> {
+   881→   881→  let localTxns = await offlineServiceTransactions.getAll(userId);
+   882→   882→
+   883→   883→  if (options?.categoryType) localTxns = localTxns.filter(t => t.categoryType === options.categoryType);
+   884→   884→  if (options?.from) localTxns = localTxns.filter(t => t.date >= options.from!);
+   885→   885→  if (options?.to) localTxns = localTxns.filter(t => t.date <= options.to!);
+   886→   886→
+   887→   887→  return localTxns
+   888→   888→    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+   889→   889→    .map(t => stripSync<ServiceTransaction>(t));
+   890→   890→}
+   891→   891→
+   892→   892→export async function createServiceTransactionOffline(data: {
+   893→   893→  categoryType: ServiceCategoryType;
+   894→   894→  transactionType: 'income' | 'expense';
+   895→   895→  amount: number;
+   896→   896→  purpose: string;
+   897→   897→  userId: string;
+   898→   898→}): Promise<{ serviceTransaction: ServiceTransaction }> {
+   899→   899→  const amount = Number(data.amount);
+   900→   900→  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Amount must be greater than 0');
+   901→   901→  if (!data.purpose.trim()) throw new Error('Purpose is required');
+   902→   902→
+   903→   903→  const now = new Date().toISOString();
+   904→   904→  const serviceTransaction = {
+   905→   905→    id: generateRecordId(),
+   906→   906→    userId: data.userId,
+   907→   907→    categoryType: data.categoryType,
+   908→   908→    transactionType: data.transactionType,
+   909→   909→    amount,
+   910→   910→    purpose: data.purpose.trim(),
+   911→   911→    date: localDateStr(),
+   912→   912→    createdAt: now,
+   913→   913→    updatedAt: now,
+   914→   914→  };
+   915→   915→
+   916→   916→  await offlineServiceTransactions.put({
+   917→   917→    ...serviceTransaction,
+   918→   918→    _synced: Date.now(),
+   919→   919→    _dirty: 0,
+   920→   920→  });
+   921→   921→
+   922→   922→  return { serviceTransaction };
+   923→   923→}
+   924→   924→
+   925→   925→export async function deleteServiceTransactionOffline(id: string, _userId: string): Promise<{ success: boolean }> {
+   926→   926→  await offlineServiceTransactions.delete(id);
+   927→   927→  return { success: true };
+   928→   928→}
+   929→   929→
+   930→   930→// ============ BILLS (e-Bill / Invoice) ============
+   931→   931→
+   932→   932→export const DEFAULT_BILLING_SETTINGS: Omit<BillingSettings, 'userId' | 'updatedAt'> = {
+   933→   933→  shopName: 'PS TELECOM',
+   934→   934→  proprietorName: 'Avijit Maity & Brother',
+   935→   935→  shopAddress: '',
+   936→   936→  shopPhone: '',
+   937→   937→  gstNumber: '',
+   938→   938→  gstEnabled: false,
+   939→   939→  gstRate: 18,
+   940→   940→  defaultDiscountPercent: 0,
+   941→   941→  upiId: '',
+   942→   942→  signatureDataUrl: '',
+   943→   943→  qrCodeDataUrl: '',
+   944→   944→  billPrefix: 'PS',
+   945→   945→  thankYouNote: 'Thank you for your business!',
+   946→   946→  termsText: '',
+   947→   947→};
+   948→   948→
+   949→   949→export async function getBillingSettingsOffline(userId: string): Promise<BillingSettings> {
+   950→   950→  const db = await getOfflineDB();
+   951→   951→  const existing = await db.get('billingSettings', userId);
+   952→   952→  if (existing) return existing;
+   953→   953→  return {
+   954→   954→    ...DEFAULT_BILLING_SETTINGS,
+   955→   955→    userId,
+   956→   956→    updatedAt: new Date().toISOString(),
+   957→   957→  };
+   958→   958→}
+   959→   959→
+   960→   960→export async function saveBillingSettingsOffline(userId: string, updates: Partial<Omit<BillingSettings, 'userId' | 'updatedAt'>>): Promise<BillingSettings> {
+   961→   961→  const current = await getBillingSettingsOffline(userId);
+   962→   962→  const next: BillingSettings = {
+   963→   963→    ...current,
+   964→   964→    ...updates,
+   965→   965→    // Never allow blank shop name — bill header must always render
+   966→   966→    shopName: (updates.shopName ?? current.shopName).trim() || DEFAULT_BILLING_SETTINGS.shopName,
+   967→   967→    gstRate: clampNumber(updates.gstRate ?? current.gstRate, 0, 100),
+   968→   968→    defaultDiscountPercent: clampNumber(updates.defaultDiscountPercent ?? current.defaultDiscountPercent, 0, 100),
+   969→   969→    userId,
+   970→   970→    updatedAt: new Date().toISOString(),
+   971→   971→  };
+   972→   972→  const db = await getOfflineDB();
+   973→   973→  await db.put('billingSettings', next);
+   974→   974→  return next;
+   975→   975→}
+   976→   976→
+   977→   977→function clampNumber(value: number, min: number, max: number): number {
+   978→   978→  const num = Number(value);
+   979→   979→  if (!Number.isFinite(num)) return min;
+   980→   980→  return Math.min(max, Math.max(min, num));
+   981→   981→}
+   982→   982→
+   983→   983→/** Generates the next sequential bill number: PREFIX-YYMM-0001 */
+   984→   984→async function nextBillNumber(userId: string, prefix: string): Promise<string> {
+   985→   985→  const bills = await offlineBills.getAll(userId);
+   986→   986→  const now = new Date();
+   987→   987→  const yy = String(now.getFullYear()).slice(-2);
+   988→   988→  const mm = String(now.getMonth() + 1).padStart(2, '0');
+   989→   989→  const monthPrefix = `${prefix}-${yy}${mm}-`;
+   990→   990→  let maxSeq = 0;
+   991→   991→  for (const b of bills) {
+   992→   992→    if (typeof b.billNumber === 'string' && b.billNumber.startsWith(monthPrefix)) {
+   993→   993→      const seq = parseInt(b.billNumber.slice(monthPrefix.length), 10);
+   994→   994→      if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
+   995→   995→    }
+   996→   996→  }
+   997→   997→  return `${monthPrefix}${String(maxSeq + 1).padStart(4, '0')}`;
+   998→   998→}
+   999→   999→
+  1000→  1000→export async function createBillOffline(data: {
+  1001→  1001→  userId: string;
+  1002→  1002→  transactionId: string;
+  1003→  1003→  productId: string;
+  1004→  1004→  productName: string;
+  1005→  1005→  quantity: number;
+  1006→  1006→  unitPrice: number;
+  1007→  1007→  customerName?: string;
+  1008→  1008→  customerMobile?: string;
+  1009→  1009→  discountType?: 'amount' | 'percent';
+  1010→  1010→  discountValue?: number;
+  1011→  1011→  paymentMethod?: PaymentMethod;
+  1012→  1012→  paidAmount?: number;
+  1013→  1013→  note?: string;
+  1014→  1014→  date?: string;
+  1015→  1015→}): Promise<{ bill: Bill }> {
+  1016→  1016→  const qty = Math.floor(Number(data.quantity));
+  1017→  1017→  if (!Number.isFinite(qty) || qty <= 0) throw new Error('Quantity must be a positive whole number');
+  1018→  1018→  const unitPrice = Number(data.unitPrice);
+  1019→  1019→  if (!Number.isFinite(unitPrice) || unitPrice < 0) throw new Error('Price cannot be negative');
+  1020→  1020→
+  1021→  1021→  const settings = await getBillingSettingsOffline(data.userId);
+  1022→  1022→
+  1023→  1023→  const discountType = data.discountType === 'percent' ? 'percent' : 'amount';
+  1024→  1024→  let discountValue = Math.max(0, Number(data.discountValue ?? 0) || 0);
+  1025→  1025→  const subtotal = round2(qty * unitPrice);
+  1026→  1026→
+  1027→  1027→  let discountAmount = 0;
+  1028→  1028→  if (discountType === 'percent') {
+  1029→  1029→    discountValue = clampNumber(discountValue, 0, 100);
+  1030→  1030→    discountAmount = round2((subtotal * discountValue) / 100);
+  1031→  1031→  } else {
+  1032→  1032→    discountAmount = round2(Math.min(discountValue, subtotal));
+  1033→  1033→  }
+  1034→  1034→
+  1035→  1035→  const gstEnabled = !!settings.gstEnabled && !!settings.gstNumber.trim() && settings.gstRate > 0;
+  1036→  1036→  const gstAmount = gstEnabled ? round2(((subtotal - discountAmount) * settings.gstRate) / 100) : 0;
+  1037→  1037→  const total = round2(subtotal - discountAmount + gstAmount);
+  1038→  1038→
+  1039→  1039→  const paymentMethod: PaymentMethod = data.paymentMethod ?? 'cash';
+  1040→  1040→  let paidAmount = data.paidAmount === undefined ? total : Math.max(0, Number(data.paidAmount) || 0);
+  1041→  1041→  if (paymentMethod === 'due') paidAmount = 0;
+  1042→  1042→  paidAmount = round2(Math.min(paidAmount, total));
+  1043→  1043→  const dueAmount = round2(total - paidAmount);
+  1044→  1044→
+  1045→  1045→  // Guard: one bill per stock-out/sell transaction — prevents accidental duplicates
+  1046→  1046→  const existingBills = await offlineBills.getAll(data.userId);
+  1047→  1047→  const dupe = existingBills.find(b => b.transactionId === data.transactionId);
+  1048→  1048→  if (dupe) throw new Error('A bill already exists for this transaction');
+  1049→  1049→
+  1050→  1050→  const now = new Date().toISOString();
+  1051→  1051→  const billNumber = await nextBillNumber(data.userId, settings.billPrefix.trim() || 'PS');
+  1052→  1052→
+  1053→  1053→  const bill: OfflineDBSchema['bills']['value'] = {
+  1054→  1054→    id: generateRecordId(),
+  1055→  1055→    userId: data.userId,
+  1056→  1056→    billNumber,
+  1057→  1057→    customerName: (data.customerName ?? '').trim() || 'Walk-in Customer',
+  1058→  1058→    customerMobile: (data.customerMobile ?? '').replace(/[^\d+]/g, ''),
+  1059→  1059→    items: [
+  1060→  1060→      {
+  1061→  1061→        productId: data.productId,
+  1062→  1062→        name: data.productName,
+  1063→  1063→        quantity: qty,
+  1064→  1064→        unitPrice,
+  1065→  1065→        total: subtotal,
+  1066→  1066→      },
+  1067→  1067→    ],
+  1068→  1068→    subtotal,
+  1069→  1069→    discountValue,
+  1070→  1070→    discountType,
+  1071→  1071→    discountAmount,
+  1072→  1072→    gstEnabled,
+  1073→  1073→    gstRate: gstEnabled ? settings.gstRate : 0,
+  1074→  1074→    gstAmount,
+  1075→  1075→    total,
+  1076→  1076→    paymentMethod,
+  1077→  1077→    paidAmount,
+  1078→  1078→    dueAmount,
+  1079→  1079→    note: (data.note ?? '').trim(),
+  1080→  1080→    transactionId: data.transactionId,
+  1081→  1081→    shopSnapshot: {
+  1082→  1082→      name: settings.shopName,
+  1083→  1083→      proprietorName: settings.proprietorName,
+  1084→  1084→      address: settings.shopAddress,
+  1085→  1085→      phone: settings.shopPhone,
+  1086→  1086→      gstNumber: settings.gstNumber,
+  1087→  1087→    },
+  1088→  1088→    date: data.date || localDateStr(),
+  1089→  1089→    createdAt: now,
+  1090→  1090→    updatedAt: now,
+  1091→  1091→  };
+  1092→  1092→
+  1093→  1093→  await offlineBills.put(bill);
+  1094→  1094→  return { bill: bill as unknown as Bill };
+  1095→  1095→}
+  1096→  1096→
+  1097→  1097→function round2(n: number): number {
+  1098→  1098→  return Math.round(n * 100) / 100;
+  1099→  1099→}
+  1100→  1100→
+  1101→  1101→export async function getBillsOffline(userId: string, options?: { from?: string; to?: string; search?: string }): Promise<Bill[]> {
+  1102→  1102→  let rows = await offlineBills.getAll(userId);
+  1103→  1103→  if (options?.from) rows = rows.filter(b => b.date >= options.from!);
+  1104→  1104→  if (options?.to) rows = rows.filter(b => b.date <= options.to!);
+  1105→  1105→  if (options?.search) {
+  1106→  1106→    const q = options.search.toLowerCase();
+  1107→  1107→    rows = rows.filter(b =>
+  1108→  1108→      b.customerName.toLowerCase().includes(q) ||
+  1109→  1109→      b.customerMobile.includes(q) ||
+  1110→  1110→      b.billNumber.toLowerCase().includes(q) ||
+  1111→  1111→      b.items.some(i => i.name.toLowerCase().includes(q))
+  1112→  1112→    );
+  1113→  1113→  }
+  1114→  1114→  return rows
+  1115→  1115→    .sort((a, b) => {
+  1116→  1116→      if (a.date !== b.date) return b.date.localeCompare(a.date);
+  1117→  1117→      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  1118→  1118→    })
+  1119→  1119→    .map(b => b as unknown as Bill);
+  1120→  1120→}
+  1121→  1121→
+  1122→  1122→export async function getBillByIdOffline(id: string, userId: string): Promise<Bill | null> {
+  1123→  1123→  const db = await getOfflineDB();
+  1124→  1124→  const row = await db.get('bills', id);
+  1125→  1125→  if (!row || row.userId !== userId) return null;
+  1126→  1126→  return row as unknown as Bill;
+  1127→  1127→}
+  1128→  1128→
+  1129→  1129→export async function deleteBillOffline(id: string, userId: string): Promise<{ success: boolean }> {
+  1130→  1130→  const db = await getOfflineDB();
+  1131→  1131→  const row = await db.get('bills', id);
+  1132→  1132→  if (row && row.userId === userId) {
+  1133→  1133→    await db.delete('bills', id);
+  1134→  1134→  }
+  1135→  1135→  return { success: true };
+  1136→  1136→}
+  1137→  1137→
+  1138→  1138→// ============ BACKUP (Local) ============
+  1139→  1139→
+  1140→  1140→export async function exportBackupOffline(userId: string) {
+  1141→  1141→  const [localCategories, localProducts, localTransactions, localExpenses, localCashEntries, localServiceTxns, localBills, billingSettings] = await Promise.all([
+  1142→  1142→    offlineCategories.getAll(userId),
+  1143→  1143→    offlineProducts.getAll(userId),
+  1144→  1144→    offlineTransactions.getAll(userId),
+  1145→  1145→    offlineExpenses.getAll(userId),
+  1146→  1146→    offlineCashEntries.getAll(userId),
+  1147→  1147→    offlineServiceTransactions.getAll(userId),
+  1148→  1148→    offlineBills.getAll(userId),
+  1149→  1149→    getBillingSettingsOffline(userId),
+  1150→  1150→  ]);
+  1151→  1151→
+  1152→  1152→  return {
+  1153→  1153→    categories: localCategories.map(c => stripSync(c)),
+  1154→  1154→    products: localProducts.map(p => { const { category: _c, ...rest } = stripSync<Record<string, unknown>>(p); return rest; }),
+  1155→  1155→    transactions: localTransactions.map(t => { const { product: _p, ...rest } = stripSync<Record<string, unknown>>(t); return rest; }),
+  1156→  1156→    expenses: localExpenses.map(e => stripSync(e)),
+  1157→  1157→    cashEntries: localCashEntries.map(e => stripSync(e)),
+  1158→  1158→    serviceTransactions: localServiceTxns.map(s => stripSync(s)),
+  1159→  1159→    bills: localBills.map(b => b),
+  1160→  1160→    billingSettings,
+  1161→  1161→    exportedAt: new Date().toISOString(),
+  1162→  1162→  };
+  1163→  1163→}
+  1164→  1164→
+  1165→  1165→export async function importBackupOffline(userId: string, backupData: {
+  1166→  1166→  categories: unknown[];
+  1167→  1167→  products: unknown[];
+  1168→  1168→  transactions: unknown[];
+  1169→  1169→  expenses?: unknown[];
+  1170→  1170→  cashEntries?: unknown[];
+  1171→  1171→  serviceTransactions?: unknown[];
+  1172→  1172→  bills?: unknown[];
+  1173→  1173→  billingSettings?: unknown;
+  1174→  1174→}) {
+  1175→  1175→  const now = Date.now();
+  1176→  1176→
+  1177→  1177→  // Validate rows: every row MUST have an id — malformed backups must never
+  1178→  1178→  // be written into IndexedDB.
+  1179→  1179→  const asRows = (rows: unknown[]): Record<string, unknown>[] => {
+  1180→  1180→    if (!Array.isArray(rows)) return [];
+  1181→  1181→    return rows.filter((r): r is Record<string, unknown> =>
+  1182→  1182→      !!r && typeof r === 'object' && typeof (r as Record<string, unknown>).id === 'string' && (r as Record<string, unknown>).id !== ''
+  1183→  1183→    );
+  1184→  1184→  };
+  1185→  1185→
+  1186→  1186→  const categories = asRows(backupData.categories || []);
+  1187→  1187→  const products = asRows(backupData.products || []);
+  1188→  1188→  const transactions = asRows(backupData.transactions || []);
+  1189→  1189→  const expenses = asRows(backupData.expenses || []);
+  1190→  1190→  const cashEntries = asRows(backupData.cashEntries || []);
+  1191→  1191→  const serviceTransactions = asRows(backupData.serviceTransactions || []);
+  1192→  1192→  const bills = asRows(backupData.bills || []);
+  1193→  1193→  const billingSettings = (backupData.billingSettings && typeof backupData.billingSettings === 'object')
+  1194→  1194→    ? backupData.billingSettings as Record<string, unknown>
+  1195→  1195→    : null;
+  1196→  1196→
+  1197→  1197→  if (categories.length === 0 && products.length === 0 && transactions.length === 0 && expenses.length === 0 && cashEntries.length === 0 && serviceTransactions.length === 0 && bills.length === 0) {
+  1198→  1198→    throw new Error('Backup file contains no valid data');
+  1199→  1199→  }
+  1200→  1200→
+  1201→  1201→  // REPLACE semantics: clear existing stores first so stale rows can't survive a restore.
+  1202→  1202→  const [allLocalCats, allLocalProducts, allLocalTxns, allLocalExpenses, allLocalCash, allLocalSvc, allLocalBills] = await Promise.all([
+  1203→  1203→    offlineCategories.getAll(userId),
+  1204→  1204→    offlineProducts.getAll(userId),
+  1205→  1205→    offlineTransactions.getAll(userId),
+  1206→  1206→    offlineExpenses.getAll(userId),
+  1207→  1207→    offlineCashEntries.getAll(userId),
+  1208→  1208→    offlineServiceTransactions.getAll(userId),
+  1209→  1209→    offlineBills.getAll(userId),
+  1210→  1210→  ]);
+  1211→  1211→  await Promise.all([
+  1212→  1212→    ...allLocalCats.map(c => offlineCategories.delete(c.id)),
+  1213→  1213→    ...allLocalProducts.map(p => offlineProducts.delete(p.id)),
+  1214→  1214→    ...allLocalTxns.map(t => offlineTransactions.delete(t.id)),
+  1215→  1215→    ...allLocalExpenses.map(e => offlineExpenses.delete(e.id)),
+  1216→  1216→    ...allLocalCash.map(e => offlineCashEntries.delete(e.id)),
+  1217→  1217→    ...allLocalSvc.map(s => offlineServiceTransactions.delete(s.id)),
+  1218→  1218→    ...allLocalBills.map(b => offlineBills.delete(b.id)),
+  1219→  1219→  ]);
+  1220→  1220→
+  1221→  1221→  if (categories.length) {
+  1222→  1222→    await offlineCategories.putBulk(
+  1223→  1223→      categories.map((cat) => ({ ...cat, userId, _synced: now, _dirty: 0 })) as OfflineDBSchema['categories']['value'][]
+  1224→  1224→    );
+  1225→  1225→  }
+  1226→  1226→  if (products.length) {
+  1227→  1227→    await offlineProducts.putBulk(
+  1228→  1228→      products.map((prod) => ({ ...prod, userId, _synced: now, _dirty: 0 })) as OfflineDBSchema['products']['value'][]
+  1229→  1229→    );
+  1230→  1230→  }
+  1231→  1231→  if (transactions.length) {
+  1232→  1232→    await offlineTransactions.putBulk(
+  1233→  1233→      transactions.map((txn) => ({ ...txn, userId, _synced: now, _dirty: 0 })) as OfflineDBSchema['transactions']['value'][]
+  1234→  1234→    );
+  1235→  1235→  }
+  1236→  1236→  if (expenses.length) {
+  1237→  1237→    await offlineExpenses.putBulk(
+  1238→  1238→      expenses.map((exp) => ({ ...exp, userId, _synced: now, _dirty: 0 })) as OfflineDBSchema['expenses']['value'][]
+  1239→  1239→    );
+  1240→  1240→  }
+  1241→  1241→  if (cashEntries.length) {
+  1242→  1242→    await offlineCashEntries.putBulk(
+  1243→  1243→      cashEntries.map((entry) => ({ ...entry, userId, _synced: now, _dirty: 0 })) as OfflineDBSchema['cashEntries']['value'][]
+  1244→  1244→    );
+  1245→  1245→  }
+  1246→  1246→  if (serviceTransactions.length) {
+  1247→  1247→    await offlineServiceTransactions.putBulk(
+  1248→  1248→      serviceTransactions.map((svc) => ({ ...svc, userId, _synced: now, _dirty: 0 })) as OfflineDBSchema['serviceTransactions']['value'][]
+  1249→  1249→    );
+  1250→  1250→  }
+  1251→  1251→  if (bills.length) {
+  1252→  1252→    await offlineBills.putBulk(
+  1253→  1253→      bills.map((bill) => ({ ...bill, userId, createdAt: bill.createdAt || new Date().toISOString(), updatedAt: bill.updatedAt || new Date().toISOString() })) as OfflineDBSchema['bills']['value'][]
+  1254→  1254→    );
+  1255→  1255→  }
+  1256→  1256→  if (billingSettings) {
+  1257→  1257→    const db = await getOfflineDB();
+  1258→  1258→    await db.put('billingSettings', {
+  1259→  1259→      ...DEFAULT_BILLING_SETTINGS,
+  1260→  1260→      ...billingSettings,
+  1261→  1261→      userId,
+  1262→  1262→      updatedAt: new Date().toISOString(),
+  1263→  1263→    } as OfflineDBSchema['billingSettings']['value']);
+  1264→  1264→  }
+  1265→  1265→
+  1266→  1266→  return { message: 'Backup imported successfully' };
+  1267→  1267→}
+  1268→  1268→
+  1269→  1269→// ============ RESET DATA (Local) ============
+  1270→  1270→
+  1271→  1271→export async function resetDataOffline(userId: string) {
+  1272→  1272→  await clearOfflineData(userId);
+  1273→  1273→  return { message: 'All data reset successfully' };
+  1274→  1274→}
+  1275→  1275→
+  1276→  1276→// Keep the syncMeta export used by potential future features (last backup time etc.)
+  1277→  1277→export { offlineMeta };
+  1278→  1278→

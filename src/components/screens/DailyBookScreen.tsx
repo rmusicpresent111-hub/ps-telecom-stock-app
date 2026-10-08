@@ -20,6 +20,7 @@ import {
   deleteExpenseOffline 
 } from '@/lib/offline-service';
 import { localDateStr } from '@/lib/offline-service';
+import { registerBackModal } from '@/lib/modal-back';
 
 interface CashEntry {
   id: string;
@@ -87,6 +88,12 @@ export default function DailyBookScreen() {
 
   // Delete confirmation (single-tap delete used to destroy data instantly)
   const [confirmDelete, setConfirmDelete] = useState<{ type: 'cash' | 'expense'; id: string } | null>(null);
+
+  // Hardware/browser back closes the delete dialog instead of navigating away
+  useEffect(() => {
+    if (!confirmDelete) return;
+    return registerBackModal(() => setConfirmDelete(null));
+  }, [confirmDelete]);
 
   const isBn = language === 'bn';
   const isHi = language === 'hi';
@@ -316,7 +323,7 @@ export default function DailyBookScreen() {
           animate={{ opacity: 1, y: 0 }}
           className="flex items-center gap-3 mb-4"
         >
-          <button onClick={goBack} className="p-2 rounded-xl glass-card">
+          <button onClick={goBack} className="p-2 rounded-xl glass-card" aria-label="Back">
             <ArrowLeft size={20} className="text-white/70" />
           </button>
           <div className="flex items-center gap-2">
@@ -800,7 +807,7 @@ export default function DailyBookScreen() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 backdrop-blur-sm"
             onClick={resetCashForm}
           >
             <motion.div
@@ -908,7 +915,7 @@ export default function DailyBookScreen() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 backdrop-blur-sm"
             onClick={resetExpenseForm}
           >
             <motion.div

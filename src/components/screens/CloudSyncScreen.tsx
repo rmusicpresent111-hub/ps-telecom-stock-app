@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import {
@@ -11,10 +11,12 @@ import {
   testD1Connection,
   backupToD1,
   restoreFromD1,
+  type D1Credentials,
   type CloudMeta,
   type CloudCounts,
   type BackupProgress,
 } from '@/lib/cloud-d1';
+import { registerBackModal } from '@/lib/modal-back';
 import { motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -30,6 +32,7 @@ import {
   EyeOff,
   ChevronDown,
   ShieldCheck,
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -43,8 +46,11 @@ export default function CloudSyncScreen() {
 
   const [accountId, setAccountId] = useState('');
   const [databaseId, setDatabaseId] = useState('');
+  // The real token is NEVER prefilled into the input — only typed anew.
   const [apiToken, setApiToken] = useState('');
   const [showToken, setShowToken] = useState(false);
+  // In-memory copy of the stored credentials (token included) for API calls.
+  const [savedCreds, setSavedCreds] = useState<D1Credentials | null>(null);
 
   const [conn, setConn] = useState<ConnState>('idle');
   const [connError, setConnError] = useState('');
@@ -54,14 +60,39 @@ export default function CloudSyncScreen() {
   const [progress, setProgress] = useState<BackupProgress | null>(null);
   const [showGuide, setShowGuide] = useState(false);
   const [showRestoreDialog, setShowRestoreDialog] = useState(false);
+  const [showEmailMismatchDialog, setShowEmailMismatchDialog] = useState(false);
+  const [mismatchEmail, setMismatchEmail] = useState('');
+
+  // Restore success schedules a delayed navigation — keep the id so an
+  // unmount can never leave an orphan timer teleporting the next screen.
+  const navTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (navTimerRef.current) clearTimeout(navTimerRef.current);
+    };
+  }, []);
+
+  // Hardware/browser back closes the topmost open dialog first
+  useEffect(() => {
+    if (!showRestoreDialog) return;
+    return registerBackModal(() => setShowRestoreDialog(false));
+  }, [showRestoreDialog]);
+
+  useEffect(() => {
+    if (!showEmailMismatchDialog) return;
+    return registerBackModal(() => setShowEmailMismatchDialog(false));
+  }, [showEmailMismatchDialog]);
 
   // Load saved credentials on mount + auto-verify connection in background
   useEffect(() => {
-    const saved = getD1Credentials();
+    if (!user?.id) return;
+    const saved = getD1Credentials(user.id);
     if (!saved) return;
+    // Account/Database IDs prefill normally; the token stays hidden.
     setAccountId(saved.accountId);
     setDatabaseId(saved.databaseId);
-    setApiToken(saved.apiToken);
+    setApiToken('');
+    setSavedCreds(saved);
     let cancelled = false;
     setConn('testing');
     testD1Connection(saved)
@@ -81,15 +112,17 @@ export default function CloudSyncScreen() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [user?.id]);
 
-  const currentCreds = () => ({
+  /** Typed values, falling back to the stored token when the field is untouched. */
+  const currentCreds = (): D1Credentials => ({
     accountId: accountId.trim(),
     databaseId: databaseId.trim(),
-    apiToken: apiToken.trim(),
+    apiToken: apiToken.trim() || savedCreds?.apiToken || '',
   });
 
   const handleTest = useCallback(async () => {
+    if (!user?.id) return;
     const creds = currentCreds();
     if (!creds.accountId || !creds.databaseId || !creds.apiToken) {
       toast.error(t('fillAllFields', language));
@@ -98,9 +131,12 @@ export default function CloudSyncScreen() {
     setConn('testing');
     setConnError('');
     try {
-      saveD1Credentials(creds);
+      // Nothing is persisted until the connection test actually passes.
       const res = await testD1Connection(creds);
       if (res.ok) {
+        saveD1Credentials(creds, user.id);
+        setSavedCreds(creds);
+        setApiToken(''); // re-mask: the new token is stored now
         setConn('connected');
         setCloudMeta(res.meta ?? null);
         toast.success(t('connectionOk', language));
@@ -114,7 +150,7 @@ export default function CloudSyncScreen() {
       setConnError((e as Error).message);
       toast.error(t('connectionFailed', language));
     }
-  }, [accountId, databaseId, apiToken, language]);
+  }, [user?.id, accountId, databaseId, apiToken, savedCreds, language]);
 
   const handleBackup = useCallback(async () => {
     if (!user?.id) return;
@@ -126,13 +162,16 @@ export default function CloudSyncScreen() {
     setBusy('backup');
     setProgress(null);
     try {
-      saveD1Credentials(creds);
       const res = await backupToD1(user.id, creds, {
         userEmail: user.email || '',
         shopName: user.shopName || '',
         onProgress: p => setProgress(p),
       });
       if (res.ok) {
+        // Persist only after a successful backup.
+        saveD1Credentials(creds, user.id);
+        setSavedCreds(creds);
+        setApiToken('');
         const c: CloudCounts | undefined = res.counts;
         const summary = c
           ? ` (${c.categories}+${c.products}+${c.transactions}+${c.expenses}+${c.cashEntries}+${c.serviceTransactions}+${c.bills})`
@@ -154,9 +193,9 @@ export default function CloudSyncScreen() {
       setBusy(null);
       setProgress(null);
     }
-  }, [user, accountId, databaseId, apiToken, language]);
+  }, [user, accountId, databaseId, apiToken, savedCreds, language]);
 
-  const doRestore = useCallback(async () => {
+  const doRestore = useCallback(async (confirmDifferentEmail: boolean) => {
     if (!user?.id) return;
     const creds = currentCreds();
     if (!creds.accountId || !creds.databaseId || !creds.apiToken) {
@@ -164,13 +203,24 @@ export default function CloudSyncScreen() {
       return;
     }
     setShowRestoreDialog(false);
+    setShowEmailMismatchDialog(false);
     setBusy('restore');
     try {
-      saveD1Credentials(creds);
-      const res = await restoreFromD1(user.id, creds);
+      const res = await restoreFromD1(user.id, creds, {
+        userEmail: user.email || '',
+        confirmDifferentEmail,
+      });
       if (res.ok) {
+        saveD1Credentials(creds, user.id);
+        setSavedCreds(creds);
+        setApiToken('');
         toast.success(t('cloudRestoreDone', language));
-        setTimeout(() => navigateToTab('dashboard'), 900);
+        navTimerRef.current = setTimeout(() => navigateToTab('dashboard'), 900);
+      } else if (res.emailMismatch) {
+        // The cloud backup belongs to another account — warn loudly and let
+        // the user confirm explicitly.
+        setMismatchEmail(res.backupEmail || '');
+        setShowEmailMismatchDialog(true);
       } else {
         toast.error(
           res.empty
@@ -181,13 +231,14 @@ export default function CloudSyncScreen() {
     } finally {
       setBusy(null);
     }
-  }, [user, accountId, databaseId, apiToken, language, navigateToTab]);
+  }, [user, accountId, databaseId, apiToken, savedCreds, language, navigateToTab]);
 
   const handleDisconnect = () => {
-    clearD1Credentials();
+    clearD1Credentials(user?.id);
     setAccountId('');
     setDatabaseId('');
     setApiToken('');
+    setSavedCreds(null);
     setConn('idle');
     setCloudMeta(null);
     setConnError('');
@@ -208,6 +259,12 @@ export default function CloudSyncScreen() {
   const progressPct =
     progress && progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
   const working = busy !== null || conn === 'testing';
+  const tokenSaved = savedCreds !== null;
+  const maskedToken = tokenSaved
+    ? `••••••••${savedCreds.apiToken.slice(-4)}`
+    : '••••••••••••••••••••';
+  const backupOwnerVisible = !!cloudMeta?.userEmail && !!user?.email &&
+    cloudMeta.userEmail.toLowerCase() !== user.email.toLowerCase();
 
   const steps = [
     t('setupStep1', language),
@@ -276,8 +333,10 @@ export default function CloudSyncScreen() {
             <div className="mt-2 pt-2 border-t border-white/10 text-xs text-white/50 space-y-1">
               {cloudMeta.userEmail && (
                 <div className="flex justify-between">
-                  <span>Account</span>
-                  <span className="text-white/80 truncate max-w-[180px]">{cloudMeta.userEmail}</span>
+                  <span>{t('cloudBackupOwner', language)}</span>
+                  <span className={`truncate max-w-[180px] ${backupOwnerVisible ? 'text-amber-300' : 'text-white/80'}`}>
+                    {cloudMeta.userEmail}
+                  </span>
                 </div>
               )}
               {cloudMeta.backedUpAt && (
@@ -291,6 +350,12 @@ export default function CloudSyncScreen() {
                   <span>Rows</span>
                   <span className="text-white/80">{cloudMeta.totalRows}</span>
                 </div>
+              )}
+              {backupOwnerVisible && (
+                <p className="text-[10px] text-amber-300/90 flex items-start gap-1 pt-1">
+                  <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+                  {t('restoreDifferentAccountWarn', language).replace('{email}', cloudMeta.userEmail)}
+                </p>
               )}
             </div>
           )}
@@ -349,7 +414,7 @@ export default function CloudSyncScreen() {
                 type={showToken ? 'text' : 'password'}
                 value={apiToken}
                 onChange={e => setApiToken(e.target.value)}
-                placeholder="••••••••••••••••••••"
+                placeholder={maskedToken}
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
@@ -364,6 +429,12 @@ export default function CloudSyncScreen() {
                 {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
             </div>
+            {tokenSaved && !apiToken && (
+              <p className="text-[10px] text-emerald-400/80 mt-1 flex items-center gap-1">
+                <CheckCircle2 size={11} />
+                {t('tokenSavedHint', language)}
+              </p>
+            )}
           </div>
 
           {/* Save & Test */}
@@ -481,7 +552,7 @@ export default function CloudSyncScreen() {
         )}
 
         {/* Disconnect */}
-        {(accountId || databaseId || apiToken) && (
+        {(accountId || databaseId || apiToken || tokenSaved) && (
           <button
             onClick={handleDisconnect}
             disabled={working}
@@ -494,7 +565,7 @@ export default function CloudSyncScreen() {
 
       {/* Restore confirmation dialog */}
       {showRestoreDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <motion.div
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -512,7 +583,42 @@ export default function CloudSyncScreen() {
                 {t('cancel', language)}
               </button>
               <button
-                onClick={doRestore}
+                onClick={() => doRestore(false)}
+                className="flex-1 py-2 text-sm font-semibold rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30 transition-colors"
+              >
+                {t('restore', language)}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Backup-owner mismatch confirmation */}
+      {showEmailMismatchDialog && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="glass-card-strong p-6 mx-4 max-w-sm w-full"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle size={20} className="text-amber-300" />
+              <h3 className="text-lg font-bold text-amber-300">
+                {t('cloudRestoreTitle', language)}
+              </h3>
+            </div>
+            <p className="text-sm text-white/70 mb-6 break-words">
+              {t('restoreDifferentAccountWarn', language).replace('{email}', mismatchEmail)}
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowEmailMismatchDialog(false)}
+                className="flex-1 neon-btn py-2 text-sm font-semibold"
+              >
+                {t('cancel', language)}
+              </button>
+              <button
+                onClick={() => doRestore(true)}
                 className="flex-1 py-2 text-sm font-semibold rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30 transition-colors"
               >
                 {t('restore', language)}

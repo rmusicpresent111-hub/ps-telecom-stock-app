@@ -54,10 +54,27 @@ export function normalizeMobile(mobile: string): string {
   return digits;
 }
 
+/**
+ * Validate an Indian mobile number: strips non-digits, then a leading country
+ * code (91) or trunk prefix (0); the remaining 10 digits must start with 6-9.
+ */
+export function isValidIndianMobile(mobile: string): boolean {
+  let digits = (mobile || '').replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) digits = digits.slice(2);
+  else if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
+  return /^[6-9]\d{9}$/.test(digits);
+}
+
 /** Indian-format number to words, e.g. 1250.50 → "One Thousand Two Hundred Fifty Rupees and 50 Paise" */
 export function amountInWords(amount: number): string {
-  const rupees = Math.floor(amount);
-  const paise = Math.round((amount - rupees) * 100);
+  const safe = Number.isFinite(amount) && amount >= 0 ? amount : 0;
+  let rupees = Math.floor(safe);
+  let paise = Math.round((safe - rupees) * 100);
+  // Rounding can push paise to exactly 100 (e.g. 10.999) → carry into rupees.
+  if (paise >= 100) {
+    rupees += 1;
+    paise = 0;
+  }
   const rupeeWords = rupees === 0 ? 'Zero' : numberToWordsIndian(rupees);
   let out = `${rupeeWords} Rupees`;
   if (paise > 0) out += ` and ${numberToWordsIndian(paise)} Paise`;

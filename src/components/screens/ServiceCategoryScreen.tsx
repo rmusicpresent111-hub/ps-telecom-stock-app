@@ -5,6 +5,7 @@ import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { ServiceTransaction, ServiceCategoryType } from '@/lib/types';
 import { getServiceTransactionsOffline, createServiceTransactionOffline, deleteServiceTransactionOffline } from '@/lib/offline-service';
+import { registerBackModal } from '@/lib/modal-back';
 import { ArrowLeft, Plus, Trash2, TrendingUp, TrendingDown, IndianRupee, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -41,6 +42,12 @@ export default function ServiceCategoryScreen() {
   const [saving, setSaving] = useState(false);
   // Delete needs an explicit confirmation - single-tap delete destroyed data instantly
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  // Hardware/browser back closes the delete dialog instead of navigating away
+  useEffect(() => {
+    if (!confirmDeleteId) return;
+    return registerBackModal(() => setConfirmDeleteId(null));
+  }, [confirmDeleteId]);
 
   const fetchTransactions = useCallback(async () => {
     if (!user?.id || !categoryType) return;

@@ -10,9 +10,10 @@ function getAudioContext(): AudioContext | null {
     if (!audioCtx) {
       audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
     }
-    // Resume if suspended (browser autoplay policy)
+    // Resume if suspended (browser autoplay policy) — fire and forget, but
+    // never let the promise reject unhandled.
     if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
+      void audioCtx.resume().catch(() => {});
     }
     return audioCtx;
   } catch {
@@ -141,15 +142,4 @@ export function playStockInSound(): void {
     { freq: 1046.50, start: baseTime + 0.28, duration: 0.2, gain: 0.3, type: 'sine' },
     { freq: 261.63, start: baseTime,        duration: 0.5,  gain: 0.2, type: 'triangle' },
   ], 0.15);
-}
-
-/**
- * Play an error sound — short descending tone
- */
-export function playErrorSound(): void {
-  const baseTime = 0;
-  playNotes([
-    { freq: 400, start: baseTime,       duration: 0.12, gain: 1,   type: 'sawtooth' },
-    { freq: 300, start: baseTime + 0.1, duration: 0.2,  gain: 0.8, type: 'sawtooth' },
-  ], 0.08);
 }

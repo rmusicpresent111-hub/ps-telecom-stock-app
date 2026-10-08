@@ -7,6 +7,7 @@ import { Product, Transaction } from '@/lib/types';
 import { ArrowLeft, Edit, Trash2, Package, Archive, IndianRupee, Tag } from 'lucide-react';
 import { toast } from 'sonner';
 import { deleteProductOffline, getProductsOffline, getTransactionsOffline } from '@/lib/offline-service';
+import { registerBackModal } from '@/lib/modal-back';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function ProductDetailScreen() {
@@ -57,12 +58,21 @@ export default function ProductDetailScreen() {
     fetchProduct();
   }, [fetchProduct]);
 
+  // Hardware/browser back closes the delete dialog instead of navigating away
+  useEffect(() => {
+    if (!showDeleteDialog) return;
+    return registerBackModal(() => setShowDeleteDialog(false));
+  }, [showDeleteDialog]);
+
   const handleEdit = useCallback(() => {
     navigateTo('add-product');
   }, [navigateTo]);
 
   const handleDelete = useCallback(async () => {
     if (!selectedProductId || deleting) return;
+    // Close the dialog FIRST — prevents a same-frame double-click from
+    // firing the delete twice (the `deleting` state would be stale).
+    setShowDeleteDialog(false);
     setDeleting(true);
     try {
       await deleteProductOffline(selectedProductId, user?.id || '');
@@ -73,7 +83,6 @@ export default function ProductDetailScreen() {
       toast.error((error as Error).message || t('error', language));
     } finally {
       setDeleting(false);
-      setShowDeleteDialog(false);
     }
   }, [selectedProductId, deleting, language, setSelectedProductId, goBack, user?.id]);
 
@@ -243,7 +252,7 @@ export default function ProductDetailScreen() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}

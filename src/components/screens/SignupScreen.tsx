@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 import { signup } from '@/lib/local-auth';
 
 export default function SignupScreen() {
-  const { language, setUser, navigateTo, resetNavigation } = useAppStore();
+  const { language, setUser, resetNavigation } = useAppStore();
   const lang = language as Language;
 
   const [name, setName] = useState('');
@@ -22,6 +22,7 @@ export default function SignupScreen() {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSignup = async () => {
+    if (isLoading) return; // Enter key must not re-submit while a signup is in flight
     if (!name.trim()) {
       toast.error(t('error', lang), { description: 'Name is required' });
       return;
@@ -200,7 +201,7 @@ export default function SignupScreen() {
           {t('hasAccount', lang)}{' '}
           <button
             className="text-[#D4A853] font-medium hover:underline"
-            onClick={() => navigateTo('login')}
+            onClick={() => resetNavigation('login')}
           >
             {t('login', lang)}
           </button>

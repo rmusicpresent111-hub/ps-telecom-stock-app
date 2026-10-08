@@ -19,6 +19,7 @@ export default function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = async () => {
+    if (isLoading) return; // Enter key must not re-submit while a login is in flight
     if (!email.trim()) {
       toast.error(t('error', lang), { description: 'Email is required' });
       return;

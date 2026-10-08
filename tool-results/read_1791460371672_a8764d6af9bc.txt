@@ -1,0 +1,620 @@
+     1→'use client';
+     2→
+     3→import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+     4→import { useAppStore } from '@/store/appStore';
+     5→import { t } from '@/lib/i18n';
+     6→import {
+     7→  getBillingSettingsOffline, createBillOffline, getBillByIdOffline, deleteBillOffline,
+     8→} from '@/lib/offline-service';
+     9→import {
+    10→  generateBillPdf, downloadBlob, sendBillViaWhatsapp, shopInitials, formatMoney, formatDate,
+    11→  type GeneratedPdf,
+    12→} from '@/lib/bill-pdf';
+    13→import { toastWhatsappResult } from '@/lib/share-toasts';
+    14→import { BillingSettings, Bill, PaymentMethod } from '@/lib/types';
+    15→import { ArrowLeft, FileText, Loader2, Trash2, Download, Share2, MessageCircle, ExternalLink, BadgeIndianRupee } from 'lucide-react';
+    16→import { toast } from 'sonner';
+    17→import { motion } from 'framer-motion';
+    18→
+    19→type Mode = 'create' | 'view' | 'success';
+    20→
+    21→export default function InvoiceScreen() {
+    22→  const user = useAppStore(s => s.user);
+    23→  const language = useAppStore(s => s.language);
+    24→  const goBack = useAppStore(s => s.goBack);
+    25→  const pendingBillData = useAppStore(s => s.pendingBillData);
+    26→  const setPendingBillData = useAppStore(s => s.setPendingBillData);
+    27→  const selectedBillId = useAppStore(s => s.selectedBillId);
+    28→  const setSelectedBillId = useAppStore(s => s.setSelectedBillId);
+    29→  const navigateToTab = useAppStore(s => s.navigateToTab);
+    30→  const setHistoryView = useAppStore(s => s.setHistoryView);
+    31→
+    32→  const [mode, setMode] = useState<Mode>('create');
+    33→  const [settings, setSettings] = useState<BillingSettings | null>(null);
+    34→  const [bill, setBill] = useState<Bill | null>(null);
+    35→  const [loading, setLoading] = useState(true);
+    36→  const [saving, setSaving] = useState(false);
+    37→  const [generating, setGenerating] = useState(false);
+    38→  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    39→
+    40→  // create-mode form
+    41→  const [customerName, setCustomerName] = useState('');
+    42→  const [customerMobile, setCustomerMobile] = useState('');
+    43→  const [discountType, setDiscountType] = useState<'amount' | 'percent'>('amount');
+    44→  const [discountValue, setDiscountValue] = useState('');
+    45→  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+    46→  const [paidAmount, setPaidAmount] = useState('');
+    47→  const [note, setNote] = useState('');
+    48→  const initializedDiscount = useRef(false);
+    49→
+    50→  // Load settings / existing bill
+    51→  useEffect(() => {
+    52→    let cancelled = false;
+    53→    (async () => {
+    54→      if (!user?.id) return;
+    55→      setLoading(true);
+    56→      try {
+    57→        const s = await getBillingSettingsOffline(user.id);
+    58→        if (cancelled) return;
+    59→        setSettings(s);
+    60→
+    61→        if (selectedBillId) {
+    62→          const existing = await getBillByIdOffline(selectedBillId, user.id);
+    63→          if (cancelled) return;
+    64→          if (existing) {
+    65→            setBill(existing);
+    66→            setMode('view');
+    67→          } else {
+    68→            toast.error(t('error', language));
+    69→            goBack();
+    70→          }
+    71→          setSelectedBillId(null);
+    72→        } else if (pendingBillData) {
+    73→          setMode('create');
+    74→        } else {
+    75→          // nothing to show — leave
+    76→          goBack();
+    77→        }
+    78→      } catch {
+    79→        if (!cancelled) goBack();
+    80→      } finally {
+    81→        if (!cancelled) setLoading(false);
+    82→      }
+    83→    })();
+    84→    return () => { cancelled = true; };
+    85→     
+    86→  }, [user?.id]);
+    87→
+    88→  // Apply defaults once settings arrive
+    89→  useEffect(() => {
+    90→    if (!settings || initializedDiscount.current) return;
+    91→    initializedDiscount.current = true;
+    92→    if (settings.defaultDiscountPercent > 0) {
+    93→      setDiscountType('percent');
+    94→      setDiscountValue(String(settings.defaultDiscountPercent));
+    95→    }
+    96→  }, [settings]);
+    97→
+    98→  // ---- Pre-generate the PDF the moment the bill screen shows ----
+    99→  // Tapping "Send on WhatsApp" can then call navigator.share() INSTANTLY,
+   100→  // while the tap's transient user activation is still fresh. If the share
+   101→  // call happens after slow async work (PDF generation + imports), mobile
+   102→  // browsers reject it with NotAllowedError and the PDF silently never
+   103→  // reaches WhatsApp — that was the bug.
+   104→  const pdfCacheRef = useRef<{ billId: string; pdf: GeneratedPdf } | null>(null);
+   105→  useEffect(() => {
+   106→    pdfCacheRef.current = null;
+   107→    if (!bill || (mode !== 'success' && mode !== 'view')) return;
+   108→    let cancelled = false;
+   109→    (async () => {
+   110→      try {
+   111→        const pdf = await generateBillPdf(bill, {
+   112→          signatureDataUrl: settings?.signatureDataUrl,
+   113→          qrCodeDataUrl: settings?.qrCodeDataUrl,
+   114→          upiId: settings?.upiId,
+   115→          thankYouNote: settings?.thankYouNote,
+   116→          termsText: settings?.termsText,
+   117→          proprietorName: settings?.proprietorName,
+   118→        });
+   119→        if (!cancelled) pdfCacheRef.current = { billId: bill.id, pdf };
+   120→      } catch {
+   121→        // PDF generation problems surface when the user taps an action
+   122→      }
+   123→    })();
+   124→    return () => { cancelled = true; };
+   125→  }, [bill, settings]);
+   126→
+   127→  // ---- Live totals for create mode (mirror createBillOffline math) ----
+   128→  const totals = useMemo(() => {
+   129→    const qty = pendingBillData?.quantity ?? 0;
+   130→    const unitPrice = pendingBillData?.unitPrice ?? 0;
+   131→    const subtotal = Math.round(qty * unitPrice * 100) / 100;
+   132→    let discountAmount = 0;
+   133→    const dv = Math.max(0, Number(discountValue) || 0);
+   134→    if (discountType === 'percent') {
+   135→      discountAmount = Math.round(((subtotal * Math.min(dv, 100)) / 100) * 100) / 100;
+   136→    } else {
+   137→      discountAmount = Math.round(Math.min(dv, subtotal) * 100) / 100;
+   138→    }
+   139→    const gstEnabled = !!settings?.gstEnabled && !!settings?.gstNumber.trim() && (settings?.gstRate ?? 0) > 0;
+   140→    const gstAmount = gstEnabled ? Math.round((((subtotal - discountAmount) * (settings?.gstRate ?? 0)) / 100) * 100) / 100 : 0;
+   141→    const total = Math.round((subtotal - discountAmount + gstAmount) * 100) / 100;
+   142→    let paid = paymentMethod === 'due' ? 0 : (paidAmount === '' ? total : Math.max(0, Number(paidAmount) || 0));
+   143→    paid = Math.min(paid, total);
+   144→    const due = Math.round((total - paid) * 100) / 100;
+   145→    return { subtotal, discountAmount, gstEnabled, gstAmount, total, paid, due };
+   146→  }, [pendingBillData, discountValue, discountType, settings, paymentMethod, paidAmount]);
+   147→
+   148→  const handleGenerate = useCallback(async () => {
+   149→    if (!user?.id || !pendingBillData || !settings) return;
+   150→    setSaving(true);
+   151→    try {
+   152→      const { bill: created } = await createBillOffline({
+   153→        userId: user.id,
+   154→        transactionId: pendingBillData.transactionId,
+   155→        productId: pendingBillData.productId,
+   156→        productName: pendingBillData.productName,
+   157→        quantity: pendingBillData.quantity,
+   158→        unitPrice: pendingBillData.unitPrice,
+   159→        customerName,
+   160→        customerMobile,
+   161→        discountType,
+   162→        discountValue: Number(discountValue) || 0,
+   163→        paymentMethod,
+   164→        paidAmount: paidAmount === '' ? undefined : Number(paidAmount) || 0,
+   165→        note,
+   166→      });
+   167→      setBill(created);
+   168→      setMode('success');
+   169→      setPendingBillData(null);
+   170→      toast.success(t('billSaved', language));
+   171→    } catch (error) {
+   172→      toast.error((error as Error).message || t('error', language));
+   173→    } finally {
+   174→      setSaving(false);
+   175→    }
+   176→  }, [user?.id, pendingBillData, settings, customerName, customerMobile, discountType, discountValue, paymentMethod, paidAmount, note, setPendingBillData, language]);
+   177→
+   178→  const makePdf = useCallback(async (targetBill: Bill): Promise<GeneratedPdf | null> => {
+   179→    setGenerating(true);
+   180→    try {
+   181→      return await generateBillPdf(targetBill, {
+   182→        signatureDataUrl: settings?.signatureDataUrl,
+   183→        qrCodeDataUrl: settings?.qrCodeDataUrl,
+   184→        upiId: settings?.upiId,
+   185→        thankYouNote: settings?.thankYouNote,
+   186→        termsText: settings?.termsText,
+   187→        proprietorName: settings?.proprietorName,
+   188→      });
+   189→    } catch (error) {
+   190→      toast.error((error as Error).message || t('error', language));
+   191→      return null;
+   192→    } finally {
+   193→      setGenerating(false);
+   194→    }
+   195→  }, [settings, language]);
+   196→
+   197→  /** Cached PDF (instant share) or generate on demand. */
+   198→  const getPdf = useCallback(async (targetBill: Bill): Promise<GeneratedPdf | null> => {
+   199→    const cached = pdfCacheRef.current;
+   200→    if (cached && cached.billId === targetBill.id) return cached.pdf;
+   201→    return makePdf(targetBill);
+   202→  }, [makePdf]);
+   203→
+   204→  const handleWhatsApp = useCallback(async (targetBill: Bill) => {
+   205→    const pdf = await getPdf(targetBill);
+   206→    if (!pdf) return;
+   207→    // Preferred: native share sheet WITH the PDF file attached → user picks
+   208→    // WhatsApp + the customer chat. Fallback: download + wa.me text chat.
+   209→    const result = await sendBillViaWhatsapp(targetBill, pdf);
+   210→    toastWhatsappResult(result, language);
+   211→  }, [getPdf, language]);
+   212→
+   213→  const handleShare = useCallback(async (targetBill: Bill) => {
+   214→    const pdf = await getPdf(targetBill);
+   215→    if (!pdf) return;
+   216→    const result = await sendBillViaWhatsapp(targetBill, pdf, { pdfNote: false });
+   217→    toastWhatsappResult(result, language);
+   218→  }, [getPdf, language]);
+   219→
+   220→  const handleDownload = useCallback(async (targetBill: Bill) => {
+   221→    const pdf = await makePdf(targetBill);
+   222→    if (!pdf) return;
+   223→    downloadBlob(pdf.blob, pdf.fileName);
+   224→    toast.success(t('downloadPdf', language) + ' ✓');
+   225→  }, [makePdf, language]);
+   226→
+   227→  const handleViewPdf = useCallback(async (targetBill: Bill) => {
+   228→    const pdf = await makePdf(targetBill);
+   229→    if (!pdf) return;
+   230→    const url = URL.createObjectURL(pdf.blob);
+   231→    window.open(url, '_blank');
+   232→    setTimeout(() => URL.revokeObjectURL(url), 60000);
+   233→  }, [makePdf]);
+   234→
+   235→  const handleDelete = useCallback(async () => {
+   236→    if (!user?.id || !bill) return;
+   237→    try {
+   238→      await deleteBillOffline(bill.id, user.id);
+   239→      toast.success(t('billDeleted', language));
+   240→      setHistoryView('bills');
+   241→      navigateToTab('history');
+   242→    } catch {
+   243→      toast.error(t('error', language));
+   244→    }
+   245→  }, [user?.id, bill, language, navigateToTab, setHistoryView]);
+   246→
+   247→  const handleDone = useCallback(() => {
+   248→    setHistoryView('bills');
+   249→    navigateToTab('history');
+   250→  }, [navigateToTab, setHistoryView]);
+   251→
+   252→  if (loading) {
+   253→    return (
+   254→      <div className="animated-bg min-h-screen pb-24">
+   255→        <div className="max-w-md mx-auto px-4 pt-4">
+   256→          <InvoiceHeader goBack={goBack} title={t('eBill', language)} />
+   257→          <div className="text-center py-12 text-white/40">{t('loading', language)}</div>
+   258→        </div>
+   259→      </div>
+   260→    );
+   261→  }
+   262→
+   263→  // ============ CREATE MODE ============
+   264→  if (mode === 'create' && pendingBillData) {
+   265→    const p = pendingBillData;
+   266→    return (
+   267→      <div className="animated-bg min-h-screen pb-32">
+   268→        <div className="max-w-md mx-auto px-4 pt-4">
+   269→          <InvoiceHeader goBack={goBack} title={t('createEBill', language)} />
+   270→
+   271→          {/* Item summary card */}
+   272→          <div className="glass-card-strong p-5 mb-4">
+   273→            <div className="flex items-start justify-between">
+   274→              <div>
+   275→                <p className="text-xs text-white/50 mb-1">{t('item', language)}</p>
+   276→                <p className="text-base font-bold text-white/90">{p.productName}</p>
+   277→              </div>
+   278→              <span className="text-[10px] px-2 py-1 rounded-full bg-amber-500/20 text-amber-300 font-semibold">{t('eBill', language)}</span>
+   279→            </div>
+   280→            <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/10">
+   281→              <span className="text-xs text-white/50">{t('quantity', language)}: <span className="text-white/90 font-medium">{p.quantity}</span></span>
+   282→              <span className="text-xs text-white/50">{t('price', language)}: <span className="text-white/90 font-medium">₹{formatMoney(p.unitPrice)}</span></span>
+   283→              <span className="text-sm font-bold text-emerald-400">₹{formatMoney(p.totalAmount)}</span>
+   284→            </div>
+   285→          </div>
+   286→
+   287→          {/* Customer details */}
+   288→          <div className="glass-card-strong p-5 space-y-4 mb-4">
+   289→            <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wide">{t('customerName', language)}</p>
+   290→            <input
+   291→              type="text"
+   292→              value={customerName}
+   293→              onChange={(e) => setCustomerName(e.target.value)}
+   294→              placeholder={t('customerName', language)}
+   295→              className="glass-input w-full px-4 py-3 text-sm"
+   296→            />
+   297→            <input
+   298→              type="tel"
+   299→              value={customerMobile}
+   300→              onChange={(e) => setCustomerMobile(e.target.value.replace(/[^\d+]/g, ''))}
+   301→              placeholder={t('customerPhone', language) + ' (WhatsApp)'}
+   302→              className="glass-input w-full px-4 py-3 text-sm"
+   303→            />
+   304→            <input
+   305→              type="text"
+   306→              value={note}
+   307→              onChange={(e) => setNote(e.target.value)}
+   308→              placeholder={t('note', language)}
+   309→              className="glass-input w-full px-4 py-3 text-sm"
+   310→            />
+   311→          </div>
+   312→
+   313→          {/* Discount + payment */}
+   314→          <div className="glass-card-strong p-5 space-y-4 mb-4">
+   315→            <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wide">{t('discount', language)}</p>
+   316→            <div className="flex gap-2">
+   317→              <button
+   318→                onClick={() => setDiscountType('amount')}
+   319→                className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${discountType === 'amount' ? 'neon-btn-solid' : 'glass-card text-white/60'}`}
+   320→              >
+   321→                ₹ {t('discount', language)}
+   322→              </button>
+   323→              <button
+   324→                onClick={() => setDiscountType('percent')}
+   325→                className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-all ${discountType === 'percent' ? 'neon-btn-solid' : 'glass-card text-white/60'}`}
+   326→              >
+   327→                % {t('discount', language)}
+   328→              </button>
+   329→            </div>
+   330→            <input
+   331→              type="number"
+   332→              value={discountValue}
+   333→              onChange={(e) => setDiscountValue(e.target.value)}
+   334→              placeholder={discountType === 'percent' ? '0%' : '₹0'}
+   335→              className="glass-input w-full px-4 py-3 text-sm"
+   336→            />
+   337→
+   338→            <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wide pt-2">{t('paymentMethod', language)}</p>
+   339→            <div className="grid grid-cols-4 gap-2">
+   340→              {(['cash', 'upi', 'card', 'due'] as PaymentMethod[]).map((pm) => (
+   341→                <button
+   342→                  key={pm}
+   343→                  onClick={() => { setPaymentMethod(pm); if (pm === 'due') setPaidAmount('0'); }}
+   344→                  className={`py-2.5 text-xs font-semibold rounded-xl transition-all ${paymentMethod === pm ? 'neon-btn-solid' : 'glass-card text-white/60'}`}
+   345→                >
+   346→                  {t(pm, language)}
+   347→                </button>
+   348→              ))}
+   349→            </div>
+   350→            {paymentMethod !== 'due' && (
+   351→              <input
+   352→                type="number"
+   353→                value={paidAmount}
+   354→                onChange={(e) => setPaidAmount(e.target.value)}
+   355→                placeholder={`${t('paidAmount', language)} (₹${formatMoney(totals.total)})`}
+   356→                className="glass-input w-full px-4 py-3 text-sm"
+   357→              />
+   358→            )}
+   359→          </div>
+   360→
+   361→          {/* Totals preview */}
+   362→          <div className="glass-card-strong p-5 space-y-2.5">
+   363→            <TotalRow label={t('subtotal', language)} value={`₹${formatMoney(totals.subtotal)}`} />
+   364→            {totals.discountAmount > 0 && (
+   365→              <TotalRow label={`${t('discount', language)}${discountType === 'percent' ? ` (${discountValue}%)` : ''}`} value={`-₹${formatMoney(totals.discountAmount)}`} accent="text-green-400" />
+   366→            )}
+   367→            {totals.gstEnabled && totals.gstAmount > 0 && (
+   368→              <TotalRow label={`${t('gst', language)} (${settings?.gstRate}%)`} value={`₹${formatMoney(totals.gstAmount)}`} />
+   369→            )}
+   370→            <div className="border-t border-white/10 pt-3 flex justify-between items-center">
+   371→              <span className="text-sm font-semibold">{t('grandTotal', language)}</span>
+   372→              <span className="text-xl font-bold text-amber-300">₹{formatMoney(totals.total)}</span>
+   373→            </div>
+   374→            {totals.due > 0 && (
+   375→              <TotalRow label={t('dueAmount', language)} value={`₹${formatMoney(totals.due)}`} accent="text-red-400 font-semibold" />
+   376→            )}
+   377→            {settings?.shopName && (
+   378→              <p className="text-[10px] text-white/30 pt-1">↳ {settings.shopName}{settings.gstEnabled && settings.gstNumber ? ` • GSTIN: ${settings.gstNumber}` : ''}</p>
+   379→            )}
+   380→          </div>
+   381→        </div>
+   382→
+   383→        {/* Sticky generate button */}
+   384→        <div className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
+   385→          <div className="max-w-md mx-auto">
+   386→            <button
+   387→              onClick={handleGenerate}
+   388→              disabled={saving}
+   389→              className="neon-btn-solid w-full py-3.5 font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+   390→            >
+   391→              {saving ? <Loader2 size={18} className="animate-spin" /> : <BadgeIndianRupee size={18} />}
+   392→              {saving ? t('loading', language) : t('generateBill', language)}
+   393→            </button>
+   394→          </div>
+   395→        </div>
+   396→      </div>
+   397→    );
+   398→  }
+   399→
+   400→  // ============ SUCCESS / VIEW MODE ============
+   401→  if (bill && (mode === 'success' || mode === 'view')) {
+   402→    return (
+   403→      <div className="animated-bg min-h-screen pb-32">
+   404→        <div className="max-w-md mx-auto px-4 pt-4">
+   405→          <InvoiceHeader goBack={goBack} title={mode === 'success' ? t('billSaved', language) : t('viewBill', language)} />
+   406→
+   407→          {/* Premium receipt-style preview */}
+   408→          <motion.div
+   409→            initial={{ opacity: 0, y: 12 }}
+   410→            animate={{ opacity: 1, y: 0 }}
+   411→            className="rounded-2xl overflow-hidden shadow-2xl mb-4 relative bg-[#0f1219] ring-1 ring-[#D4A853]/45 shadow-[0_12px_60px_-15px_rgba(212,168,83,0.45)]"
+   412→          >
+   413→            {/* watermark */}
+   414→            <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden" aria-hidden="true">
+   415→              <span className="font-serif font-bold text-6xl text-white/[0.035] -rotate-[22deg] whitespace-nowrap tracking-widest select-none">
+   416→                {bill.shopSnapshot?.name || settings?.shopName || 'PS TELECOM'}
+   417→              </span>
+   418→            </div>
+   419→
+   420→            <div className="h-1.5 bg-gradient-to-r from-amber-200 via-[#D4A853] to-amber-700" />
+   421→
+   422→            {/* header */}
+   423→            <div className="bg-gradient-to-b from-[#1e2434] to-[#141927] px-5 py-4 relative">
+   424→              <div className="flex items-start gap-3">
+   425→                <div className="w-11 h-11 shrink-0 rounded-full bg-gradient-to-br from-amber-200 via-[#D4A853] to-amber-700 flex items-center justify-center shadow-lg shadow-amber-900/40 ring-2 ring-amber-200/30">
+   426→                  <span className="font-serif font-bold text-[#1a1408] text-sm tracking-wide">
+   427→                    {shopInitials(bill.shopSnapshot?.name || settings?.shopName || 'PS TELECOM')}
+   428→                  </span>
+   429→                </div>
+   430→                <div className="min-w-0 flex-1">
+   431→                  <p className="font-serif text-[21px] leading-tight font-bold tracking-[0.1em] bg-gradient-to-r from-amber-100 via-[#EBCB7F] to-amber-300 bg-clip-text text-transparent truncate">
+   432→                    {bill.shopSnapshot?.name || settings?.shopName || 'PS TELECOM'}
+   433→                  </p>
+   434→                  {(bill.shopSnapshot?.proprietorName ?? settings?.proprietorName) && (
+   435→                    <p className="font-serif italic text-[10px] text-amber-200/70 mt-0.5">
+   436→                      Proprietor: {bill.shopSnapshot?.proprietorName ?? settings?.proprietorName}
+   437→                    </p>
+   438→                  )}
+   439→                </div>
+   440→                <div className="text-right shrink-0">
+   441→                  <span className="text-[9px] font-bold bg-gradient-to-r from-amber-300 to-[#C89B4B] text-[#1a1408] px-2 py-0.5 rounded-sm shadow">{bill.gstEnabled ? 'TAX INVOICE' : 'INVOICE'}</span>
+   442→                  <p className="text-[10px] text-white/60 mt-1.5">{bill.billNumber}</p>
+   443→                  <p className="text-[10px] text-white/60">{formatDate(bill.date)}</p>
+   444→                </div>
+   445→              </div>
+   446→              <div className="mt-2 text-[10px] text-white/45 leading-snug">
+   447→                {bill.shopSnapshot?.address && <p className="whitespace-pre-line">{bill.shopSnapshot.address}</p>}
+   448→                {(bill.shopSnapshot?.phone || bill.shopSnapshot?.gstNumber) && (
+   449→                  <p className="mt-0.5">
+   450→                    {bill.shopSnapshot?.phone && <span>Ph: {bill.shopSnapshot.phone}</span>}
+   451→                    {bill.shopSnapshot?.phone && bill.shopSnapshot?.gstNumber && <span>{'  |  '}</span>}
+   452→                    {bill.shopSnapshot?.gstNumber && <span>GSTIN: {bill.shopSnapshot.gstNumber}</span>}
+   453→                  </p>
+   454→                )}
+   455→              </div>
+   456→            </div>
+   457→            <div className="h-px bg-gradient-to-r from-transparent via-[#D4A853]/70 to-transparent" />
+   458→
+   459→            {/* customer */}
+   460→            <div className="px-5 py-3">
+   461→              <p className="text-[9px] text-[#D4A853]/80 font-semibold tracking-[0.12em]">BILL TO</p>
+   462→              <div className="flex justify-between items-center mt-0.5">
+   463→                <p className="text-sm font-serif font-semibold text-white/90">{bill.customerName}</p>
+   464→                {bill.customerMobile && <p className="text-xs text-white/60">Mob: {bill.customerMobile}</p>}
+   465→              </div>
+   466→            </div>
+   467→            <div className="mx-5 h-px bg-white/5" />
+   468→
+   469→            {/* items */}
+   470→            <div className="px-5 py-2">
+   471→              <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 text-[9px] text-white/40 font-semibold py-2 border-b border-white/10 uppercase">
+   472→                <span>{t('item', language)}</span>
+   473→                <span className="text-right">{t('quantity', language)}/₹</span>
+   474→                <span className="text-right w-16">{t('revenue', language)}</span>
+   475→              </div>
+   476→              {bill.items.map((item, idx) => (
+   477→                <div key={idx} className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-center py-2.5 border-b border-white/5">
+   478→                  <span className="text-xs text-white/85">{item.name}</span>
+   479→                  <span className="text-[11px] text-white/50 text-right">{item.quantity} × {formatMoney(item.unitPrice)}</span>
+   480→                  <span className="text-xs font-semibold text-white/90 text-right w-16">₹{formatMoney(item.total)}</span>
+   481→                </div>
+   482→              ))}
+   483→            </div>
+   484→
+   485→            {/* totals */}
+   486→            <div className="px-5 py-3 space-y-1.5">
+   487→              <TotalRow label={t('subtotal', language)} value={`₹${formatMoney(bill.subtotal)}`} />
+   488→              {bill.discountAmount > 0 && (
+   489→                <TotalRow label={`${t('discount', language)}${bill.discountType === 'percent' ? ` (${bill.discountValue}%)` : ''}`} value={`-₹${formatMoney(bill.discountAmount)}`} accent="text-green-400" />
+   490→              )}
+   491→              {bill.gstEnabled && bill.gstAmount > 0 && (
+   492→                <TotalRow label={`${t('gst', language)} (${bill.gstRate}%)`} value={`₹${formatMoney(bill.gstAmount)}`} />
+   493→              )}
+   494→              <div className="bg-gradient-to-r from-[#EDD494] via-[#D4A853] to-[#A67C34] rounded-lg px-3 py-2.5 flex justify-between items-center mt-2 shadow-md">
+   495→                <span className="text-xs font-bold font-serif tracking-wide text-[#221a08]">{t('grandTotal', language)}</span>
+   496→                <span className="text-lg font-bold font-serif text-[#221a08]">₹{formatMoney(bill.total)}</span>
+   497→              </div>
+   498→              {bill.dueAmount > 0 && (
+   499→                <TotalRow label={t('dueAmount', language)} value={`₹${formatMoney(bill.dueAmount)}`} accent="text-red-400 font-semibold" />
+   500→              )}
+   501→              <div className="flex justify-between text-[11px] text-white/50 pt-1">
+   502→                <span>{t('paymentMethod', language)}</span>
+   503→                <span>{t(bill.paymentMethod, language)}</span>
+   504→              </div>
+   505→              {bill.note && <p className="text-[10px] text-white/40 italic pt-1">{t('note', language)}: {bill.note}</p>}
+   506→            </div>
+   507→
+   508→            {/* qr + signature */}
+   509→            <div className="px-5 pb-4 pt-1 flex items-end justify-between">
+   510→              {settings?.qrCodeDataUrl ? (
+   511→                <div className="text-center">
+   512→                  { }
+   513→                  <img src={settings.qrCodeDataUrl} alt="Payment QR" className="w-16 h-16 object-contain bg-white rounded-lg p-0.5 ring-1 ring-[#D4A853]/50" />
+   514→                  {settings.upiId && <p className="text-[8px] text-white/40 mt-1">{settings.upiId}</p>}
+   515→                </div>
+   516→              ) : <span />}
+   517→              <div className="text-right">
+   518→                {settings?.signatureDataUrl && (
+   519→                   
+   520→                  <img src={settings.signatureDataUrl} alt="Signature" className="h-8 object-contain ml-auto mb-0.5" />
+   521→                )}
+   522→                <p className="text-[9px] text-white/50 border-t border-[#D4A853]/40 pt-1">For {bill.shopSnapshot?.name || 'PS TELECOM'}</p>
+   523→                {(bill.shopSnapshot?.proprietorName ?? settings?.proprietorName) && (
+   524→                  <>
+   525→                    <p className="font-serif text-[11px] font-bold text-amber-100/90 mt-0.5">{bill.shopSnapshot?.proprietorName ?? settings?.proprietorName}</p>
+   526→                    <p className="text-[8px] text-white/40">Proprietor</p>
+   527→                  </>
+   528→                )}
+   529→              </div>
+   530→            </div>
+   531→            <p className="text-center font-serif italic text-[11px] text-amber-200/80 pb-3 font-medium relative">{settings?.thankYouNote || 'Thank you for your business!'}</p>
+   532→            <div className="h-1.5 bg-gradient-to-r from-amber-700 via-[#D4A853] to-amber-200" />
+   533→          </motion.div>
+   534→
+   535→          {/* Share actions */}
+   536→          <div className="space-y-2.5">
+   537→            <button
+   538→              onClick={() => handleWhatsApp(bill)}
+   539→              disabled={generating}
+   540→              className="w-full py-3.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all disabled:opacity-50 text-white"
+   541→              style={{ background: 'linear-gradient(135deg, #16a34a, #15803d)' }}
+   542→            >
+   543→              {generating ? <Loader2 size={18} className="animate-spin" /> : <MessageCircle size={18} />}
+   544→              {t('whatsappSend', language)}{bill.customerMobile ? ` — ${bill.customerMobile}` : ''}
+   545→            </button>
+   546→            <div className="grid grid-cols-3 gap-2.5">
+   547→              <button onClick={() => handleShare(bill)} disabled={generating} className="glass-card py-3 rounded-xl text-xs font-semibold flex flex-col items-center gap-1.5 disabled:opacity-50">
+   548→                <Share2 size={16} className="text-emerald-400" />{t('sharePdf', language)}
+   549→              </button>
+   550→              <button onClick={() => handleViewPdf(bill)} disabled={generating} className="glass-card py-3 rounded-xl text-xs font-semibold flex flex-col items-center gap-1.5 disabled:opacity-50">
+   551→                <ExternalLink size={16} className="text-amber-300" />{t('viewPdf', language)}
+   552→              </button>
+   553→              <button onClick={() => handleDownload(bill)} disabled={generating} className="glass-card py-3 rounded-xl text-xs font-semibold flex flex-col items-center gap-1.5 disabled:opacity-50">
+   554→                {generating ? <Loader2 size={16} className="animate-spin text-white/50" /> : <Download size={16} className="text-emerald-400" />}{t('downloadPdf', language)}
+   555→              </button>
+   556→            </div>
+   557→          </div>
+   558→
+   559→          {mode === 'success' ? (
+   560→            <button onClick={handleDone} className="neon-btn w-full py-3 mt-4 text-sm font-semibold">
+   561→              {t('history', language)} →
+   562→            </button>
+   563→          ) : (
+   564→            <button
+   565→              onClick={() => setShowDeleteConfirm(true)}
+   566→              className="w-full py-3 mt-4 text-sm font-semibold rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 flex items-center justify-center gap-2"
+   567→            >
+   568→              <Trash2 size={16} /> {t('deleteBill', language)}
+   569→            </button>
+   570→          )}
+   571→        </div>
+   572→
+   573→        {/* Delete confirm */}
+   574→        {showDeleteConfirm && (
+   575→          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(false)}>
+   576→            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card-strong p-6 mx-4 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+   577→              <h3 className="text-lg font-bold mb-2 text-red-400">{t('deleteBill', language)}</h3>
+   578→              <p className="text-sm text-white/60 mb-6">{t('thisActionCannot', language)}</p>
+   579→              <div className="flex gap-3">
+   580→                <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 neon-btn py-2 text-sm font-semibold">{t('cancel', language)}</button>
+   581→                <button onClick={handleDelete} className="flex-1 py-2 text-sm font-semibold rounded-xl bg-red-500/20 border border-red-500/30 text-red-400">{t('delete', language)}</button>
+   582→              </div>
+   583→            </motion.div>
+   584→          </div>
+   585→        )}
+   586→      </div>
+   587→    );
+   588→  }
+   589→
+   590→  return (
+   591→    <div className="animated-bg min-h-screen pb-24">
+   592→      <div className="max-w-md mx-auto px-4 pt-4">
+   593→        <InvoiceHeader goBack={goBack} title={t('eBill', language)} />
+   594→        <div className="text-center py-12 text-white/40"><FileText size={28} className="mx-auto mb-3 opacity-40" />{t('noData', language)}</div>
+   595→      </div>
+   596→    </div>
+   597→  );
+   598→}
+   599→
+   600→function InvoiceHeader({ goBack, title }: { goBack: () => void; title: string }) {
+   601→  return (
+   602→    <div className="flex items-center justify-between mb-6">
+   603→      <button onClick={goBack} className="p-2 rounded-full glass-card" aria-label="Back">
+   604→        <ArrowLeft size={20} className="text-emerald-400" />
+   605→      </button>
+   606→      <h1 className="text-lg font-bold text-emerald-400">{title}</h1>
+   607→      <div className="w-10" />
+   608→    </div>
+   609→  );
+   610→}
+   611→
+   612→function TotalRow({ label, value, accent }: { label: string; value: string; accent?: string }) {
+   613→  return (
+   614→    <div className="flex justify-between items-center">
+   615→      <span className="text-xs text-white/50">{label}</span>
+   616→      <span className={`text-xs ${accent || 'text-white/85'}`}>{value}</span>
+   617→    </div>
+   618→  );
+   619→}
+   620→

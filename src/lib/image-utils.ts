@@ -6,6 +6,12 @@
 const MAX_SIGNATURE_BYTES = 120 * 1024; // 120 KB
 const MAX_QR_BYTES = 250 * 1024; // 250 KB (QR must stay sharp)
 
+/** Approximate decoded byte size of a data URL (base64 length × 3/4). */
+function approxBytes(dataUrl: string): number {
+  const payloadStart = dataUrl.indexOf(',') + 1;
+  return Math.floor(((dataUrl.length - payloadStart) * 3) / 4);
+}
+
 /**
  * Reads a File, scales it down so its longest edge is `maxEdge` px,
  * and returns a JPEG/PNG data URL under the given size budget.
@@ -38,13 +44,14 @@ export async function fileToResizedDataUrl(
   const keepPng = file.type === 'image/png';
   let out = canvas.toDataURL(keepPng ? 'image/png' : 'image/jpeg', 0.85);
 
-  // Progressive JPEG downscale if still too heavy
+  // Progressive JPEG downscale if still too heavy (budget compares BYTES,
+  // not the base64 string length — base64 inflates size by ~33%).
   let quality = 0.85;
   let currentWidth = width;
-  while (out.length > maxBytes && quality > 0.35) {
+  while (approxBytes(out) > maxBytes && quality > 0.35) {
     quality -= 0.15;
     out = canvas.toDataURL('image/jpeg', quality);
-    if (out.length > maxBytes && currentWidth > 200) {
+    if (approxBytes(out) > maxBytes && currentWidth > 200) {
       currentWidth = Math.round(currentWidth * 0.75);
       const tmp = document.createElement('canvas');
       tmp.width = currentWidth;

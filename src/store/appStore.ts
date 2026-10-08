@@ -95,10 +95,20 @@ export const useAppStore = create<AppState>()(
       currentScreen: 'splash',
       previousScreens: [],
       navigateTo: (screen) =>
-        set((state) => ({
-          previousScreens: [...state.previousScreens, state.currentScreen],
-          currentScreen: screen,
-        })),
+        set((state) => {
+          // No-op guard: navigating to the current screen would push a duplicate
+          // stack entry, making the next back-press feel "dead".
+          if (state.currentScreen === screen) return state;
+          // Cap stack depth (drop oldest entries) so memory stays bounded.
+          const prev =
+            state.previousScreens.length >= 25
+              ? state.previousScreens.slice(-24)
+              : state.previousScreens;
+          return {
+            previousScreens: [...prev, state.currentScreen],
+            currentScreen: screen,
+          };
+        }),
       // Navigate to a main tab screen (BottomNav) - clears history so back always goes to dashboard
       navigateToTab: (screen) =>
         set({
@@ -143,6 +153,7 @@ export const useAppStore = create<AppState>()(
           pendingBillData: null,
           selectedBillId: null,
           selectedBill: null,
+          historyView: 'transactions',
         }),
 
       // App State

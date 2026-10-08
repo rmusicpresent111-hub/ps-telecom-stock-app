@@ -40,7 +40,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-local-*
+# Root-level local-* scratch files only — MUST NOT match src/lib/local-auth.ts
+# (the auth module; the old `local-*` pattern silently excluded it from git)
+/local-*
 .claude
 .z-ai-config
 *.log

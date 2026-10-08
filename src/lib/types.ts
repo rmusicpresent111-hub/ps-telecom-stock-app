@@ -84,11 +84,6 @@ export interface DashboardStats {
   stockValue: number;
 }
 
-export interface ProfitData {
-  daily: { date: string; profit: number; revenue: number; cost: number }[];
-  monthly: { month: string; profit: number; revenue: number; cost: number }[];
-}
-
 export interface CashEntry {
   id: string;
   userId: string;
@@ -123,7 +118,6 @@ export interface ServiceTransaction {
   updatedAt: string;
 }
 
-export const SERVICE_CATEGORIES = ['Repairing', 'Withdraw/Deposit'] as const;
 export type ServiceCategoryType = 'repairing' | 'withdraw-deposit';
 
 // ============ BILLING (e-Bill / Invoice) ============

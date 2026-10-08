@@ -1,0 +1,646 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→import { useEffect, useState, useCallback, useRef } from 'react';
+     4→     4→import { useAppStore } from '@/store/appStore';
+     5→     5→import { t } from '@/lib/i18n';
+     6→     6→import { Product, Transaction } from '@/lib/types';
+     7→     7→import { getProductsOffline, createTransactionOffline } from '@/lib/offline-service';
+     8→     8→import { playStockOutSound, playSellSound, playStockInSound } from '@/lib/sound-service';
+     9→     9→import { ArrowLeft, Search, X, TrendingUp, TrendingDown, ShoppingBag, ReceiptText } from 'lucide-react';
+    10→    10→import { toast } from 'sonner';
+    11→    11→import { motion, AnimatePresence } from 'framer-motion';
+    12→    12→
+    13→    13→const stockOpMeta: Record<string, { icon: React.ElementType; confirmLabel: string }> = {
+    14→    14→  STOCK_IN: { icon: TrendingUp, confirmLabel: 'Stock In' },
+    15→    15→  STOCK_OUT: { icon: TrendingDown, confirmLabel: 'Stock Out' },
+    16→    16→  SELL: { icon: ShoppingBag, confirmLabel: 'Sell' },
+    17→    17→};
+    18→    18→
+    19→    19→export default function StockOperationScreen() {
+    20→    20→  const user = useAppStore(s => s.user);
+    21→    21→  const language = useAppStore(s => s.language);
+    22→    22→  const goBack = useAppStore(s => s.goBack);
+    23→    23→  const navigateTo = useAppStore(s => s.navigateTo);
+    24→    24→  const setPendingBillData = useAppStore(s => s.setPendingBillData);
+    25→    25→  const selectedProductId = useAppStore(s => s.selectedProductId);
+    26→    26→  const stockOperationType = useAppStore(s => s.stockOperationType);
+    27→    27→
+    28→    28→  const isSell = stockOperationType === 'SELL';
+    29→    29→
+    30→    30→  const [product, setProduct] = useState<Product | null>(null);
+    31→    31→  const [productName, setProductName] = useState('');
+    32→    32→  const [allProducts, setAllProducts] = useState<Product[]>([]);
+    33→    33→  const [showSuggestions, setShowSuggestions] = useState(false);
+    34→    34→  const [quantity, setQuantity] = useState('');
+    35→    35→  const [price, setPrice] = useState('');
+    36→    36→  const [loading, setLoading] = useState(false);
+    37→    37→  const [fetching, setFetching] = useState(true);
+    38→    38→  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+    39→    39→  const [billPrompt, setBillPrompt] = useState<Transaction | null>(null);
+    40→    40→  const suggestionsRef = useRef<HTMLDivElement>(null);
+    41→    41→  const lastMatchedIdRef = useRef<string | null>(null);
+    42→    42→  const preselectedRef = useRef(false);
+    43→    43→
+    44→    44→  // Always search across ALL products — a stale global category filter used to
+    45→    45→  // make stock ops fail with "Product not found" for products of other categories.
+    46→    46→  const fetchProducts = useCallback(async () => {
+    47→    47→    if (!user?.id) return;
+    48→    48→    try {
+    49→    49→      setFetching(true);
+    50→    50→      const products = await getProductsOffline(user.id);
+    51→    51→      setAllProducts(products || []);
+    52→    52→      setProductName('');
+    53→    53→    } catch {
+    54→    54→      toast.error(t('error', language));
+    55→    55→    } finally {
+    56→    56→      setFetching(false);
+    57→    57→    }
+    58→    58→  }, [user?.id, language]);
+    59→    59→
+    60→    60→  useEffect(() => {
+    61→    61→    fetchProducts();
+    62→    62→  }, [fetchProducts]);
+    63→    63→
+    64→    64→  // Preselect the product when arriving from Product/Category detail
+    65→    65→  useEffect(() => {
+    66→    66→    if (preselectedRef.current || fetching) return;
+    67→    67→    if (!selectedProductId || allProducts.length === 0) return;
+    68→    68→    const pre = allProducts.find(p => p.id === selectedProductId);
+    69→    69→    if (pre) {
+    70→    70→      setProduct(pre);
+    71→    71→      setProductName(pre.name);
+    72→    72→      setPrice(stockOperationType === 'STOCK_IN' ? String(pre.purchasePrice) : String(pre.sellingPrice));
+    73→    73→      lastMatchedIdRef.current = pre.id;
+    74→    74→    }
+    75→    75→    preselectedRef.current = true;
+    76→    76→  }, [allProducts, fetching, selectedProductId, stockOperationType]);
+    77→    77→
+    78→    78→  // Close suggestions on outside click
+    79→    79→  useEffect(() => {
+    80→    80→    const handleClickOutside = (e: MouseEvent) => {
+    81→    81→      if (suggestionsRef.current && !suggestionsRef.current.contains(e.target as Node)) {
+    82→    82→        setShowSuggestions(false);
+    83→    83→      }
+    84→    84→    };
+    85→    85→    document.addEventListener('mousedown', handleClickOutside);
+    86→    86→    return () => document.removeEventListener('mousedown', handleClickOutside);
+    87→    87→  }, []);
+    88→    88→
+    89→    89→  // For non-SELL: auto-match product by exact name
+    90→    90→  useEffect(() => {
+    91→    91→    if (isSell) return;
+    92→    92→    if (!productName.trim()) {
+    93→    93→      setProduct(null);
+    94→    94→      lastMatchedIdRef.current = null;
+    95→    95→      return;
+    96→    96→    }
+    97→    97→    const matched = allProducts.find(
+    98→    98→      p => p.name.toLowerCase() === productName.trim().toLowerCase()
+    99→    99→    );
+   100→   100→    if (matched) {
+   101→   101→      setProduct(matched);
+   102→   102→      // Only auto-fill the price when the matched product CHANGES —
+   103→   103→      // re-running per keystroke used to clobber the user's manual edits.
+   104→   104→      if (lastMatchedIdRef.current !== matched.id) {
+   105→   105→        lastMatchedIdRef.current = matched.id;
+   106→   106→        if (stockOperationType === 'STOCK_IN') {
+   107→   107→          setPrice(String(matched.purchasePrice));
+   108→   108→        }
+   109→   109→      }
+   110→   110→    } else {
+   111→   111→      setProduct(null);
+   112→   112→      lastMatchedIdRef.current = null;
+   113→   113→    }
+   114→   114→  }, [productName, allProducts, stockOperationType, isSell]);
+   115→   115→
+   116→   116→  // SELL: filtered suggestions
+   117→   117→  const sellSuggestions = isSell && productName.trim()
+   118→   118→    ? allProducts.filter(p =>
+   119→   119→        p.name.toLowerCase().includes(productName.toLowerCase())
+   120→   120→      )
+   121→   121→    : isSell ? allProducts : [];
+   122→   122→
+   123→   123→  const handleSelectSuggestion = (p: Product) => {
+   124→   124→    setProduct(p);
+   125→   125→    setProductName('');
+   126→   126→    setShowSuggestions(false);
+   127→   127→    setPrice(String(p.sellingPrice));
+   128→   128→    setQuantity('');
+   129→   129→  };
+   130→   130→
+   131→   131→  const handleProductNameChange = (val: string) => {
+   132→   132→    setProductName(val);
+   133→   133→    if (isSell) {
+   134→   134→      setShowSuggestions(true);
+   135→   135→      if (product) {
+   136→   136→        setProduct(null);
+   137→   137→        setPrice('');
+   138→   138→        setQuantity('');
+   139→   139→      }
+   140→   140→    }
+   141→   141→  };
+   142→   142→
+   143→   143→  const getTitle = () => {
+   144→   144→    switch (stockOperationType) {
+   145→   145→      case 'STOCK_IN': return t('stockInTitle', language);
+   146→   146→      case 'STOCK_OUT': return t('stockOutTitle', language);
+   147→   147→      case 'SELL': return t('instantSellTitle', language);
+   148→   148→      default: return '';
+   149→   149→    }
+   150→   150→  };
+   151→   151→
+   152→   152→  const getPriceLabel = () => {
+   153→   153→    switch (stockOperationType) {
+   154→   154→      case 'SELL': return t('sellingPrice', language);
+   155→   155→      case 'STOCK_IN': return t('purchasePrice', language);
+   156→   156→      case 'STOCK_OUT': return t('price', language);
+   157→   157→      default: return t('price', language);
+   158→   158→    }
+   159→   159→  };
+   160→   160→
+   161→   161→  const getAccentColor = () => {
+   162→   162→    switch (stockOperationType) {
+   163→   163→      case 'STOCK_IN': return '#F5DEB3';
+   164→   164→      case 'STOCK_OUT': return '#ff6b00';
+   165→   165→      case 'SELL': return '#A07C3E';
+   166→   166→      default: return '#D4A853';
+   167→   167→    }
+   168→   168→  };
+   169→   169→
+   170→   170→  const handleConfirmClick = () => {
+   171→   171→    if (!product?.id || !user?.id || !stockOperationType || !quantity) {
+   172→   172→      toast.error(t('error', language));
+   173→   173→      return;
+   174→   174→    }
+   175→   175→    const qty = Number(quantity);
+   176→   176→    if (!Number.isInteger(qty) || qty <= 0) {
+   177→   177→      toast.error(t('enterQuantity', language));
+   178→   178→      return;
+   179→   179→    }
+   180→   180→    const unitPrice = Number(price);
+   181→   181→    if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+   182→   182→      toast.error(t('error', language), { description: 'Price cannot be negative' });
+   183→   183→      return;
+   184→   184→    }
+   185→   185→    if ((stockOperationType === 'SELL' || stockOperationType === 'STOCK_IN') && unitPrice <= 0) {
+   186→   186→      toast.error(t('error', language), {
+   187→   187→        description: stockOperationType === 'SELL'
+   188→   188→          ? 'Selling price must be greater than 0'
+   189→   189→          : 'Purchase price must be greater than 0',
+   190→   190→      });
+   191→   191→      return;
+   192→   192→    }
+   193→   193→    setShowConfirmDialog(true);
+   194→   194→  };
+   195→   195→
+   196→   196→  const handleConfirmYes = async () => {
+   197→   197→    setShowConfirmDialog(false);
+   198→   198→    if (!product?.id || !user?.id || !stockOperationType) return;
+   199→   199→
+   200→   200→    const qty = Number(quantity);
+   201→   201→    const unitPrice = Number(price);
+   202→   202→    const totalAmount = qty * unitPrice;
+   203→   203→
+   204→   204→    setLoading(true);
+   205→   205→    try {
+   206→   206→      const { transaction } = await createTransactionOffline({
+   207→   207→        type: stockOperationType,
+   208→   208→        productId: product.id,
+   209→   209→        quantity: qty,
+   210→   210→        unitPrice,
+   211→   211→        totalAmount,
+   212→   212→        userId: user.id,
+   213→   213→      });
+   214→   214→
+   215→   215→      // Play success sound based on operation type
+   216→   216→      if (stockOperationType === 'SELL') {
+   217→   217→        playSellSound();
+   218→   218→      } else if (stockOperationType === 'STOCK_OUT') {
+   219→   219→        playStockOutSound();
+   220→   220→      } else if (stockOperationType === 'STOCK_IN') {
+   221→   221→        playStockInSound();
+   222→   222→      }
+   223→   223→
+   224→   224→      toast.success(t('success', language));
+   225→   225→
+   226→   226→      if (stockOperationType === 'STOCK_OUT' || stockOperationType === 'SELL') {
+   227→   227→        // Ask for e-Bill BEFORE leaving the screen (user can skip)
+   228→   228→        setBillPrompt(transaction);
+   229→   229→      } else {
+   230→   230→        goBack();
+   231→   231→      }
+   232→   232→    } catch (error) {
+   233→   233→      toast.error((error as Error).message || t('error', language));
+   234→   234→    } finally {
+   235→   235→      setLoading(false);
+   236→   236→    }
+   237→   237→  };
+   238→   238→
+   239→   239→  const handleBillSkip = () => {
+   240→   240→    setBillPrompt(null);
+   241→   241→    goBack();
+   242→   242→  };
+   243→   243→
+   244→   244→  const handleBillCreate = () => {
+   245→   245→    if (!billPrompt || !product) return;
+   246→   246→    setPendingBillData({
+   247→   247→      transactionId: billPrompt.id,
+   248→   248→      productId: billPrompt.productId,
+   249→   249→      productName: billPrompt.product?.name || product.name,
+   250→   250→      quantity: billPrompt.quantity,
+   251→   251→      unitPrice: billPrompt.unitPrice,
+   252→   252→      totalAmount: billPrompt.totalAmount,
+   253→   253→      date: billPrompt.date,
+   254→   254→    });
+   255→   255→    setBillPrompt(null);
+   256→   256→    goBack();          // leave the stock screen (stack: [..., prev])
+   257→   257→    navigateTo('invoice'); // push e-Bill screen (stack: [..., prev, invoice])
+   258→   258→  };
+   259→   259→
+   260→   260→  const handleConfirmCancel = () => {
+   261→   261→    setShowConfirmDialog(false);
+   262→   262→  };
+   263→   263→
+   264→   264→  const accent = getAccentColor();
+   265→   265→  const meta = stockOperationType ? stockOpMeta[stockOperationType] : null;
+   266→   266→  const ConfirmIcon = meta?.icon;
+   267→   267→
+   268→   268→  const totalAmount = quantity && price ? (Number(quantity) * Number(price)) : 0;
+   269→   269→
+   270→   270→  return (
+   271→   271→    <div className="animated-bg min-h-screen pb-24">
+   272→   272→      <div className="max-w-md mx-auto px-4 pt-4">
+   273→   273→        {/* Header */}
+   274→   274→        <div className="flex items-center justify-between mb-6">
+   275→   275→          <button onClick={goBack} className="p-2 rounded-full glass-card" aria-label="Back">
+   276→   276→            <ArrowLeft size={20} className="text-emerald-400" />
+   277→   277→          </button>
+   278→   278→          <h1 className="text-lg font-bold" style={{ color: accent }}>{getTitle()}</h1>
+   279→   279→          <div className="w-10" />
+   280→   280→        </div>
+   281→   281→
+   282→   282→        {fetching ? (
+   283→   283→          <div className="text-center py-12 text-white/40">{t('loading', language)}</div>
+   284→   284→        ) : allProducts.length === 0 ? (
+   285→   285→          <div className="text-center py-12 text-white/40">{t('noData', language)}</div>
+   286→   286→        ) : isSell ? (
+   287→   287→          /* ==================== INSTANT SELL LAYOUT ==================== */
+   288→   288→          <>
+   289→   289→            <div className="glass-card-strong p-6 space-y-4">
+   290→   290→              {/* Step 1: Product name with suggestion dropdown */}
+   291→   291→              <div className="relative" ref={suggestionsRef}>
+   292→   292→                <label className="text-xs text-white/60 mb-1 block">{t('productName', language)}</label>
+   293→   293→                <div className="relative">
+   294→   294→                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+   295→   295→                  <input
+   296→   296→                    type="text"
+   297→   297→                    value={productName}
+   298→   298→                    onChange={(e) => handleProductNameChange(e.target.value)}
+   299→   299→                    onFocus={() => setShowSuggestions(true)}
+   300→   300→                    placeholder={t('searchProducts', language)}
+   301→   301→                    className="glass-input w-full pl-10 pr-4 py-3 text-sm"
+   302→   302→                    autoFocus
+   303→   303→                  />
+   304→   304→                </div>
+   305→   305→
+   306→   306→                {/* Suggestion dropdown */}
+   307→   307→                {showSuggestions && sellSuggestions.length > 0 && !product && (
+   308→   308→                  <div className="absolute z-50 left-0 right-0 top-full mt-1 glass-card-strong max-h-60 overflow-y-auto rounded-xl">
+   309→   309→                    {sellSuggestions.map((p) => (
+   310→   310→                      <button
+   311→   311→                        key={p.id}
+   312→   312→                        onClick={() => handleSelectSuggestion(p)}
+   313→   313→                        className="w-full px-4 py-3 text-left text-sm flex items-center justify-between hover:bg-white/10 transition-colors border-b border-white/5 last:border-b-0"
+   314→   314→                      >
+   315→   315→                        <div className="flex-1">
+   316→   316→                          <span className="text-white/90">{p.name}</span>
+   317→   317→                          <div className="flex items-center gap-2 mt-0.5">
+   318→   318→                            <span className={`text-[10px] ${p.quantity <= p.lowStockThreshold ? 'text-orange-400' : 'text-green-400'}`}>
+   319→   319→                              Stock: {p.quantity}
+   320→   320→                            </span>
+   321→   321→                            <span className="text-[10px] text-emerald-400/60">₹{p.sellingPrice}</span>
+   322→   322→                          </div>
+   323→   323→                        </div>
+   324→   324→                      </button>
+   325→   325→                    ))}
+   326→   326→                  </div>
+   327→   327→                )}
+   328→   328→
+   329→   329→                {/* No results */}
+   330→   330→                {showSuggestions && productName.trim() && sellSuggestions.length === 0 && !product && (
+   331→   331→                  <div className="absolute z-50 left-0 right-0 top-full mt-1 glass-card-strong rounded-xl p-4 text-center">
+   332→   332→                    <span className="text-xs text-white/40">{t('noData', language)}</span>
+   333→   333→                  </div>
+   334→   334→                )}
+   335→   335→              </div>
+   336→   336→
+   337→   337→              {/* Step 2: After product selected */}
+   338→   338→              {product && (
+   339→   339→                <div className="space-y-4">
+   340→   340→                  {/* Selected product info */}
+   341→   341→                  <div className="glass-card p-3 flex items-center justify-between">
+   342→   342→                    <div>
+   343→   343→                      <p className="text-sm font-semibold text-white/90">{product.name}</p>
+   344→   344→                      <p className={`text-[11px] ${product.quantity <= product.lowStockThreshold ? 'text-orange-400' : 'text-green-400'}`}>
+   345→   345→                        Stock: {product.quantity}
+   346→   346→                      </p>
+   347→   347→                    </div>
+   348→   348→                    <button
+   349→   349→                      onClick={() => {
+   350→   350→                        setProduct(null);
+   351→   351→                        setProductName('');
+   352→   352→                        setPrice('');
+   353→   353→                        setQuantity('');
+   354→   354→                        setShowSuggestions(false);
+   355→   355→                      }}
+   356→   356→                      className="text-xs text-white/40 hover:text-white/70 px-2 py-1"
+   357→   357→                    >
+   358→   358→                      ✕ Change
+   359→   359→                    </button>
+   360→   360→                  </div>
+   361→   361→
+   362→   362→                  {/* Quantity */}
+   363→   363→                  <div>
+   364→   364→                    <label className="text-xs text-white/60 mb-1 block">{t('quantity', language)}</label>
+   365→   365→                    <input
+   366→   366→                      type="number"
+   367→   367→                      value={quantity}
+   368→   368→                      onChange={(e) => setQuantity(e.target.value)}
+   369→   369→                      placeholder="0"
+   370→   370→                      className="glass-input w-full px-4 py-3 text-sm"
+   371→   371→                      autoFocus
+   372→   372→                    />
+   373→   373→                  </div>
+   374→   374→
+   375→   375→                  {/* Selling Price */}
+   376→   376→                  <div>
+   377→   377→                    <label className="text-xs text-white/60 mb-1 block">{t('sellingPrice', language)}</label>
+   378→   378→                    <input
+   379→   379→                      type="number"
+   380→   380→                      value={price}
+   381→   381→                      onChange={(e) => setPrice(e.target.value)}
+   382→   382→                      placeholder="₹0"
+   383→   383→                      className="glass-input w-full px-4 py-3 text-sm"
+   384→   384→                    />
+   385→   385→                  </div>
+   386→   386→
+   387→   387→                  {/* Total preview */}
+   388→   388→                  {quantity && price && (
+   389→   389→                    <div className="pt-2 border-t border-white/10">
+   390→   390→                      <div className="flex justify-between items-center">
+   391→   391→                        <span className="text-xs text-white/60">Total Amount</span>
+   392→   392→                        <span className="text-lg font-bold" style={{ color: accent }}>
+   393→   393→                          ₹{totalAmount.toLocaleString()}
+   394→   394→                        </span>
+   395→   395→                      </div>
+   396→   396→                    </div>
+   397→   397→                  )}
+   398→   398→                </div>
+   399→   399→              )}
+   400→   400→            </div>
+   401→   401→
+   402→   402→            {/* Confirm button */}
+   403→   403→            <div className="mt-6">
+   404→   404→              <button
+   405→   405→                onClick={handleConfirmClick}
+   406→   406→                disabled={loading || !quantity || !product}
+   407→   407→                className="neon-btn-solid w-full py-3 font-semibold text-sm disabled:opacity-50"
+   408→   408→                style={{
+   409→   409→                  background: `linear-gradient(135deg, ${accent}44, ${accent}88)`,
+   410→   410→                  color: 'white',
+   411→   411→                }}
+   412→   412→              >
+   413→   413→                {loading ? t('loading', language) : t('confirm', language)}
+   414→   414→              </button>
+   415→   415→            </div>
+   416→   416→          </>
+   417→   417→        ) : (
+   418→   418→          /* ==================== STOCK IN / STOCK OUT LAYOUT ==================== */
+   419→   419→          <>
+   420→   420→            <div className="glass-card-strong p-6 space-y-4">
+   421→   421→              {/* Product name */}
+   422→   422→              <div>
+   423→   423→                <label className="text-xs text-white/60 mb-1 block">{t('productName', language)}</label>
+   424→   424→                <input
+   425→   425→                  type="text"
+   426→   426→                  value={productName}
+   427→   427→                  onChange={(e) => setProductName(e.target.value)}
+   428→   428→                  placeholder={t('productName', language)}
+   429→   429→                  className="glass-input w-full px-4 py-3 text-sm"
+   430→   430→                  autoFocus
+   431→   431→                />
+   432→   432→                {productName.trim() && (
+   433→   433→                  product ? (
+   434→   434→                    <p className="text-[11px] text-green-400 mt-1">✓ {product.name} — Stock: {product.quantity}</p>
+   435→   435→                  ) : (
+   436→   436→                    <p className="text-[11px] text-orange-400/60 mt-1">Product not found</p>
+   437→   437→                  )
+   438→   438→                )}
+   439→   439→              </div>
+   440→   440→
+   441→   441→              {product && (
+   442→   442→                <>
+   443→   443→                  <div>
+   444→   444→                    <label className="text-xs text-white/60 mb-1 block">{t('quantity', language)}</label>
+   445→   445→                    <input
+   446→   446→                      type="number"
+   447→   447→                      value={quantity}
+   448→   448→                      onChange={(e) => setQuantity(e.target.value)}
+   449→   449→                      placeholder="0"
+   450→   450→                      className="glass-input w-full px-4 py-3 text-sm"
+   451→   451→                    />
+   452→   452→                  </div>
+   453→   453→
+   454→   454→                  <div>
+   455→   455→                    <label className="text-xs text-white/60 mb-1 block">{getPriceLabel()}</label>
+   456→   456→                    <input
+   457→   457→                      type="number"
+   458→   458→                      value={price}
+   459→   459→                      onChange={(e) => setPrice(e.target.value)}
+   460→   460→                      placeholder="₹0"
+   461→   461→                      className="glass-input w-full px-4 py-3 text-sm"
+   462→   462→                    />
+   463→   463→                  </div>
+   464→   464→
+   465→   465→                  {quantity && price && (
+   466→   466→                    <div className="pt-2 border-t border-white/10">
+   467→   467→                      <div className="flex justify-between items-center">
+   468→   468→                        <span className="text-xs text-white/60">Total Amount</span>
+   469→   469→                        <span className="text-lg font-bold" style={{ color: accent }}>
+   470→   470→                          ₹{totalAmount.toLocaleString()}
+   471→   471→                        </span>
+   472→   472→                      </div>
+   473→   473→                    </div>
+   474→   474→                  )}
+   475→   475→                </>
+   476→   476→              )}
+   477→   477→            </div>
+   478→   478→
+   479→   479→            <div className="mt-6">
+   480→   480→              <button
+   481→   481→                onClick={handleConfirmClick}
+   482→   482→                disabled={loading || !quantity || !product}
+   483→   483→                className="neon-btn-solid w-full py-3 font-semibold text-sm disabled:opacity-50"
+   484→   484→                style={accent !== '#D4A853' ? {
+   485→   485→                  background: `linear-gradient(135deg, ${accent}44, ${accent}88)`,
+   486→   486→                  color: 'white',
+   487→   487→                } : undefined}
+   488→   488→              >
+   489→   489→                {loading ? t('loading', language) : t('confirm', language)}
+   490→   490→              </button>
+   491→   491→            </div>
+   492→   492→          </>
+   493→   493→        )}
+   494→   494→      </div>
+   495→   495→
+   496→   496→      {/* Confirmation Dialog */}
+   497→   497→      <AnimatePresence>
+   498→   498→        {showConfirmDialog && product && meta && ConfirmIcon && (
+   499→   499→          <motion.div
+   500→   500→            initial={{ opacity: 0 }}
+   501→   501→            animate={{ opacity: 1 }}
+   502→   502→            exit={{ opacity: 0 }}
+   503→   503→            className="fixed inset-0 z-[100] flex items-center justify-center p-6"
+   504→   504→            onClick={handleConfirmCancel}
+   505→   505→          >
+   506→   506→            <div className="absolute inset-0 bg-black/60" />
+   507→   507→
+   508→   508→            <motion.div
+   509→   509→              initial={{ scale: 0.9, opacity: 0 }}
+   510→   510→              animate={{ scale: 1, opacity: 1 }}
+   511→   511→              exit={{ scale: 0.9, opacity: 0 }}
+   512→   512→              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+   513→   513→              onClick={(e) => e.stopPropagation()}
+   514→   514→              className="glass-card-strong p-6 w-full max-w-sm relative z-10"
+   515→   515→            >
+   516→   516→              <button
+   517→   517→                onClick={handleConfirmCancel}
+   518→   518→                className="absolute top-3 right-3 p-1.5 rounded-full hover:bg-white/10 transition-colors"
+   519→   519→              >
+   520→   520→                <X size={16} className="text-white/40" />
+   521→   521→              </button>
+   522→   522→
+   523→   523→              <div
+   524→   524→                className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4"
+   525→   525→                style={{ backgroundColor: `${accent}20`, border: `1px solid ${accent}66` }}
+   526→   526→              >
+   527→   527→                <ConfirmIcon size={24} style={{ color: accent }} />
+   528→   528→              </div>
+   529→   529→
+   530→   530→              <h3 className="text-lg font-bold text-center mb-3" style={{ color: accent }}>
+   531→   531→                {meta.confirmLabel}?
+   532→   532→              </h3>
+   533→   533→
+   534→   534→              <div className="space-y-2 mb-5">
+   535→   535→                <div className="flex justify-between items-center py-2 px-3 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }}>
+   536→   536→                  <span className="text-xs text-white/50">Product</span>
+   537→   537→                  <span className="text-sm font-medium text-white/90">{product.name}</span>
+   538→   538→                </div>
+   539→   539→                <div className="flex justify-between items-center py-2 px-3 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }}>
+   540→   540→                  <span className="text-xs text-white/50">{t('quantity', language)}</span>
+   541→   541→                  <span className="text-sm font-medium text-white/90">{quantity} pcs</span>
+   542→   542→                </div>
+   543→   543→                <div className="flex justify-between items-center py-2 px-3 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }}>
+   544→   544→                  <span className="text-xs text-white/50">{getPriceLabel()}</span>
+   545→   545→                  <span className="text-sm font-medium text-white/90">₹{parseFloat(price || '0').toLocaleString()}</span>
+   546→   546→                </div>
+   547→   547→                {totalAmount > 0 && (
+   548→   548→                  <div className="flex justify-between items-center py-2 px-3 rounded-lg" style={{ background: `${accent}10`, border: `1px solid ${accent}30` }}>
+   549→   549→                    <span className="text-xs text-white/50">Total</span>
+   550→   550→                    <span className="text-sm font-bold" style={{ color: accent }}>₹{totalAmount.toLocaleString()}</span>
+   551→   551→                  </div>
+   552→   552→                )}
+   553→   553→              </div>
+   554→   554→
+   555→   555→              <div className="flex gap-3">
+   556→   556→                <button
+   557→   557→                  onClick={handleConfirmCancel}
+   558→   558→                  className="flex-1 glass-card py-3 text-sm font-semibold text-white/70 rounded-xl hover:bg-white/10 transition-colors"
+   559→   559→                >
+   560→   560→                  {t('cancel', language)}
+   561→   561→                </button>
+   562→   562→                <button
+   563→   563→                  onClick={handleConfirmYes}
+   564→   564→                  disabled={loading}
+   565→   565→                  className="flex-1 py-3 text-sm font-semibold rounded-xl text-white transition-all disabled:opacity-50"
+   566→   566→                  style={{
+   567→   567→                    background: `linear-gradient(135deg, ${accent}, ${accent}aa)`,
+   568→   568→                    border: `1px solid ${accent}88`,
+   569→   569→                  }}
+   570→   570→                >
+   571→   571→                  {loading ? t('loading', language) : t('confirm', language)}
+   572→   572→                </button>
+   573→   573→              </div>
+   574→   574→            </motion.div>
+   575→   575→          </motion.div>
+   576→   576→        )}
+   577→   577→      </AnimatePresence>
+   578→   578→
+   579→   579→      {/* e-Bill Prompt — shown right after a successful STOCK_OUT / SELL */}
+   580→   580→      <AnimatePresence>
+   581→   581→        {billPrompt && product && (
+   582→   582→          <motion.div
+   583→   583→            initial={{ opacity: 0 }}
+   584→   584→            animate={{ opacity: 1 }}
+   585→   585→            exit={{ opacity: 0 }}
+   586→   586→            className="fixed inset-0 z-[110] flex items-center justify-center p-6"
+   587→   587→          >
+   588→   588→            <div className="absolute inset-0 bg-black/70" />
+   589→   589→
+   590→   590→            <motion.div
+   591→   591→              initial={{ scale: 0.9, opacity: 0 }}
+   592→   592→              animate={{ scale: 1, opacity: 1 }}
+   593→   593→              exit={{ scale: 0.9, opacity: 0 }}
+   594→   594→              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+   595→   595→              onClick={(e) => e.stopPropagation()}
+   596→   596→              className="glass-card-strong p-6 w-full max-w-sm relative z-10"
+   597→   597→            >
+   598→   598→              <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 bg-amber-500/15 border border-amber-500/40">
+   599→   599→                <ReceiptText size={24} className="text-amber-300" />
+   600→   600→              </div>
+   601→   601→
+   602→   602→              <h3 className="text-lg font-bold text-center mb-1 text-amber-300">{t('eBill', language)}?</h3>
+   603→   603→              <p className="text-xs text-white/50 text-center mb-4">{t('eBillPromptDesc', language)}</p>
+   604→   604→
+   605→   605→              <div className="space-y-2 mb-5">
+   606→   606→                <div className="flex justify-between items-center py-2 px-3 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }}>
+   607→   607→                  <span className="text-xs text-white/50">{t('item', language)}</span>
+   608→   608→                  <span className="text-sm font-medium text-white/90">{billPrompt.product?.name || product.name}</span>
+   609→   609→                </div>
+   610→   610→                <div className="flex justify-between items-center py-2 px-3 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }}>
+   611→   611→                  <span className="text-xs text-white/50">{t('quantity', language)}</span>
+   612→   612→                  <span className="text-sm font-medium text-white/90">{billPrompt.quantity} pcs</span>
+   613→   613→                </div>
+   614→   614→                <div className="flex justify-between items-center py-2 px-3 rounded-lg" style={{ background: 'rgba(245,222,179,0.08)', border: '1px solid rgba(212,168,83,0.3)' }}>
+   615→   615→                  <span className="text-xs text-white/50">Total</span>
+   616→   616→                  <span className="text-sm font-bold text-amber-300">₹{billPrompt.totalAmount.toLocaleString()}</span>
+   617→   617→                </div>
+   618→   618→              </div>
+   619→   619→
+   620→   620→              <div className="flex gap-3">
+   621→   621→                <button
+   622→   622→                  onClick={handleBillSkip}
+   623→   623→                  className="flex-1 glass-card py-3 text-sm font-semibold text-white/70 rounded-xl hover:bg-white/10 transition-colors"
+   624→   624→                >
+   625→   625→                  {t('skipEBill', language)}
+   626→   626→                </button>
+   627→   627→                <button
+   628→   628→                  onClick={handleBillCreate}
+   629→   629→                  className="flex-1 py-3 text-sm font-semibold rounded-xl text-white transition-all flex items-center justify-center gap-1.5"
+   630→   630→                  style={{
+   631→   631→                    background: 'linear-gradient(135deg, #D4A853, #A07C3E)',
+   632→   632→                    border: '1px solid rgba(212,168,83,0.6)',
+   633→   633→                  }}
+   634→   634→                >
+   635→   635→                  <ReceiptText size={15} />
+   636→   636→                  {t('createEBill', language)}
+   637→   637→                </button>
+   638→   638→              </div>
+   639→   639→            </motion.div>
+   640→   640→          </motion.div>
+   641→   641→        )}
+   642→   642→      </AnimatePresence>
+   643→   643→    </div>
+   644→   644→  );
+   645→   645→}
+   646→   646→

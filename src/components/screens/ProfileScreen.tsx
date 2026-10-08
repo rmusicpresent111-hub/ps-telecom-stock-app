@@ -4,8 +4,10 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { getProfileOffline, updateProfileOffline, exportBackupOffline, importBackupOffline, resetDataOffline } from '@/lib/offline-service';
+import { login } from '@/lib/local-auth';
+import { registerBackModal } from '@/lib/modal-back';
 import { motion } from 'framer-motion';
-import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, LogOut, Receipt, ReceiptText, CloudUpload } from 'lucide-react';
+import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, LogOut, Receipt, ReceiptText, CloudUpload, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import type { User as UserType } from '@/lib/types';
 
@@ -20,6 +22,29 @@ export default function ProfileScreen() {
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Destructive actions require re-entering the account password
+  const [resetPassword, setResetPassword] = useState('');
+  // Restore-from-file: parsed backup waits here until the password is confirmed
+  const [pendingRestore, setPendingRestore] = useState<Record<string, unknown> | null>(null);
+  const [restorePassword, setRestorePassword] = useState('');
+  const [showRestoreDialog, setShowRestoreDialog] = useState(false);
+
+  // Hardware/browser back closes the topmost open dialog first
+  useEffect(() => {
+    if (!showEditDialog) return;
+    return registerBackModal(() => setShowEditDialog(false));
+  }, [showEditDialog]);
+
+  useEffect(() => {
+    if (!showResetDialog) return;
+    return registerBackModal(() => setShowResetDialog(false));
+  }, [showResetDialog]);
+
+  useEffect(() => {
+    if (!showRestoreDialog) return;
+    return registerBackModal(() => setShowRestoreDialog(false));
+  }, [showRestoreDialog]);
 
   const fetchProfile = useCallback(async () => {
     if (!user?.id) return;
@@ -36,6 +61,27 @@ export default function ProfileScreen() {
   useEffect(() => {
     fetchProfile();
   }, [fetchProfile]);
+
+  /**
+   * Verifies the typed password against the local account.
+   * Returns true when correct; shows a toast (never throws).
+   */
+  const verifyPassword = async (password: string): Promise<boolean> => {
+    if (!user?.email) return false;
+    if (!password) {
+      toast.error(t('wrongPassword', language));
+      return false;
+    }
+    try {
+      await login(user.email, password);
+      return true;
+    } catch (e) {
+      // Brute-force throttle messages stay actionable; everything else is generic
+      const msg = (e as Error).message || '';
+      toast.error(msg.startsWith('Too many attempts') ? msg : t('wrongPassword', language));
+      return false;
+    }
+  };
 
   const handleUpdateName = async () => {
     if (!user?.id || !editName.trim()) return;
@@ -92,23 +138,18 @@ export default function ProfileScreen() {
     fileInputRef.current?.click();
   };
 
+  // File selection only PARSES the backup — the import itself happens after
+  // the password confirmation dialog, so nobody can wipe the device by
+  // dropping a file in.
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !user?.id) return;
+    if (!file) return;
     try {
       const text = await file.text();
-      const backupData = JSON.parse(text);
-      await importBackupOffline(user.id, {
-        categories: backupData.categories || [],
-        products: backupData.products || [],
-        transactions: backupData.transactions || [],
-        expenses: backupData.expenses || [],
-        cashEntries: backupData.cashEntries || [],
-        serviceTransactions: backupData.serviceTransactions || [],
-        bills: backupData.bills || [],
-        billingSettings: backupData.billingSettings,
-      });
-      toast.success(t('restore', language) + ' ✓');
+      const backupData = JSON.parse(text) as Record<string, unknown>;
+      setRestorePassword('');
+      setPendingRestore(backupData);
+      setShowRestoreDialog(true);
     } catch (error) {
       toast.error((error as Error).message || t('error', language));
     }
@@ -116,17 +157,49 @@ export default function ProfileScreen() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleResetAll = async () => {
-    if (!user?.id) return;
+  const handleConfirmRestore = async () => {
+    if (!user?.id || !pendingRestore) return;
+    if (!(await verifyPassword(restorePassword))) return;
     setLoading(true);
     try {
-      await resetDataOffline(user.id);
-      toast.success(t('deleted', language));
+      const backupData = pendingRestore;
+      const arr = (key: string): unknown[] =>
+        Array.isArray(backupData[key]) ? (backupData[key] as unknown[]) : [];
+      await importBackupOffline(user.id, {
+        categories: arr('categories'),
+        products: arr('products'),
+        transactions: arr('transactions'),
+        expenses: arr('expenses'),
+        cashEntries: arr('cashEntries'),
+        serviceTransactions: arr('serviceTransactions'),
+        bills: arr('bills'),
+        billingSettings: backupData.billingSettings,
+      });
+      toast.success(t('restore', language) + ' ✓');
+      setShowRestoreDialog(false);
+      setPendingRestore(null);
+      setRestorePassword('');
     } catch (error) {
       toast.error((error as Error).message || t('error', language));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResetAll = async () => {
+    if (!user?.id) return;
+    // Password re-auth: a wrong password never reaches resetDataOffline
+    if (!(await verifyPassword(resetPassword))) return;
+    setLoading(true);
+    try {
+      await resetDataOffline(user.id);
+      toast.success(t('deleted', language));
       setShowResetDialog(false);
+      setResetPassword('');
+    } catch (error) {
+      toast.error((error as Error).message || t('error', language));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -302,7 +375,7 @@ export default function ProfileScreen() {
 
           {/* Reset All Data */}
           <button
-            onClick={() => setShowResetDialog(true)}
+            onClick={() => { setResetPassword(''); setShowResetDialog(true); }}
             className="glass-card w-full p-4 flex items-center justify-between border-red-500/20"
           >
             <div className="flex items-center gap-3">
@@ -324,7 +397,7 @@ export default function ProfileScreen() {
 
       {/* Edit Name Dialog */}
       {showEditDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <motion.div
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -357,16 +430,34 @@ export default function ProfileScreen() {
         </div>
       )}
 
-      {/* Reset confirmation dialog */}
+      {/* Reset confirmation dialog — password re-auth required */}
       {showResetDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <motion.div
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             className="glass-card-strong p-6 mx-4 max-w-sm w-full"
           >
             <h3 className="text-lg font-bold mb-2 text-red-400">{t('resetAllData', language)}</h3>
-            <p className="text-sm text-white/60 mb-6">{t('thisActionCannot', language)}</p>
+            <p className="text-sm text-white/60 mb-4">{t('thisActionCannot', language)}</p>
+
+            <div className="mb-5">
+              <label className="flex items-center gap-1.5 text-[10px] text-white/40 mb-1 uppercase tracking-wide">
+                <Lock size={11} />
+                {t('reauthTitle', language)}
+              </label>
+              <input
+                type="password"
+                value={resetPassword}
+                onChange={(e) => setResetPassword(e.target.value)}
+                placeholder={t('password', language)}
+                autoComplete="current-password"
+                className="glass-input w-full px-4 py-3 text-sm"
+                autoFocus
+              />
+              <p className="text-[10px] text-white/40 mt-1">{t('reauthDesc', language)}</p>
+            </div>
+
             <div className="flex gap-3">
               <button
                 onClick={() => setShowResetDialog(false)}
@@ -376,10 +467,57 @@ export default function ProfileScreen() {
               </button>
               <button
                 onClick={handleResetAll}
-                disabled={loading}
+                disabled={loading || !resetPassword}
                 className="flex-1 py-2 text-sm font-semibold rounded-xl bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-50"
               >
                 {t('delete', language)}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Restore-from-file confirmation dialog — password re-auth required */}
+      {showRestoreDialog && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="glass-card-strong p-6 mx-4 max-w-sm w-full"
+          >
+            <h3 className="text-lg font-bold mb-2 text-amber-300">{t('restore', language)}</h3>
+            <p className="text-sm text-white/60 mb-4">{t('thisActionCannot', language)}</p>
+
+            <div className="mb-5">
+              <label className="flex items-center gap-1.5 text-[10px] text-white/40 mb-1 uppercase tracking-wide">
+                <Lock size={11} />
+                {t('reauthTitle', language)}
+              </label>
+              <input
+                type="password"
+                value={restorePassword}
+                onChange={(e) => setRestorePassword(e.target.value)}
+                placeholder={t('password', language)}
+                autoComplete="current-password"
+                className="glass-input w-full px-4 py-3 text-sm"
+                autoFocus
+              />
+              <p className="text-[10px] text-white/40 mt-1">{t('reauthDesc', language)}</p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setShowRestoreDialog(false); setPendingRestore(null); }}
+                className="flex-1 neon-btn py-2 text-sm font-semibold"
+              >
+                {t('cancel', language)}
+              </button>
+              <button
+                onClick={handleConfirmRestore}
+                disabled={loading || !restorePassword}
+                className="flex-1 py-2 text-sm font-semibold rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30 transition-colors disabled:opacity-50"
+              >
+                {t('restore', language)}
               </button>
             </div>
           </motion.div>

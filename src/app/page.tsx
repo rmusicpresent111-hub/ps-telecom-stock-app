@@ -98,10 +98,7 @@ export default function Home() {
   // This is the ONLY path for native Android back button → handleBack()
   // useBackHandler.ts does NOT register its own Capacitor listener to avoid double-firing
   useEffect(() => {
-    const handleNativeBack = () => {
-      console.log('[Page] Received app:back-button event from Capacitor bridge');
-      handleBack();
-    };
+    const handleNativeBack = () => handleBack();
     window.addEventListener('app:back-button', handleNativeBack);
     return () => window.removeEventListener('app:back-button', handleNativeBack);
   }, [handleBack]);

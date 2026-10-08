@@ -5,6 +5,7 @@ import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Transaction, Bill, BillingSettings } from '@/lib/types';
 import { getTransactionsOffline, getBillsOffline, deleteBillOffline, getBillingSettingsOffline } from '@/lib/offline-service';
+import { registerBackModal } from '@/lib/modal-back';
 import { Clock, Search, FileText, MessageCircle, Share2, Trash2, Download, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -128,6 +129,12 @@ export default function HistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [busyBillId, setBusyBillId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Bill | null>(null);
+
+  // Hardware/browser back closes the delete dialog instead of navigating away
+  useEffect(() => {
+    if (!deleteTarget) return;
+    return registerBackModal(() => setDeleteTarget(null));
+  }, [deleteTarget]);
 
   // Load BOTH lists in parallel once — local IndexedDB is instant
   useEffect(() => {
@@ -444,7 +451,7 @@ export default function HistoryScreen() {
         {deleteTarget && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
             onClick={() => setDeleteTarget(null)}
           >
             <motion.div

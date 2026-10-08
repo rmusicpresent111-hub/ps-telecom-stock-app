@@ -8,6 +8,7 @@ import {
 } from '@/lib/offline-service';
 import {
   generateBillPdf, downloadBlob, sendBillViaWhatsapp, shopInitials, formatMoney, formatDate,
+  isValidIndianMobile,
   type GeneratedPdf,
 } from '@/lib/bill-pdf';
 import { toastWhatsappResult } from '@/lib/share-toasts';
@@ -50,6 +51,12 @@ export default function InvoiceScreen() {
   // Load settings / existing bill
   useEffect(() => {
     let cancelled = false;
+    // goBack only if this screen is still the active one — the user may have
+    // navigated away while the async load was in flight (AnimatePresence exit
+    // window), and an extra goBack() would pop one level too far.
+    const goBackIfStillHere = () => {
+      if (!cancelled && useAppStore.getState().currentScreen === 'invoice') goBack();
+    };
     (async () => {
       if (!user?.id) return;
       setLoading(true);
@@ -66,17 +73,17 @@ export default function InvoiceScreen() {
             setMode('view');
           } else {
             toast.error(t('error', language));
-            goBack();
+            goBackIfStillHere();
           }
           setSelectedBillId(null);
         } else if (pendingBillData) {
           setMode('create');
         } else {
           // nothing to show — leave
-          goBack();
+          goBackIfStillHere();
         }
       } catch {
-        if (!cancelled) goBack();
+        goBackIfStillHere();
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -147,6 +154,18 @@ export default function InvoiceScreen() {
 
   const handleGenerate = useCallback(async () => {
     if (!user?.id || !pendingBillData || !settings) return;
+    // A mistyped mobile number would send the purchase invoice (PDF) to a
+    // STRANGER's WhatsApp — block invalid numbers before saving.
+    if (customerMobile.trim() && !isValidIndianMobile(customerMobile)) {
+      toast.error(
+        language === 'bn'
+          ? 'সঠিক ১০ সংখ্যার WhatsApp মোবাইল নম্বর দিন'
+          : language === 'hi'
+            ? 'सही 10 अंकों का WhatsApp मोबाइल नंबर दें'
+            : 'Enter a valid 10-digit WhatsApp mobile number'
+      );
+      return;
+    }
     setSaving(true);
     try {
       const { bill: created } = await createBillOffline({
@@ -572,7 +591,7 @@ export default function InvoiceScreen() {
 
         {/* Delete confirm */}
         {showDeleteConfirm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(false)}>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(false)}>
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card-strong p-6 mx-4 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
               <h3 className="text-lg font-bold mb-2 text-red-400">{t('deleteBill', language)}</h3>
               <p className="text-sm text-white/60 mb-6">{t('thisActionCannot', language)}</p>

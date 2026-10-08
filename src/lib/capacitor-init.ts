@@ -8,16 +8,7 @@
  * MUST be imported early in the app lifecycle (before React renders).
  */
 
-let _capacitorReady = false;
 let _backButtonRegistered = false;
-
-export function isCapacitorReady(): boolean {
-  return _capacitorReady;
-}
-
-export function isBackButtonRegistered(): boolean {
-  return _backButtonRegistered;
-}
 
 /**
  * Initialize Capacitor App plugin and register a global back button handler.
@@ -29,9 +20,6 @@ export async function initCapacitorBridge(): Promise<void> {
   try {
     const { App } = await import('@capacitor/app');
 
-    _capacitorReady = true;
-    console.log('[CapacitorInit] Capacitor App plugin loaded successfully');
-
     // Pre-register back button handler at the native level
     // This prevents the app from closing before React even mounts
     // NOTE: flag is set SYNCHRONOUSLY before the async addListener call —
@@ -41,18 +29,14 @@ export async function initCapacitorBridge(): Promise<void> {
       _backButtonRegistered = true;
       App.addListener('backButton', () => {
         // Dispatch a custom event that the React app will listen to
-        console.log('[CapacitorInit] Native back button pressed → dispatching app:back-button');
         window.dispatchEvent(new CustomEvent('app:back-button'));
-      }).then(() => {
-        console.log('[CapacitorInit] Native backButton listener registered ✅');
       }).catch((err: unknown) => {
         _backButtonRegistered = false; // allow retry on next call
         console.warn('[CapacitorInit] Failed to register backButton listener:', err);
       });
     }
-  } catch (err) {
-    console.warn('[CapacitorInit] Not running in Capacitor environment or import failed:', err);
-    _capacitorReady = false;
+  } catch {
+    // Not running inside Capacitor (plain browser) — expected, nothing to do.
   }
 }
 
