@@ -225,6 +225,25 @@ function toSafeUser(record: LocalUserRecord): Omit<LocalUserRecord, 'password'> 
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/**
+ * Thrown when a login/reset is attempted but this device's local database has
+ * no accounts at all. This is NOT a wrong-password problem — it means the
+ * browser storage is fresh (new device, new preview origin, cleared data).
+ * The UI shows a Sign-Up action instead of the generic "invalid credentials".
+ */
+export class NoLocalAccountError extends Error {
+  constructor() {
+    super('No account exists on this device yet.');
+    this.name = 'NoLocalAccountError';
+  }
+}
+
+/** True iff at least one account has been created in this device's local DB. */
+export async function hasAnyLocalUser(): Promise<boolean> {
+  const db = await getOfflineDB();
+  return (await db.count('users')) > 0;
+}
+
 // ============ SIGNUP ============
 
 export async function signup(
@@ -283,6 +302,12 @@ export async function login(
   }
 
   const db = await getOfflineDB();
+
+  // Fresh device / cleared browser storage → nothing to verify against.
+  // A generic "invalid credentials" here would wrongly suggest the password
+  // was mistyped, when the real fix is to create (or restore) an account.
+  if ((await db.count('users')) === 0) throw new NoLocalAccountError();
+
   const record = await db.getFromIndex('users', 'by-email', cleanEmail);
 
   // Same generic message for unknown email and wrong password (no enumeration)
@@ -358,6 +383,7 @@ export async function resetLocalPassword(email: string, newPassword: string): Pr
   if (!newPassword || newPassword.length < 6) throw new Error('Password must be at least 6 characters');
 
   const db = await getOfflineDB();
+  if ((await db.count('users')) === 0) throw new NoLocalAccountError();
   const record = await db.getFromIndex('users', 'by-email', cleanEmail);
   // Generic error — does not reveal whether the account exists (no enumeration).
   if (!record) throw new Error('Unable to reset password for this email');

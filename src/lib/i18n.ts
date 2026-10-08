@@ -261,6 +261,9 @@ type TranslationKeys = {
   cloudBackupOwner: string;
   restoreDifferentAccountWarn: string;
   tokenSavedHint: string;
+  // Fresh-device login guidance (empty local database)
+  noAccountOnDevice: string;
+  noAccountOnDeviceDesc: string;
 };
 
 const translations: Record<Language, TranslationKeys> = {
@@ -504,6 +507,8 @@ const translations: Record<Language, TranslationKeys> = {
     cloudBackupOwner: 'ব্যাকআপের মালিক',
     restoreDifferentAccountWarn: 'এই ক্লাউড ব্যাকআপটি {email} অ্যাকাউন্টের — রিস্টোর করলে এই ফোনের সব ডেটা তা দিয়ে বদলে যাবে। চালিয়ে যাবেন?',
     tokenSavedHint: 'টোকেন সংরক্ষিত আছে — আগেরটি রাখতে খালি রাখুন',
+    noAccountOnDevice: 'এই ডিভাইসে কোনো অ্যাকাউন্ট নেই',
+    noAccountOnDeviceDesc: 'ডেটা প্রতিটি ডিভাইসে আলাদাভাবে সেভ থাকে। আগে সাইনআপ করুন — আগের ক্লাউড ব্যাকআপ থাকলে সাইনআপের পর Profile → Cloud Backup থেকে ফেরাতে পারবেন।',
   },
   en: {
     appName: 'PS TELECOM',
@@ -745,6 +750,8 @@ const translations: Record<Language, TranslationKeys> = {
     cloudBackupOwner: 'Backup owner',
     restoreDifferentAccountWarn: 'This cloud backup was made by {email} — restoring will replace this device\'s data with it. Continue?',
     tokenSavedHint: 'Token saved — leave empty to keep the current one',
+    noAccountOnDevice: 'No account exists on this device',
+    noAccountOnDeviceDesc: 'Data is stored separately on each device. Please Sign Up first — if you had a cloud backup, restore it via Profile → Cloud Backup after signing up.',
   },
   hi: {
     appName: 'PS TELECOM',
@@ -986,6 +993,8 @@ const translations: Record<Language, TranslationKeys> = {
     cloudBackupOwner: 'बैकअप का मालिक',
     restoreDifferentAccountWarn: 'यह क्लाउड बैकअप {email} अकाउंट का है — रिस्टोर करने पर इस फोन का पूरा डेटा उससे बदल जाएगा। जारी रखें?',
     tokenSavedHint: 'टोकन सहेजा गया है — मौजूदा टोकन रखने के लिए खाली छोड़ें',
+    noAccountOnDevice: 'इस डिवाइस पर कोई अकाउंट नहीं है',
+    noAccountOnDeviceDesc: 'डेटा हर डिवाइस पर अलग-अलग सेव रहता है। पहले साइनअप करें — अगर पहले क्लाउड बैकअप लिया था, तो साइनअप के बाद Profile → Cloud Backup से वापस ला सकते हैं।',
   },
 };
 

@@ -7,7 +7,7 @@ import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Language } from '@/lib/types';
 import { toast } from 'sonner';
-import { resetLocalPassword, normalizeEmail } from '@/lib/local-auth';
+import { resetLocalPassword, normalizeEmail, NoLocalAccountError } from '@/lib/local-auth';
 
 export default function ForgotPasswordScreen() {
   const { language, resetNavigation } = useAppStore();
@@ -53,9 +53,17 @@ export default function ForgotPasswordScreen() {
       toast.success(t('success', lang), { description: 'Password updated. Please log in.' });
       resetNavigation('login');
     } catch (error) {
-      toast.error(t('error', lang), {
-        description: error instanceof Error ? error.message : 'Something went wrong',
-      });
+      if (error instanceof NoLocalAccountError) {
+        toast.error(t('noAccountOnDevice', lang), {
+          description: t('noAccountOnDeviceDesc', lang),
+          action: { label: t('signup', lang), onClick: () => resetNavigation('signup') },
+          duration: 12000,
+        });
+      } else {
+        toast.error(t('error', lang), {
+          description: error instanceof Error ? error.message : 'Something went wrong',
+        });
+      }
     } finally {
       setIsLoading(false);
     }

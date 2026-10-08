@@ -7,7 +7,7 @@ import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Language, User } from '@/lib/types';
 import { toast } from 'sonner';
-import { login } from '@/lib/local-auth';
+import { login, NoLocalAccountError } from '@/lib/local-auth';
 
 export default function LoginScreen() {
   const { language, setUser, navigateTo, resetNavigation } = useAppStore();
@@ -36,7 +36,19 @@ export default function LoginScreen() {
       resetNavigation('dashboard');
       toast.success(t('success', lang));
     } catch (error) {
-      toast.error(t('error', lang), { description: error instanceof Error ? error.message : 'Login failed' });
+      if (error instanceof NoLocalAccountError) {
+        // Fresh device / cleared browser storage: guide to Sign Up instead of
+        // a misleading "invalid credentials" error.
+        toast.error(t('noAccountOnDevice', lang), {
+          description: t('noAccountOnDeviceDesc', lang),
+          action: { label: t('signup', lang), onClick: () => navigateTo('signup') },
+          duration: 12000,
+        });
+      } else {
+        toast.error(t('error', lang), {
+          description: error instanceof Error ? error.message : 'Login failed',
+        });
+      }
     } finally {
       setIsLoading(false);
     }

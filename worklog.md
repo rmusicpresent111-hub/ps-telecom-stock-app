@@ -446,3 +446,24 @@ Stage Summary:
 - Restore of settings-only backups fixed (previously impossible); shared-device ownership hole in stock operations closed; bill numbers guaranteed unique; APK cloud queries time out at 30s like web.
 - Dashboard/store cache now always mirrors the real DB after reset and restore.
 - mini-services/d1-mock recreated (needed for e2e verification of the D1 feature).
+
+---
+Task ID: 6
+Agent: Z.ai Code (main)
+Task: "Preview error fix koro" — diagnose the preview error the user reported
+
+Work Log:
+- Restarted dev server (environment had been reset; server + dev.log were gone). GET / 200, clean compile.
+- Full browser sweep (agent-browser): no console errors, no page errors, page renders, tutorial/login screens fine.
+- REPRODUCED the actual "preview error": login with previously used credentials (avijit@pstelecom.in / Test@1234) → toast "Invalid email or password".
+- ROOT CAUSE: this is a NEW preview session/origin — the device-local IndexedDB (the app's offline "database") is EMPTY here. Accounts and data are stored per-device by design (offline-first, no server). So the old account simply does not exist in the fresh browser storage; the generic "Invalid email or password" message misled the user into thinking the app/database was broken.
+- Verified app itself fully functional on a fresh profile: signup → dashboard → reload → session restore all OK.
+- FIX (UX hardening for fresh-device logins):
+  * local-auth.ts: added NoLocalAccountError + hasAnyLocalUser(); login() and resetLocalPassword() now check db.count('users') and throw NoLocalAccountError when the local database has no accounts at all (instead of the misleading wrong-password message). Wrong password with existing accounts still shows the generic no-enumeration message.
+  * LoginScreen.tsx + ForgotPasswordScreen.tsx: catch NoLocalAccountError → rich sonner toast with title/description + an inline "Sign Up" action button that navigates to the signup screen (12s duration).
+  * i18n.ts: new keys noAccountOnDevice / noAccountOnDeviceDesc in bn, en, hi.
+- VERIFIED END-TO-END (agent-browser, fresh storage): cleared IndexedDB+localStorage → login attempt → new toast "No account exists on this device" with Sign Up action → click action → signup screen → signup → dashboard. Then logout → wrong password → generic "Invalid email or password" (no regression) → correct login → dashboard. Zero console/page errors. lint clean; tsc clean.
+
+Stage Summary:
+- The "preview error" was not a code bug: new preview session = fresh device storage = no local account, so the old login could never succeed. The app now detects exactly this case and tells the user what to do (Sign Up, then optionally restore a cloud backup via Profile → Cloud Backup).
+- User recovery path for their old data: if they ever took a Cloud Backup (Cloudflare D1), sign up again with any email → Profile → Cloud Backup → restore. Otherwise old data was device-local and lives only in the previous browser profile.
