@@ -1,15 +1,16 @@
 /**
- * Offline-First Service Layer
- * 
- * READ STRATEGY: Local IndexedDB first → instant response. Then fetch from Supabase in background.
- * WRITE STRATEGY: Save to local IndexedDB immediately (mark dirty) → upload to Supabase in background.
- * DELETE STRATEGY: Delete from local IndexedDB + add to pendingDeletes queue → delete from Supabase when online.
- * 
- * This wraps the existing supabase-service functions with offline support.
- * The app always works - even with zero internet.
+ * Local-First Service Layer — 100% offline, NO cloud database.
+ *
+ * READ STRATEGY:  Always served from local IndexedDB (instant, works with zero internet).
+ * WRITE STRATEGY: Written to local IndexedDB immediately (atomic where it matters).
+ * DELETE STRATEGY: Deleted from local IndexedDB (with cascades where required).
+ *
+ * Stock transactions are applied atomically (products + transactions stores in a
+ * single IndexedDB transaction) so rapid taps can never create negative stock.
+ * Profit/report math uses the purchase-price SNAPSHOT captured on each transaction,
+ * so later price edits never rewrite historical profit.
  */
 
-import { isOnline, syncFromSupabase } from './sync-engine';
 import {
   offlineCategories,
   offlineProducts,
@@ -18,10 +19,13 @@ import {
   offlineCashEntries,
   offlineServiceTransactions,
   offlineMeta,
-  offlinePendingDeletes,
+  clearOfflineData,
+  getOfflineDB,
+  type OfflineDBSchema,
 } from './offline-db';
+import { getLocalUser, updateLocalUser } from './local-auth';
+import { generateRecordId } from './id';
 import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType } from './types';
-import type { OfflineDBSchema } from './offline-db';
 
 // ============ DATE HELPERS (local timezone — never use UTC for business days) ============
 
@@ -39,11 +43,15 @@ export function localDateStr(d: Date = new Date()): string {
 
 /**
  * Resolves a reporting period to a [from, to] date range (local time).
- * Mirrors the server-side getDateRange used by supabase-service.
  */
 export function resolvePeriodRange(options?: { period?: string; date?: string; from?: string; to?: string }): { from: string; to: string } {
   const now = new Date();
-  if (options?.from && options?.to) return { from: options.from, to: options.to };
+  if (options?.from && options?.to) {
+    // Guard against inverted custom ranges (from > to) — silently swap.
+    return options.from <= options.to
+      ? { from: options.from, to: options.to }
+      : { from: options.to, to: options.from };
+  }
   if (options?.date) return { from: options.date, to: options.date };
 
   const todayStr = localDateStr(now);
@@ -62,42 +70,43 @@ export function resolvePeriodRange(options?: { period?: string; date?: string; f
   return { from: todayStr, to: todayStr };
 }
 
-// ============ CATEGORIES (Offline-First) ============
+// ============ SHARED STRIP HELPERS ============
+
+function stripSync<T>(row: Record<string, unknown>): T {
+  const { _synced: _s, _dirty: _d, ...rest } = row;
+  return rest as T;
+}
+
+function sortTxnsDesc(rows: OfflineDBSchema['transactions']['value'][]): OfflineDBSchema['transactions']['value'][] {
+  return [...rows].sort((a, b) => {
+    if (a.date !== b.date) return b.date.localeCompare(a.date);
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+}
+
+function localTxnsToTransactions(localTxns: OfflineDBSchema['transactions']['value'][]): Transaction[] {
+  return sortTxnsDesc(localTxns).map(t => stripSync<Transaction>(t));
+}
+
+/** Cost basis for a transaction: the SNAPSHOT taken at sale time, falling back to the current product. */
+function txnCostBasis(t: Transaction, products: Product[]): number {
+  return t.product?.purchasePrice ?? products.find(p => p.id === t.productId)?.purchasePrice ?? 0;
+}
+
+// ============ CATEGORIES (Local) ============
 
 export async function getCategoriesOffline(userId: string): Promise<Category[]> {
-  try {
-    const localCats = await offlineCategories.getAll(userId);
-    
-    if (localCats.length > 0) {
-      const cats = localCats.map(({ _synced, _dirty, ...cat }) => cat as unknown as Category);
-      if (isOnline()) syncFromSupabase(userId).catch(() => {});
-      return cats;
-    }
-    
-    if (isOnline()) {
-      const { getCategories } = await import('./supabase-service');
-      const result = await getCategories(userId);
-      return result.categories as Category[];
-    }
-    
-    return [];
-  } catch {
-    if (isOnline()) {
-      const { getCategories } = await import('./supabase-service');
-      const result = await getCategories(userId);
-      return result.categories as Category[];
-    }
-    return [];
-  }
+  const localCats = await offlineCategories.getAll(userId);
+  return localCats.map(c => stripSync<Category>(c));
 }
 
 export async function createCategoryOffline(name: string, image: string, userId: string): Promise<{ category: Category }> {
-  const id = `local_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  if (!name.trim()) throw new Error('Category name is required');
+
   const now = new Date().toISOString();
-  
   const category = {
-    id,
-    name,
+    id: generateRecordId(),
+    name: name.trim(),
     image: image || '',
     userId,
     createdAt: now,
@@ -107,27 +116,11 @@ export async function createCategoryOffline(name: string, image: string, userId:
 
   await offlineCategories.put({
     ...category,
-    _synced: 0,
-    _dirty: Date.now(),
+    _synced: Date.now(),
+    _dirty: 0,
   } as OfflineDBSchema['categories']['value']);
 
-  if (isOnline()) {
-    try {
-      const { createCategory } = await import('./supabase-service');
-      const result = await createCategory(name, image, userId);
-      await offlineCategories.put({
-        ...result.category,
-        _synced: Date.now(),
-        _dirty: 0,
-      } as OfflineDBSchema['categories']['value']);
-      await offlineCategories.delete(id);
-      return { category: result.category as Category };
-    } catch {
-      // Keep local entry - will sync later
-    }
-  }
-
-  return { category: category as Category };
+  return { category };
 }
 
 export async function updateCategoryOffline(id: string, updates: { name?: string; image?: string }, userId: string): Promise<{ category: Category }> {
@@ -143,93 +136,40 @@ export async function updateCategoryOffline(id: string, updates: { name?: string
 
   await offlineCategories.put({
     ...updated,
-    _synced: existing._synced,
-    _dirty: Date.now(),
+    _synced: Date.now(),
+    _dirty: 0,
   } as OfflineDBSchema['categories']['value']);
 
-  // Try to sync to Supabase immediately if online
-  if (isOnline()) {
-    try {
-      const { updateCategory } = await import('./supabase-service');
-      const result = await updateCategory(id, updates);
-      await offlineCategories.put({
-        ...result.category,
-        _synced: Date.now(),
-        _dirty: 0,
-      } as OfflineDBSchema['categories']['value']);
-      return { category: result.category as Category };
-    } catch {
-      // Keep local entry dirty - will sync later
-    }
-  }
-
-  const { _synced, _dirty, _count, ...categoryData } = updated;
+  const { _synced, _dirty, ...categoryData } = updated;
   return { category: categoryData as Category };
 }
 
 export async function deleteCategoryOffline(id: string, userId: string): Promise<{ message: string }> {
-  // Delete all products in this category (cascading delete)
+  // Cascade: delete all products in this category (which cascades their transactions too)
   const allProducts = await offlineProducts.getAll(userId);
   const catProducts = allProducts.filter(p => p.categoryId === id);
   for (const prod of catProducts) {
     await deleteProductOffline(prod.id, userId);
   }
 
-  // Delete the category from local IndexedDB
   await offlineCategories.delete(id);
-
-  // Add to pending deletes for Supabase sync
-  await offlinePendingDeletes.add('categories', id, userId);
-
-  // Try to delete from Supabase immediately if online
-  if (isOnline()) {
-    try {
-      const { deleteCategory } = await import('./supabase-service');
-      await deleteCategory(id);
-      await offlinePendingDeletes.removeByItemId('categories', id);
-    } catch {
-      // Will retry on next sync
-    }
-  }
-
   return { message: 'Category deleted successfully' };
 }
 
-// ============ PRODUCTS (Offline-First) ============
+// ============ PRODUCTS (Local) ============
 
 export async function getProductsOffline(userId: string, options?: { categoryId?: string; search?: string }): Promise<Product[]> {
-  try {
-    let localProducts;
-    
-    if (options?.categoryId) {
-      localProducts = await offlineProducts.getByCategory(userId, options.categoryId);
-    } else if (options?.search) {
-      localProducts = await offlineProducts.search(userId, options.search);
-    } else {
-      localProducts = await offlineProducts.getAll(userId);
-    }
+  let localProducts: OfflineDBSchema['products']['value'][];
 
-    if (localProducts.length > 0) {
-      const prods = localProducts.map(({ _synced, _dirty, ...prod }) => prod as unknown as Product);
-      if (isOnline()) syncFromSupabase(userId).catch(() => {});
-      return prods;
-    }
-
-    if (isOnline()) {
-      const { getProducts } = await import('./supabase-service');
-      const result = await getProducts(userId, options);
-      return result.products as Product[];
-    }
-
-    return [];
-  } catch {
-    if (isOnline()) {
-      const { getProducts } = await import('./supabase-service');
-      const result = await getProducts(userId, options);
-      return result.products as Product[];
-    }
-    return [];
+  if (options?.categoryId) {
+    localProducts = await offlineProducts.getByCategory(userId, options.categoryId);
+  } else if (options?.search) {
+    localProducts = await offlineProducts.search(userId, options.search);
+  } else {
+    localProducts = await offlineProducts.getAll(userId);
   }
+
+  return localProducts.map(p => stripSync<Product>(p));
 }
 
 export async function createProductOffline(productData: {
@@ -242,18 +182,23 @@ export async function createProductOffline(productData: {
   lowStockThreshold?: number;
   userId: string;
 }): Promise<{ product: Product }> {
-  const id = `local_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-  const now = new Date().toISOString();
+  if (!productData.name.trim()) throw new Error('Product name is required');
 
+  const quantity = Math.max(0, Math.floor(Number(productData.quantity ?? 0)) || 0);
+  const purchasePrice = Math.max(0, Number(productData.purchasePrice ?? 0)) || 0;
+  const sellingPrice = Math.max(0, Number(productData.sellingPrice ?? 0)) || 0;
+  const lowStockThreshold = Math.max(0, Math.floor(Number(productData.lowStockThreshold ?? 5)) || 0);
+
+  const now = new Date().toISOString();
   const product = {
-    id,
-    name: productData.name,
+    id: generateRecordId(),
+    name: productData.name.trim(),
     categoryId: productData.categoryId,
-    quantity: productData.quantity ?? 0,
+    quantity,
     boxNumber: productData.boxNumber ?? '',
-    purchasePrice: productData.purchasePrice ?? 0,
-    sellingPrice: productData.sellingPrice ?? 0,
-    lowStockThreshold: productData.lowStockThreshold ?? 5,
+    purchasePrice,
+    sellingPrice,
+    lowStockThreshold,
     userId: productData.userId,
     createdAt: now,
     updatedAt: now,
@@ -261,36 +206,17 @@ export async function createProductOffline(productData: {
 
   await offlineProducts.put({
     ...product,
-    _synced: 0,
-    _dirty: Date.now(),
+    _synced: Date.now(),
+    _dirty: 0,
   } as OfflineDBSchema['products']['value']);
 
-  if (isOnline()) {
-    try {
-      const { createProduct } = await import('./supabase-service');
-      const result = await createProduct(productData);
-      await offlineProducts.put({
-        ...result.product,
-        _synced: Date.now(),
-        _dirty: 0,
-      } as OfflineDBSchema['products']['value']);
-      await offlineProducts.delete(id);
-      return { product: result.product as unknown as Product };
-    } catch {
-      // Keep local - will sync later
-    }
-  }
-
-  return { product: product as Product };
+  return { product };
 }
 
 export async function updateProductOffline(id: string, updates: Partial<Product> & { userId: string }): Promise<{ product: Product }> {
   const existing = await offlineProducts.getAll(updates.userId);
   const product = existing.find(p => p.id === id);
-  
-  if (!product) {
-    throw new Error('Product not found');
-  }
+  if (!product) throw new Error('Product not found');
 
   const updatedProduct = {
     ...product,
@@ -300,63 +226,35 @@ export async function updateProductOffline(id: string, updates: Partial<Product>
 
   await offlineProducts.put({
     ...updatedProduct,
-    _synced: product._synced,
-    _dirty: Date.now(),
+    _synced: Date.now(),
+    _dirty: 0,
   } as OfflineDBSchema['products']['value']);
 
-  if (isOnline()) {
-    try {
-      const { updateProduct } = await import('./supabase-service');
-      const { userId: _, ...updateFields } = updates;
-      const result = await updateProduct(id, updateFields);
-      await offlineProducts.put({
-        ...result.product,
-        _synced: Date.now(),
-        _dirty: 0,
-      } as OfflineDBSchema['products']['value']);
-      return { product: result.product as unknown as Product };
-    } catch {
-      // Keep local changes - will sync later
-    }
-  }
-
-  const { _synced, _dirty, category, ...prodData } = updatedProduct;
-  return { product: prodData as unknown as Product };
+  const { _synced, _dirty, ...prodData } = updatedProduct;
+  return { product: prodData as Product };
 }
 
 export async function deleteProductOffline(id: string, userId: string): Promise<{ message: string }> {
-  // Delete from local IndexedDB
-  await offlineProducts.delete(id);
-  
-  // Also delete related transactions locally. Keep/queue pending-delete entries so
-  // the server rows are deleted too — otherwise a failed product delete would let
-  // the server transactions re-download ("resurrect") on the next sync.
+  // Delete related transactions first (cascade)
   const localTxns = await offlineTransactions.getAll(userId);
   const relatedTxns = localTxns.filter(t => t.productId === id);
   for (const txn of relatedTxns) {
     await offlineTransactions.delete(txn.id);
-    await offlinePendingDeletes.add('transactions', txn.id, userId);
-  }
-  
-  // Add to pending deletes for Supabase sync
-  await offlinePendingDeletes.add('products', id, userId);
-
-  // Try to delete from Supabase immediately if online
-  if (isOnline()) {
-    try {
-      const { deleteProduct } = await import('./supabase-service');
-      await deleteProduct(id);
-      await offlinePendingDeletes.removeByItemId('products', id);
-    } catch {
-      // Will retry on next sync
-    }
   }
 
+  await offlineProducts.delete(id);
   return { message: 'Product deleted successfully' };
 }
 
-// ============ TRANSACTIONS (Offline-First) ============
+// ============ TRANSACTIONS (Local, ATOMIC stock updates) ============
 
+/**
+ * Creates a transaction AND applies the stock change in ONE atomic IndexedDB
+ * transaction. Two rapid sells can never both pass the same stock check.
+ *
+ * NOTE: idb v8's db.transaction() has NO callback parameter — the correct
+ * atomic pattern is: open tx → await requests → `await tx.done`.
+ */
 export async function createTransactionOffline(transactionData: {
   type: 'STOCK_IN' | 'STOCK_OUT' | 'SELL';
   productId: string;
@@ -366,315 +264,222 @@ export async function createTransactionOffline(transactionData: {
   date?: string;
   userId: string;
 }): Promise<{ transaction: Transaction }> {
-  const id = `local_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  const quantity = Math.floor(Number(transactionData.quantity));
+  if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('Quantity must be a positive whole number');
+
+  const unitPrice = Number(transactionData.unitPrice ?? 0);
+  const totalAmount = Number(transactionData.totalAmount ?? 0);
+  if (!Number.isFinite(unitPrice) || unitPrice < 0) throw new Error('Price cannot be negative');
+  if (!Number.isFinite(totalAmount) || totalAmount < 0) throw new Error('Total amount cannot be negative');
+
+  const db = await getOfflineDB();
   const now = new Date().toISOString();
+  const id = generateRecordId();
 
-  const products = await offlineProducts.getAll(transactionData.userId);
-  const product = products.find(p => p.id === transactionData.productId);
+  const tx = db.transaction(['products', 'transactions'], 'readwrite');
+  const productsStore = tx.objectStore('products');
+  const transactionsStore = tx.objectStore('transactions');
 
+  // Validate BEFORE writing anything — a readwrite tx with no writes commits empty.
+  const product = await productsStore.get(transactionData.productId);
   if (!product) {
     throw new Error('Product not found');
   }
 
-  if ((transactionData.type === 'STOCK_OUT' || transactionData.type === 'SELL') && product.quantity < transactionData.quantity) {
-    throw new Error('Insufficient stock');
+  const isOut = transactionData.type === 'STOCK_OUT' || transactionData.type === 'SELL';
+  if (isOut && product.quantity < quantity) {
+    throw new Error(`Insufficient stock — only ${product.quantity} left`);
   }
 
-  const quantityChange = transactionData.type === 'STOCK_IN' ? transactionData.quantity : -transactionData.quantity;
+  const quantityChange = transactionData.type === 'STOCK_IN' ? quantity : -quantity;
 
-  const transaction = {
+  const row: OfflineDBSchema['transactions']['value'] = {
     id,
     productId: transactionData.productId,
     type: transactionData.type,
-    quantity: transactionData.quantity,
-    unitPrice: transactionData.unitPrice ?? 0,
-    totalAmount: transactionData.totalAmount ?? 0,
+    quantity,
+    unitPrice,
+    totalAmount,
     date: transactionData.date || localDateStr(),
     userId: transactionData.userId,
     createdAt: now,
+    // Snapshot the product prices at transaction time — historical profit must
+    // never change when the user later edits the product's prices.
     product: {
       id: product.id,
       name: product.name,
       purchasePrice: product.purchasePrice,
       sellingPrice: product.sellingPrice,
     },
+    _synced: Date.now(),
+    _dirty: 0,
   };
 
-  await offlineTransactions.put({
-    ...transaction,
-    _synced: 0,
-    _dirty: Date.now(),
-  });
-
-  const updatedProduct = {
+  await transactionsStore.put(row);
+  await productsStore.put({
     ...product,
     quantity: product.quantity + quantityChange,
     updatedAt: now,
-  };
-  await offlineProducts.put({
-    ...updatedProduct,
-    _synced: product._synced,
-    _dirty: Date.now(),
   });
 
-  if (isOnline()) {
-    try {
-      const { createTransaction } = await import('./supabase-service');
-      const result = await createTransaction(transactionData);
-      await offlineTransactions.put({
-        ...result.transaction,
-        _synced: Date.now(),
-        _dirty: 0,
-      } as OfflineDBSchema['transactions']['value']);
-      await offlineTransactions.delete(id);
-      const serverProducts = await offlineProducts.getAll(transactionData.userId);
-      const serverProduct = serverProducts.find(p => p.id === transactionData.productId);
-      if (serverProduct) {
-        await offlineProducts.put({
-          ...serverProduct,
-          quantity: product.quantity + quantityChange,
-          _synced: Date.now(),
-          _dirty: 0,
-        });
-      }
-      return { transaction: result.transaction as unknown as Transaction };
-    } catch {
-      // Keep local - will sync later
-    }
-  }
+  // Commit — rejects (and rolls back both stores) if anything failed.
+  await tx.done;
 
-  return { transaction: transaction as unknown as Transaction };
+  return { transaction: stripSync<Transaction>(row) };
 }
 
 export async function deleteTransactionOffline(id: string, userId: string): Promise<{ success: boolean }> {
-  const allTxns = await offlineTransactions.getAll(userId);
-  const txn = allTxns.find(t => t.id === id);
+  const db = await getOfflineDB();
+  const now = new Date().toISOString();
 
-  if (txn) {
-    // Reverse the stock change caused by this transaction
-    const allProducts = await offlineProducts.getAll(userId);
-    const product = allProducts.find(p => p.id === txn.productId);
-    if (product) {
-      const quantityChange = txn.type === 'STOCK_IN' ? -txn.quantity : txn.quantity;
-      await offlineProducts.put({
-        ...product,
-        quantity: Math.max(0, product.quantity + quantityChange),
-        _synced: product._synced,
-        _dirty: Date.now(),
-      } as OfflineDBSchema['products']['value']);
-    }
+  const tx = db.transaction(['products', 'transactions'], 'readwrite');
+  const productsStore = tx.objectStore('products');
+  const transactionsStore = tx.objectStore('transactions');
+
+  const txn = await transactionsStore.get(id);
+  if (!txn || txn.userId !== userId) {
+    // Nothing to delete — no writes were queued, committing empty is harmless.
+    await tx.done;
+    return { success: true };
   }
 
-  // Delete from local IndexedDB
-  await offlineTransactions.delete(id);
-
-  // Add to pending deletes for Supabase sync
-  await offlinePendingDeletes.add('transactions', id, userId);
-
-  // Try to delete from Supabase immediately if online
-  if (isOnline()) {
-    try {
-      const { deleteTransaction } = await import('./supabase-service');
-      await deleteTransaction(id);
-      await offlinePendingDeletes.removeByItemId('transactions', id);
-    } catch {
-      // Will retry on next sync
-    }
+  // Reverse the stock change caused by this transaction (same atomic tx)
+  const product = await productsStore.get(txn.productId);
+  if (product) {
+    const quantityChange = txn.type === 'STOCK_IN' ? -txn.quantity : txn.quantity;
+    await productsStore.put({
+      ...product,
+      quantity: Math.max(0, product.quantity + quantityChange),
+      updatedAt: now,
+    });
   }
+
+  await transactionsStore.delete(id);
+  await tx.done;
 
   return { success: true };
 }
 
-export async function getTransactionsOffline(userId: string, options?: { type?: string; from?: string; to?: string }): Promise<Transaction[]> {
-  try {
-    let localTxns = await offlineTransactions.getAll(userId);
-    
-    if (options?.type) localTxns = localTxns.filter(t => t.type === options.type);
-    if (options?.from) localTxns = localTxns.filter(t => t.date >= options.from!);
-    if (options?.to) localTxns = localTxns.filter(t => t.date <= options.to!);
+export async function getTransactionsOffline(userId: string, options?: { type?: string; productId?: string; from?: string; to?: string }): Promise<Transaction[]> {
+  let localTxns = await offlineTransactions.getAll(userId);
 
-    if (localTxns.length > 0) {
-      const txns = localTxns.map(({ _synced, _dirty, ...txn }) => txn as unknown as Transaction);
-      if (isOnline()) syncFromSupabase(userId).catch(() => {});
-      return txns;
-    }
+  if (options?.type) localTxns = localTxns.filter(t => t.type === options.type);
+  if (options?.productId) localTxns = localTxns.filter(t => t.productId === options.productId);
+  if (options?.from) localTxns = localTxns.filter(t => t.date >= options.from!);
+  if (options?.to) localTxns = localTxns.filter(t => t.date <= options.to!);
 
-    if (isOnline()) {
-      const { getTransactions } = await import('./supabase-service');
-      const result = await getTransactions(userId, options);
-      return result.transactions as Transaction[];
-    }
-
-    return [];
-  } catch {
-    if (isOnline()) {
-      const { getTransactions } = await import('./supabase-service');
-      const result = await getTransactions(userId, options);
-      return result.transactions as Transaction[];
-    }
-    return [];
-  }
+  return localTxnsToTransactions(localTxns);
 }
 
-// ============ DASHBOARD (Offline-First) ============
+// ============ DASHBOARD (Local) ============
 
 export async function getDashboardOffline(userId: string) {
-  try {
-    const [localProducts, localCategories, localTransactions] = await Promise.all([
-      offlineProducts.getAll(userId),
-      offlineCategories.getAll(userId),
-      offlineTransactions.getAll(userId),
-    ]);
+  const [localProducts, localCategories, localTransactions] = await Promise.all([
+    offlineProducts.getAll(userId),
+    offlineCategories.getAll(userId),
+    offlineTransactions.getAll(userId),
+  ]);
 
-    const products = localProducts.map(({ _synced, _dirty, ...p }) => p as unknown as Product);
-    const categories = localCategories.map(({ _synced, _dirty, ...c }) => c as unknown as Category);
-    const transactions = localTxnsToTransactions(localTransactions);
+  const products = localProducts.map(p => stripSync<Product>(p));
+  const categories = localCategories.map(c => stripSync<Category>(c));
+  const transactions = localTxnsToTransactions(localTransactions);
 
-    if (products.length === 0 && categories.length === 0 && isOnline()) {
-      const { getDashboard } = await import('./supabase-service');
-      const result = await getDashboard(userId);
-      syncFromSupabase(userId).catch(() => {});
-      return result;
-    }
+  const today = localDateStr();
+  const todayTxns = transactions.filter(t => t.date === today);
 
-    const today = localDateStr();
-    const todayTxns = transactions.filter(t => t.date === today);
-    
-    const lowItems = products.filter(p => p.quantity <= p.lowStockThreshold).length;
-    const stockValue = products.reduce((sum, p) => sum + p.quantity * p.purchasePrice, 0);
-    const lowStockProducts = products.filter(p => p.quantity <= p.lowStockThreshold).slice(0, 10);
-    const recentTransactions = transactions.slice(0, 5);
+  const lowItems = products.filter(p => p.quantity <= p.lowStockThreshold).length;
+  const stockValue = products.reduce((sum, p) => sum + p.quantity * p.purchasePrice, 0);
+  const lowStockProducts = products.filter(p => p.quantity <= p.lowStockThreshold).slice(0, 10);
+  const recentTransactions = transactions.slice(0, 5);
 
-    const productCountMap: Record<string, number> = {};
-    for (const p of products) {
-      productCountMap[p.categoryId] = (productCountMap[p.categoryId] || 0) + 1;
-    }
-    const catsWithCount = categories.map(c => ({
-      ...c,
-      _count: { products: productCountMap[c.id] || 0 },
-    }));
-
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-    const sevenDaysAgoStr = localDateStr(sevenDaysAgo);
-    
-    const saleTxns = transactions.filter(t => t.type === 'SELL' && t.date >= sevenDaysAgoStr);
-    const saleMap = new Map<string, { sales: number; quantity: number }>();
-    for (const t of saleTxns) {
-      const existing = saleMap.get(t.date) || { sales: 0, quantity: 0 };
-      existing.sales += t.totalAmount;
-      existing.quantity += t.quantity;
-      saleMap.set(t.date, existing);
-    }
-
-    const saleOverview: { date: string; label: string; sales: number; quantity: number }[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const dateStr = localDateStr(d);
-      const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' });
-      const dayData = saleMap.get(dateStr) || { sales: 0, quantity: 0 };
-      saleOverview.push({ date: dateStr, label: dayLabel, ...dayData });
-    }
-
-    const stockByCategory = new Map<string, { quantity: number; value: number }>();
-    for (const p of products) {
-      const cat = catsWithCount.find(c => c.id === p.categoryId);
-      const catName = cat?.name || 'Unknown';
-      const existing = stockByCategory.get(catName) || { quantity: 0, value: 0 };
-      existing.quantity += p.quantity;
-      existing.value += p.quantity * p.purchasePrice;
-      stockByCategory.set(catName, existing);
-    }
-
-    const stockOverview = Array.from(stockByCategory.entries())
-      .filter(([_, data]) => data.quantity > 0)
-      .map(([category, data]) => ({ category, ...data }));
-
-    const result = {
-      stats: {
-        totalItems: products.length,
-        lowItems,
-        todayTransactions: todayTxns.length,
-        stockValue,
-      },
-      lowStockProducts,
-      recentTransactions,
-      categories: catsWithCount,
-      saleOverview,
-      stockOverview,
-    };
-
-    if (isOnline()) syncFromSupabase(userId).catch(() => {});
-
-    return result;
-  } catch {
-    if (isOnline()) {
-      const { getDashboard } = await import('./supabase-service');
-      return getDashboard(userId);
-    }
-    return {
-      stats: { totalItems: 0, lowItems: 0, todayTransactions: 0, stockValue: 0 },
-      lowStockProducts: [],
-      recentTransactions: [],
-      categories: [],
-      saleOverview: [],
-      stockOverview: [],
-    };
+  const productCountMap: Record<string, number> = {};
+  for (const p of products) {
+    productCountMap[p.categoryId] = (productCountMap[p.categoryId] || 0) + 1;
   }
+  const catsWithCount = categories.map(c => ({
+    ...c,
+    _count: { products: productCountMap[c.id] || 0 },
+  }));
+
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+  const sevenDaysAgoStr = localDateStr(sevenDaysAgo);
+
+  const saleTxns = transactions.filter(t => t.type === 'SELL' && t.date >= sevenDaysAgoStr);
+  const saleMap = new Map<string, { sales: number; quantity: number }>();
+  for (const t of saleTxns) {
+    const existing = saleMap.get(t.date) || { sales: 0, quantity: 0 };
+    existing.sales += t.totalAmount;
+    existing.quantity += t.quantity;
+    saleMap.set(t.date, existing);
+  }
+
+  const saleOverview: { date: string; label: string; sales: number; quantity: number }[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dateStr = localDateStr(d);
+    const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' });
+    const dayData = saleMap.get(dateStr) || { sales: 0, quantity: 0 };
+    saleOverview.push({ date: dateStr, label: dayLabel, ...dayData });
+  }
+
+  const stockByCategory = new Map<string, { quantity: number; value: number }>();
+  for (const p of products) {
+    const cat = catsWithCount.find(c => c.id === p.categoryId);
+    const catName = cat?.name || 'Unknown';
+    const existing = stockByCategory.get(catName) || { quantity: 0, value: 0 };
+    existing.quantity += p.quantity;
+    existing.value += p.quantity * p.purchasePrice;
+    stockByCategory.set(catName, existing);
+  }
+
+  const stockOverview = Array.from(stockByCategory.entries())
+    .filter(([_, data]) => data.quantity > 0)
+    .map(([category, data]) => ({ category, ...data }));
+
+  return {
+    stats: {
+      totalItems: products.length,
+      lowItems,
+      todayTransactions: todayTxns.length,
+      stockValue,
+    },
+    lowStockProducts,
+    recentTransactions,
+    categories: catsWithCount,
+    saleOverview,
+    stockOverview,
+  };
 }
 
 // Alias for backward compatibility with existing imports
 export { getDashboardOffline as getDashboard };
 
-function localTxnsToTransactions(localTxns: { _synced: number; _dirty: number; [key: string]: unknown }[]): Transaction[] {
-  return localTxns
-    .sort((a, b) => new Date(b.createdAt as string).getTime() - new Date(a.createdAt as string).getTime())
-    .map(({ _synced, _dirty, ...txn }) => txn as unknown as Transaction);
-}
-
-// ============ EXPENSES (Offline-First) ============
+// ============ EXPENSES (Local) ============
 
 export async function getExpensesOffline(userId: string, options?: { period?: string; date?: string; from?: string; to?: string; category?: string }) {
-  try {
-    let localExpenses = await offlineExpenses.getAll(userId);
-    
-    // Honor the reporting period exactly like the Supabase path does —
-    // otherwise the DailyBook "Today" tab would show all-time totals.
-    const { from, to } = resolvePeriodRange(options);
-    localExpenses = localExpenses.filter(e => e.date >= from && e.date <= to);
-    if (options?.category) localExpenses = localExpenses.filter(e => e.category === options.category);
+  let localExpenses = await offlineExpenses.getAll(userId);
 
-    if (localExpenses.length > 0 || !isOnline()) {
-      const expenses = localExpenses.map(({ _synced, _dirty, ...exp }) => exp as unknown as Expense);
-      const totalExpense = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-      const byCategory = expenses.reduce((acc, e) => {
-        const cat = e.category || 'other';
-        acc[cat] = (acc[cat] || 0) + (e.amount || 0);
-        return acc;
-      }, {} as Record<string, number>);
+  // Honor the reporting period exactly — otherwise "Today" would show all-time totals.
+  const { from, to } = resolvePeriodRange(options);
+  localExpenses = localExpenses.filter(e => e.date >= from && e.date <= to);
+  if (options?.category) localExpenses = localExpenses.filter(e => e.category === options.category);
 
-      if (isOnline()) syncFromSupabase(userId).catch(() => {});
-      
-      return {
-        expenses,
-        summary: { totalExpense, byCategory, count: expenses.length },
-      };
-    }
+  const expenses = localExpenses
+    .map(e => stripSync<Expense>(e))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const totalExpense = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+  const byCategory = expenses.reduce((acc, e) => {
+    const cat = e.category || 'other';
+    acc[cat] = (acc[cat] || 0) + (e.amount || 0);
+    return acc;
+  }, {} as Record<string, number>);
 
-    if (isOnline()) {
-      const { getExpenses } = await import('./supabase-service');
-      return getExpenses(userId, options);
-    }
-
-    return { expenses: [], summary: { totalExpense: 0, byCategory: {}, count: 0 } };
-  } catch {
-    if (isOnline()) {
-      const { getExpenses } = await import('./supabase-service');
-      return getExpenses(userId, options);
-    }
-    return { expenses: [], summary: { totalExpense: 0, byCategory: {}, count: 0 } };
-  }
+  return {
+    expenses,
+    summary: { totalExpense, byCategory, count: expenses.length },
+  };
 }
 
 export async function createExpenseOffline(expenseData: {
@@ -684,14 +489,15 @@ export async function createExpenseOffline(expenseData: {
   category?: string;
   description?: string;
 }): Promise<{ expense: Expense }> {
-  const id = `local_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-  const now = new Date().toISOString();
+  const amount = Number(expenseData.amount);
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Expense amount must be greater than 0');
 
+  const now = new Date().toISOString();
   const expense = {
-    id,
+    id: generateRecordId(),
     userId: expenseData.userId,
-    date: expenseData.date,
-    amount: parseFloat(String(expenseData.amount)) || 0,
+    date: expenseData.date || localDateStr(),
+    amount,
     category: expenseData.category || 'other',
     description: expenseData.description || '',
     createdAt: now,
@@ -700,40 +506,26 @@ export async function createExpenseOffline(expenseData: {
 
   await offlineExpenses.put({
     ...expense,
-    _synced: 0,
-    _dirty: Date.now(),
+    _synced: Date.now(),
+    _dirty: 0,
   });
 
-  if (isOnline()) {
-    try {
-      const { createExpense } = await import('./supabase-service');
-      const result = await createExpense(expenseData);
-      await offlineExpenses.put({
-        ...result.expense,
-        _synced: Date.now(),
-        _dirty: 0,
-      } as OfflineDBSchema['expenses']['value']);
-      await offlineExpenses.delete(id);
-      return { expense: result.expense as unknown as Expense };
-    } catch {
-      // Keep local - will sync later
-    }
-  }
-
-  return { expense: expense as Expense };
+  return { expense };
 }
 
 export async function updateExpenseOffline(id: string, updates: { amount?: number; category?: string; description?: string }, userId: string): Promise<{ expense: Expense }> {
   const allExpenses = await offlineExpenses.getAll(userId);
   const existing = allExpenses.find(e => e.id === id);
-  
-  if (!existing) {
-    throw new Error('Expense not found');
+  if (!existing) throw new Error('Expense not found');
+
+  if (updates.amount !== undefined) {
+    const amount = Number(updates.amount);
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error('Expense amount must be greater than 0');
   }
 
   const updatedExpense = {
     ...existing,
-    ...(updates.amount !== undefined ? { amount: parseFloat(String(updates.amount)) } : {}),
+    ...(updates.amount !== undefined ? { amount: Number(updates.amount) } : {}),
     ...(updates.category !== undefined ? { category: updates.category } : {}),
     ...(updates.description !== undefined ? { description: updates.description } : {}),
     updatedAt: new Date().toISOString(),
@@ -741,84 +533,39 @@ export async function updateExpenseOffline(id: string, updates: { amount?: numbe
 
   await offlineExpenses.put({
     ...updatedExpense,
-    _synced: existing._synced,
-    _dirty: Date.now(),
+    _synced: Date.now(),
+    _dirty: 0,
   });
 
-  if (isOnline()) {
-    try {
-      const { updateExpense } = await import('./supabase-service');
-      const result = await updateExpense(id, updates);
-      await offlineExpenses.put({
-        ...result.expense,
-        _synced: Date.now(),
-        _dirty: 0,
-      } as OfflineDBSchema['expenses']['value']);
-      return { expense: result.expense as unknown as Expense };
-    } catch {
-      // Keep local changes
-    }
-  }
-
-  const { _synced, _dirty, ...expData } = updatedExpense;
-  return { expense: expData as unknown as Expense };
+  return { expense: stripSync<Expense>(updatedExpense) };
 }
 
-export async function deleteExpenseOffline(id: string, userId: string): Promise<{ success: boolean }> {
+export async function deleteExpenseOffline(id: string, _userId: string): Promise<{ success: boolean }> {
   await offlineExpenses.delete(id);
-  await offlinePendingDeletes.add('expenses', id, userId);
-
-  if (isOnline()) {
-    try {
-      const { deleteExpense } = await import('./supabase-service');
-      await deleteExpense(id);
-      await offlinePendingDeletes.removeByItemId('expenses', id);
-    } catch {
-      // Will retry on next sync
-    }
-  }
-
   return { success: true };
 }
 
-// ============ CASH ENTRIES (Offline-First) ============
+// ============ CASH ENTRIES (Local) ============
 
 export async function getCashEntriesOffline(userId: string, options?: { period?: string; date?: string; from?: string; to?: string }) {
-  try {
-    let localEntries = await offlineCashEntries.getAll(userId);
-    
-    // Honor the reporting period exactly like the Supabase path does.
-    const { from, to } = resolvePeriodRange(options);
-    localEntries = localEntries.filter(e => e.date >= from && e.date <= to);
+  let localEntries = await offlineCashEntries.getAll(userId);
 
-    if (localEntries.length > 0 || !isOnline()) {
-      const entries = localEntries.map(({ _synced, _dirty, ...entry }) => entry as unknown as CashEntry);
-      const sortedByDate = [...localEntries].sort((a, b) => b.date.localeCompare(a.date));
-      const latest = sortedByDate[0];
-      const totalHandCash = latest?.handCash || 0;
-      const totalLiquidCash = latest?.liquidCash || 0;
+  // Honor the reporting period.
+  const { from, to } = resolvePeriodRange(options);
+  localEntries = localEntries.filter(e => e.date >= from && e.date <= to);
 
-      if (isOnline()) syncFromSupabase(userId).catch(() => {});
+  const entries = localEntries
+    .map(e => stripSync<CashEntry>(e))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  // Balance semantics: the LATEST entry in the filtered period holds the running balance.
+  const latest = entries[0];
+  const totalHandCash = latest?.handCash || 0;
+  const totalLiquidCash = latest?.liquidCash || 0;
 
-      return {
-        entries,
-        summary: { totalHandCash, totalLiquidCash, totalCash: totalHandCash + totalLiquidCash },
-      };
-    }
-
-    if (isOnline()) {
-      const { getCashEntries } = await import('./supabase-service');
-      return getCashEntries(userId, options);
-    }
-
-    return { entries: [], summary: { totalHandCash: 0, totalLiquidCash: 0, totalCash: 0 } };
-  } catch {
-    if (isOnline()) {
-      const { getCashEntries } = await import('./supabase-service');
-      return getCashEntries(userId, options);
-    }
-    return { entries: [], summary: { totalHandCash: 0, totalLiquidCash: 0, totalCash: 0 } };
-  }
+  return {
+    entries,
+    summary: { totalHandCash, totalLiquidCash, totalCash: totalHandCash + totalLiquidCash },
+  };
 }
 
 export async function upsertCashEntryOffline(entryData: {
@@ -828,461 +575,317 @@ export async function upsertCashEntryOffline(entryData: {
   liquidCash?: number;
   note?: string;
 }): Promise<{ entry: CashEntry }> {
-  const now = new Date().toISOString();
-  
-  // Check if entry exists for this date
-  const allEntries = await offlineCashEntries.getAll(entryData.userId);
-  const existing = allEntries.find(e => e.date === entryData.date);
-  
-  let entry: CashEntry;
-  
-  if (existing) {
-    // Update existing
-    const updated = {
-      ...existing,
-      handCash: entryData.handCash !== undefined ? entryData.handCash : existing.handCash,
-      liquidCash: entryData.liquidCash !== undefined ? entryData.liquidCash : existing.liquidCash,
-      note: entryData.note !== undefined ? entryData.note : existing.note,
-      updatedAt: now,
-    };
-    
-    await offlineCashEntries.put({
-      ...updated,
-      _synced: existing._synced,
-      _dirty: Date.now(),
-    });
-    
-    const { _synced, _dirty, ...entryData2 } = updated;
-    entry = entryData2 as unknown as CashEntry;
-  } else {
-    // Create new
-    const id = `local_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    const newEntry = {
-      id,
-      userId: entryData.userId,
-      date: entryData.date,
-      handCash: entryData.handCash || 0,
-      liquidCash: entryData.liquidCash || 0,
-      note: entryData.note || '',
-      createdAt: now,
-      updatedAt: now,
-    };
-    
-    await offlineCashEntries.put({
-      ...newEntry,
-      _synced: 0,
-      _dirty: Date.now(),
-    });
-    
-    entry = newEntry as CashEntry;
-  }
-
-  // Try to sync to Supabase if online
-  if (isOnline()) {
-    try {
-      const { upsertCashEntry } = await import('./supabase-service');
-      const result = await upsertCashEntry(entryData);
-      // Update local with server version
-      if (existing) {
-        await offlineCashEntries.put({
-          ...result.entry,
-          _synced: Date.now(),
-          _dirty: 0,
-        });
-      } else {
-        await offlineCashEntries.put({
-          ...result.entry,
-          _synced: Date.now(),
-          _dirty: 0,
-        });
-        await offlineCashEntries.delete((entry as { id: string }).id);
-      }
-      return result;
-    } catch {
-      // Keep local
+  for (const value of [entryData.handCash, entryData.liquidCash]) {
+    if (value !== undefined) {
+      const num = Number(value);
+      if (!Number.isFinite(num) || num < 0) throw new Error('Cash amounts cannot be negative');
     }
   }
 
-  return { entry };
+  const now = new Date().toISOString();
+
+  // One balance entry per date — upsert by date
+  const allEntries = await offlineCashEntries.getAll(entryData.userId);
+  const existing = allEntries.find(e => e.date === entryData.date);
+
+  if (existing) {
+    const updated = {
+      ...existing,
+      handCash: entryData.handCash !== undefined ? Number(entryData.handCash) : existing.handCash,
+      liquidCash: entryData.liquidCash !== undefined ? Number(entryData.liquidCash) : existing.liquidCash,
+      note: entryData.note !== undefined ? entryData.note : existing.note,
+      updatedAt: now,
+    };
+
+    await offlineCashEntries.put({
+      ...updated,
+      _synced: Date.now(),
+      _dirty: 0,
+    });
+
+    return { entry: stripSync<CashEntry>(updated) };
+  }
+
+  const newEntry = {
+    id: generateRecordId(),
+    userId: entryData.userId,
+    date: entryData.date,
+    handCash: Number(entryData.handCash ?? 0),
+    liquidCash: Number(entryData.liquidCash ?? 0),
+    note: entryData.note || '',
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await offlineCashEntries.put({
+    ...newEntry,
+    _synced: Date.now(),
+    _dirty: 0,
+  });
+
+  return { entry: newEntry };
 }
 
 export async function updateCashEntryOffline(id: string, updates: { handCash?: number; liquidCash?: number; note?: string }, userId: string): Promise<{ entry: CashEntry }> {
   const allEntries = await offlineCashEntries.getAll(userId);
   const existing = allEntries.find(e => e.id === id);
-  
-  if (!existing) {
-    throw new Error('Cash entry not found');
+  if (!existing) throw new Error('Cash entry not found');
+
+  for (const value of [updates.handCash, updates.liquidCash]) {
+    if (value !== undefined) {
+      const num = Number(value);
+      if (!Number.isFinite(num) || num < 0) throw new Error('Cash amounts cannot be negative');
+    }
   }
 
   const updatedEntry = {
     ...existing,
-    ...(updates.handCash !== undefined ? { handCash: updates.handCash } : {}),
-    ...(updates.liquidCash !== undefined ? { liquidCash: updates.liquidCash } : {}),
+    ...(updates.handCash !== undefined ? { handCash: Number(updates.handCash) } : {}),
+    ...(updates.liquidCash !== undefined ? { liquidCash: Number(updates.liquidCash) } : {}),
     ...(updates.note !== undefined ? { note: updates.note } : {}),
     updatedAt: new Date().toISOString(),
   };
 
   await offlineCashEntries.put({
     ...updatedEntry,
-    _synced: existing._synced,
-    _dirty: Date.now(),
+    _synced: Date.now(),
+    _dirty: 0,
   });
 
-  if (isOnline()) {
-    try {
-      const { updateCashEntry } = await import('./supabase-service');
-      const result = await updateCashEntry(id, updates);
-      await offlineCashEntries.put({
-        ...result.entry,
-        _synced: Date.now(),
-        _dirty: 0,
-      } as OfflineDBSchema['cashEntries']['value']);
-      return { entry: result.entry as unknown as CashEntry };
-    } catch {
-      // Keep local
-    }
-  }
-
-  const { _synced, _dirty, ...entryData } = updatedEntry;
-  return { entry: entryData as unknown as CashEntry };
+  return { entry: stripSync<CashEntry>(updatedEntry) };
 }
 
-export async function deleteCashEntryOffline(id: string, userId: string): Promise<{ success: boolean }> {
+export async function deleteCashEntryOffline(id: string, _userId: string): Promise<{ success: boolean }> {
   await offlineCashEntries.delete(id);
-  await offlinePendingDeletes.add('cashEntries', id, userId);
-
-  if (isOnline()) {
-    try {
-      const { deleteCashEntry } = await import('./supabase-service');
-      await deleteCashEntry(id);
-      await offlinePendingDeletes.removeByItemId('cashEntries', id);
-    } catch {
-      // Will retry on next sync
-    }
-  }
-
   return { success: true };
 }
 
-// ============ REPORTS (Offline-First) ============
+// ============ REPORTS (Local) ============
 
 export async function getReportsOffline(userId: string, type: string, options?: { from?: string; to?: string }) {
-  try {
-    // Reports are computed from local data - always works offline!
-    const [localProducts, localCategories, localTransactions] = await Promise.all([
-      offlineProducts.getAll(userId),
-      offlineCategories.getAll(userId),
-      offlineTransactions.getAll(userId),
-    ]);
+  const [localProducts, localCategories, localTransactions] = await Promise.all([
+    offlineProducts.getAll(userId),
+    offlineCategories.getAll(userId),
+    offlineTransactions.getAll(userId),
+  ]);
 
-    const products = localProducts.map(({ _synced, _dirty, ...p }) => p as unknown as Product);
-    const categories = localCategories.map(({ _synced, _dirty, ...c }) => c as unknown as Category);
-    const transactions = localTxnsToTransactions(localTransactions);
+  const products = localProducts.map(p => stripSync<Product>(p));
+  const categories = localCategories.map(c => stripSync<Category>(c));
+  const transactions = localTxnsToTransactions(localTransactions);
 
-    // Apply date filters
-    let filteredTxns = transactions;
-    if (options?.from) filteredTxns = filteredTxns.filter(t => t.date >= options.from!);
-    if (options?.to) filteredTxns = filteredTxns.filter(t => t.date <= options.to!);
+  // Apply date filters
+  let filteredTxns = transactions;
+  if (options?.from) filteredTxns = filteredTxns.filter(t => t.date >= options.from!);
+  if (options?.to) filteredTxns = filteredTxns.filter(t => t.date <= options.to!);
 
-    // If no local data and online, fall back to Supabase
-    if (products.length === 0 && transactions.length === 0 && isOnline()) {
-      const { getReports } = await import('./supabase-service');
-      return getReports(userId, type, options);
-    }
+  if (type === 'stock-value') {
+    const stockValueData = categories.map(cat => {
+      const catProducts = products.filter(p => p.categoryId === cat.id);
+      const totalQty = catProducts.reduce((sum, p) => sum + p.quantity, 0);
+      const totalPurchaseValue = catProducts.reduce((sum, p) => sum + p.quantity * p.purchasePrice, 0);
+      const totalSellingValue = catProducts.reduce((sum, p) => sum + p.quantity * p.sellingPrice, 0);
+      const totalProfit = totalSellingValue - totalPurchaseValue;
+      const lowStockCount = catProducts.filter(p => p.quantity <= p.lowStockThreshold).length;
 
-    if (type === 'stock-value') {
-      // Stock value report from local data
-      const productCountMap: Record<string, number> = {};
-      for (const p of products) {
-        productCountMap[p.categoryId] = (productCountMap[p.categoryId] || 0) + 1;
-      }
-
-      const stockValueData = categories.map(cat => {
-        const catProducts = products.filter(p => p.categoryId === cat.id);
-        const totalQty = catProducts.reduce((sum, p) => sum + p.quantity, 0);
-        const totalPurchaseValue = catProducts.reduce((sum, p) => sum + p.quantity * p.purchasePrice, 0);
-        const totalSellingValue = catProducts.reduce((sum, p) => sum + p.quantity * p.sellingPrice, 0);
-        const totalProfit = totalSellingValue - totalPurchaseValue;
-        const lowStockCount = catProducts.filter(p => p.quantity <= p.lowStockThreshold).length;
-
-        return {
-          categoryId: cat.id,
-          categoryName: cat.name,
-          categoryImage: cat.image,
-          productCount: catProducts.length,
-          totalQty,
-          totalPurchaseValue,
-          totalSellingValue,
-          totalProfit,
-          lowStockCount,
-          products: catProducts.map(p => ({
-            id: p.id,
-            name: p.name,
-            quantity: p.quantity,
-            purchasePrice: p.purchasePrice,
-            sellingPrice: p.sellingPrice,
-            stockValue: p.quantity * p.purchasePrice,
-            purchaseValue: p.quantity * p.purchasePrice,
-            lowStock: p.quantity <= p.lowStockThreshold,
-          })),
-        };
-      }).filter(item => item.productCount > 0);
-
-      const grandTotal = {
-        totalProducts: stockValueData.reduce((s, d) => s + d.productCount, 0),
-        totalQty: stockValueData.reduce((s, d) => s + d.totalQty, 0),
-        totalPurchaseValue: stockValueData.reduce((s, d) => s + d.totalPurchaseValue, 0),
-        totalSellingValue: stockValueData.reduce((s, d) => s + d.totalSellingValue, 0),
-        totalProfit: stockValueData.reduce((s, d) => s + d.totalProfit, 0),
-        totalLowStock: stockValueData.reduce((s, d) => s + d.lowStockCount, 0),
+      return {
+        categoryId: cat.id,
+        categoryName: cat.name,
+        categoryImage: cat.image,
+        productCount: catProducts.length,
+        totalQty,
+        totalPurchaseValue,
+        totalSellingValue,
+        totalProfit,
+        lowStockCount,
+        products: catProducts.map(p => ({
+          id: p.id,
+          name: p.name,
+          quantity: p.quantity,
+          purchasePrice: p.purchasePrice,
+          sellingPrice: p.sellingPrice,
+          stockValue: p.quantity * p.purchasePrice,
+          purchaseValue: p.quantity * p.purchasePrice,
+          lowStock: p.quantity <= p.lowStockThreshold,
+        })),
       };
+    }).filter(item => item.productCount > 0);
 
-      // Background sync
-      if (isOnline()) syncFromSupabase(userId).catch(() => {});
+    const grandTotal = {
+      totalProducts: stockValueData.reduce((s, d) => s + d.productCount, 0),
+      totalQty: stockValueData.reduce((s, d) => s + d.totalQty, 0),
+      totalPurchaseValue: stockValueData.reduce((s, d) => s + d.totalPurchaseValue, 0),
+      totalSellingValue: stockValueData.reduce((s, d) => s + d.totalSellingValue, 0),
+      totalProfit: stockValueData.reduce((s, d) => s + d.totalProfit, 0),
+      totalLowStock: stockValueData.reduce((s, d) => s + d.lowStockCount, 0),
+    };
 
-      return { type: 'stock-value', data: stockValueData, grandTotal };
-    }
-
-    // Daily report
-    if (type === 'daily') {
-      const dailyMap = new Map<string, {
-        date: string; revenue: number; cost: number; profit: number;
-        stockIn: number; stockOut: number; sell: number;
-      }>();
-
-      for (const t of filteredTxns) {
-        if (!dailyMap.has(t.date)) {
-          dailyMap.set(t.date, { date: t.date, revenue: 0, cost: 0, profit: 0, stockIn: 0, stockOut: 0, sell: 0 });
-        }
-        const entry = dailyMap.get(t.date)!;
-        const product = products.find(p => p.id === t.productId);
-
-        if (t.type === 'SELL') {
-          entry.revenue += t.totalAmount || 0;
-          entry.cost += (t.quantity || 0) * (product?.purchasePrice ?? 0);
-          entry.profit += (t.totalAmount || 0) - (t.quantity || 0) * (product?.purchasePrice ?? 0);
-          entry.sell += t.quantity || 0;
-        } else if (t.type === 'STOCK_IN') {
-          entry.cost += (t.quantity || 0) * (t.unitPrice || 0);
-          entry.stockIn += t.quantity || 0;
-        } else if (t.type === 'STOCK_OUT') {
-          entry.stockOut += t.quantity || 0;
-        }
-      }
-
-      const result = {
-        type: 'daily',
-        data: Array.from(dailyMap.values()).sort((a, b) => b.date.localeCompare(a.date)),
-        grandTotal: {
-          totalRevenue: Array.from(dailyMap.values()).reduce((s, d) => s + d.revenue, 0),
-          totalCost: Array.from(dailyMap.values()).reduce((s, d) => s + d.cost, 0),
-          totalProfit: Array.from(dailyMap.values()).reduce((s, d) => s + d.profit, 0),
-          totalStockIn: Array.from(dailyMap.values()).reduce((s, d) => s + d.stockIn, 0),
-          totalStockOut: Array.from(dailyMap.values()).reduce((s, d) => s + d.stockOut, 0),
-          totalSell: Array.from(dailyMap.values()).reduce((s, d) => s + d.sell, 0),
-        },
-      };
-
-      if (isOnline()) syncFromSupabase(userId).catch(() => {});
-      return result;
-    }
-
-    // Monthly report
-    if (type === 'monthly') {
-      const monthlyMap = new Map<string, {
-        month: string; revenue: number; cost: number; profit: number;
-        stockIn: number; stockOut: number; sell: number;
-      }>();
-
-      for (const t of filteredTxns) {
-        const month = t.date.substring(0, 7); // YYYY-MM
-        if (!monthlyMap.has(month)) {
-          monthlyMap.set(month, { month, revenue: 0, cost: 0, profit: 0, stockIn: 0, stockOut: 0, sell: 0 });
-        }
-        const entry = monthlyMap.get(month)!;
-        const product = products.find(p => p.id === t.productId);
-
-        if (t.type === 'SELL') {
-          entry.revenue += t.totalAmount || 0;
-          entry.cost += (t.quantity || 0) * (product?.purchasePrice ?? 0);
-          entry.profit += (t.totalAmount || 0) - (t.quantity || 0) * (product?.purchasePrice ?? 0);
-          entry.sell += t.quantity || 0;
-        } else if (t.type === 'STOCK_IN') {
-          entry.cost += (t.quantity || 0) * (t.unitPrice || 0);
-          entry.stockIn += t.quantity || 0;
-        } else if (t.type === 'STOCK_OUT') {
-          entry.stockOut += t.quantity || 0;
-        }
-      }
-
-      const result = {
-        type: 'monthly',
-        data: Array.from(monthlyMap.values()).sort((a, b) => b.month.localeCompare(a.month)),
-        grandTotal: {
-          totalRevenue: Array.from(monthlyMap.values()).reduce((s, d) => s + d.revenue, 0),
-          totalCost: Array.from(monthlyMap.values()).reduce((s, d) => s + d.cost, 0),
-          totalProfit: Array.from(monthlyMap.values()).reduce((s, d) => s + d.profit, 0),
-          totalStockIn: Array.from(monthlyMap.values()).reduce((s, d) => s + d.stockIn, 0),
-          totalStockOut: Array.from(monthlyMap.values()).reduce((s, d) => s + d.stockOut, 0),
-          totalSell: Array.from(monthlyMap.values()).reduce((s, d) => s + d.sell, 0),
-        },
-      };
-
-      if (isOnline()) syncFromSupabase(userId).catch(() => {});
-      return result;
-    }
-
-    // Category report
-    if (type === 'category') {
-      const categoryMap = new Map<string, {
-        categoryId: string; categoryName: string;
-        revenue: number; cost: number; profit: number;
-        stockIn: number; stockOut: number; sell: number; quantity: number;
-      }>();
-
-      for (const t of filteredTxns) {
-        const product = products.find(p => p.id === t.productId);
-        const cat = categories.find(c => c.id === product?.categoryId);
-        const catId = cat?.id || 'unknown';
-        const catName = cat?.name || 'Unknown';
-
-        if (!categoryMap.has(catId)) {
-          categoryMap.set(catId, { categoryId: catId, categoryName: catName, revenue: 0, cost: 0, profit: 0, stockIn: 0, stockOut: 0, sell: 0, quantity: 0 });
-        }
-        const entry = categoryMap.get(catId)!;
-
-        if (t.type === 'SELL') {
-          entry.revenue += t.totalAmount || 0;
-          entry.cost += (t.quantity || 0) * (product?.purchasePrice ?? 0);
-          entry.profit += (t.totalAmount || 0) - (t.quantity || 0) * (product?.purchasePrice ?? 0);
-          entry.sell += t.quantity || 0;
-          entry.quantity += t.quantity || 0;
-        } else if (t.type === 'STOCK_IN') {
-          entry.cost += (t.quantity || 0) * (t.unitPrice || 0);
-          entry.stockIn += t.quantity || 0;
-          entry.quantity += t.quantity || 0;
-        } else if (t.type === 'STOCK_OUT') {
-          entry.stockOut += t.quantity || 0;
-          entry.quantity += t.quantity || 0;
-        }
-      }
-
-      const result = {
-        type: 'category',
-        data: Array.from(categoryMap.values()).sort((a, b) => b.revenue - a.revenue),
-        grandTotal: {
-          totalRevenue: Array.from(categoryMap.values()).reduce((s, d) => s + d.revenue, 0),
-          totalCost: Array.from(categoryMap.values()).reduce((s, d) => s + d.cost, 0),
-          totalProfit: Array.from(categoryMap.values()).reduce((s, d) => s + d.profit, 0),
-          totalStockIn: Array.from(categoryMap.values()).reduce((s, d) => s + d.stockIn, 0),
-          totalStockOut: Array.from(categoryMap.values()).reduce((s, d) => s + d.stockOut, 0),
-          totalSell: Array.from(categoryMap.values()).reduce((s, d) => s + d.sell, 0),
-          totalQuantity: Array.from(categoryMap.values()).reduce((s, d) => s + d.quantity, 0),
-        },
-      };
-
-      if (isOnline()) syncFromSupabase(userId).catch(() => {});
-      return result;
-    }
-
-    // Fallback to online for unknown report types
-    if (isOnline()) {
-      const { getReports } = await import('./supabase-service');
-      return getReports(userId, type, options);
-    }
-
-    return { type, data: [], grandTotal: {} };
-  } catch {
-    if (isOnline()) {
-      const { getReports } = await import('./supabase-service');
-      return getReports(userId, type, options);
-    }
-    return { type, data: [], grandTotal: {} };
+    return { type: 'stock-value', data: stockValueData, grandTotal };
   }
+
+  // Daily report
+  if (type === 'daily') {
+    const dailyMap = new Map<string, {
+      date: string; revenue: number; cost: number; profit: number;
+      stockIn: number; stockOut: number; sell: number;
+    }>();
+
+    for (const t of filteredTxns) {
+      if (!dailyMap.has(t.date)) {
+        dailyMap.set(t.date, { date: t.date, revenue: 0, cost: 0, profit: 0, stockIn: 0, stockOut: 0, sell: 0 });
+      }
+      const entry = dailyMap.get(t.date)!;
+      const costBasis = txnCostBasis(t, products);
+
+      if (t.type === 'SELL') {
+        entry.revenue += t.totalAmount || 0;
+        entry.cost += (t.quantity || 0) * costBasis;
+        entry.profit += (t.totalAmount || 0) - (t.quantity || 0) * costBasis;
+        entry.sell += t.quantity || 0;
+      } else if (t.type === 'STOCK_IN') {
+        entry.cost += (t.quantity || 0) * (t.unitPrice || 0);
+        entry.stockIn += t.quantity || 0;
+      } else if (t.type === 'STOCK_OUT') {
+        entry.stockOut += t.quantity || 0;
+      }
+    }
+
+    const values = Array.from(dailyMap.values());
+    return {
+      type: 'daily',
+      data: values.sort((a, b) => b.date.localeCompare(a.date)),
+      grandTotal: {
+        totalRevenue: values.reduce((s, d) => s + d.revenue, 0),
+        totalCost: values.reduce((s, d) => s + d.cost, 0),
+        totalProfit: values.reduce((s, d) => s + d.profit, 0),
+        totalStockIn: values.reduce((s, d) => s + d.stockIn, 0),
+        totalStockOut: values.reduce((s, d) => s + d.stockOut, 0),
+        totalSell: values.reduce((s, d) => s + d.sell, 0),
+      },
+    };
+  }
+
+  // Monthly report
+  if (type === 'monthly') {
+    const monthlyMap = new Map<string, {
+      month: string; revenue: number; cost: number; profit: number;
+      stockIn: number; stockOut: number; sell: number;
+    }>();
+
+    for (const t of filteredTxns) {
+      const month = t.date.substring(0, 7); // YYYY-MM
+      if (!monthlyMap.has(month)) {
+        monthlyMap.set(month, { month, revenue: 0, cost: 0, profit: 0, stockIn: 0, stockOut: 0, sell: 0 });
+      }
+      const entry = monthlyMap.get(month)!;
+      const costBasis = txnCostBasis(t, products);
+
+      if (t.type === 'SELL') {
+        entry.revenue += t.totalAmount || 0;
+        entry.cost += (t.quantity || 0) * costBasis;
+        entry.profit += (t.totalAmount || 0) - (t.quantity || 0) * costBasis;
+        entry.sell += t.quantity || 0;
+      } else if (t.type === 'STOCK_IN') {
+        entry.cost += (t.quantity || 0) * (t.unitPrice || 0);
+        entry.stockIn += t.quantity || 0;
+      } else if (t.type === 'STOCK_OUT') {
+        entry.stockOut += t.quantity || 0;
+      }
+    }
+
+    const values = Array.from(monthlyMap.values());
+    return {
+      type: 'monthly',
+      data: values.sort((a, b) => b.month.localeCompare(a.month)),
+      grandTotal: {
+        totalRevenue: values.reduce((s, d) => s + d.revenue, 0),
+        totalCost: values.reduce((s, d) => s + d.cost, 0),
+        totalProfit: values.reduce((s, d) => s + d.profit, 0),
+        totalStockIn: values.reduce((s, d) => s + d.stockIn, 0),
+        totalStockOut: values.reduce((s, d) => s + d.stockOut, 0),
+        totalSell: values.reduce((s, d) => s + d.sell, 0),
+      },
+    };
+  }
+
+  // Category report
+  if (type === 'category') {
+    const categoryMap = new Map<string, {
+      categoryId: string; categoryName: string;
+      revenue: number; cost: number; profit: number;
+      stockIn: number; stockOut: number; sell: number; quantity: number;
+    }>();
+
+    for (const t of filteredTxns) {
+      const product = products.find(p => p.id === t.productId) ?? (t.product ? ({ ...t.product, categoryId: '', createdAt: '', updatedAt: '', boxNumber: '', lowStockThreshold: 0, quantity: 0, userId: '' } as Product) : undefined);
+      const cat = categories.find(c => c.id === product?.categoryId);
+      const catId = cat?.id || 'unknown';
+      const catName = cat?.name || 'Unknown';
+
+      if (!categoryMap.has(catId)) {
+        categoryMap.set(catId, { categoryId: catId, categoryName: catName, revenue: 0, cost: 0, profit: 0, stockIn: 0, stockOut: 0, sell: 0, quantity: 0 });
+      }
+      const entry = categoryMap.get(catId)!;
+      const costBasis = txnCostBasis(t, products);
+
+      if (t.type === 'SELL') {
+        entry.revenue += t.totalAmount || 0;
+        entry.cost += (t.quantity || 0) * costBasis;
+        entry.profit += (t.totalAmount || 0) - (t.quantity || 0) * costBasis;
+        entry.sell += t.quantity || 0;
+        entry.quantity += t.quantity || 0;
+      } else if (t.type === 'STOCK_IN') {
+        entry.cost += (t.quantity || 0) * (t.unitPrice || 0);
+        entry.stockIn += t.quantity || 0;
+        entry.quantity += t.quantity || 0;
+      } else if (t.type === 'STOCK_OUT') {
+        entry.stockOut += t.quantity || 0;
+        entry.quantity += t.quantity || 0;
+      }
+    }
+
+    const values = Array.from(categoryMap.values());
+    return {
+      type: 'category',
+      data: values.sort((a, b) => b.revenue - a.revenue),
+      grandTotal: {
+        totalRevenue: values.reduce((s, d) => s + d.revenue, 0),
+        totalCost: values.reduce((s, d) => s + d.cost, 0),
+        totalProfit: values.reduce((s, d) => s + d.profit, 0),
+        totalStockIn: values.reduce((s, d) => s + d.stockIn, 0),
+        totalStockOut: values.reduce((s, d) => s + d.stockOut, 0),
+        totalSell: values.reduce((s, d) => s + d.sell, 0),
+        totalQuantity: values.reduce((s, d) => s + d.quantity, 0),
+      },
+    };
+  }
+
+  return { type, data: [], grandTotal: {} };
 }
 
-// ============ PROFILE (Offline-aware) ============
+// ============ PROFILE (Local) ============
 
 export async function getProfileOffline(userId: string) {
-  // Try to get from IndexedDB first
-  const meta = await offlineMeta.get(`profile:${userId}`);
-  if (meta?.data) {
-    // Return cached profile from IndexedDB
-    if (isOnline()) {
-      try {
-        const { getProfile } = await import('./supabase-service');
-        const result = await getProfile(userId);
-        // Update IndexedDB cache
-        await offlineMeta.put({
-          key: `profile:${userId}`,
-          userId,
-          lastSync: Date.now(),
-          data: result,
-        });
-        return result;
-      } catch {
-        // Return cached profile
-        return meta.data;
-      }
-    }
-    return meta.data;
-  }
-
-  // No cached data - try Supabase if online
-  if (isOnline()) {
-    try {
-      const { getProfile } = await import('./supabase-service');
-      const result = await getProfile(userId);
-      // Save to IndexedDB for future offline access
-      await offlineMeta.put({
-        key: `profile:${userId}`,
-        userId,
-        lastSync: Date.now(),
-        data: result,
-      });
-      return result;
-    } catch {
-      // Fall through
-    }
-  }
-
-  // Return null - the calling code should use the cached user from zustand store
-  return null;
+  const user = await getLocalUser(userId);
+  return user ? { user } : null;
 }
 
-// ============ SERVICE TRANSACTIONS (Offline-First) ============
+export async function updateProfileOffline(id: string, updates: { name?: string; shopName?: string; language?: string; theme?: string }) {
+  const user = await updateLocalUser(id, updates);
+  return { user };
+}
+
+// ============ SERVICE TRANSACTIONS (Local) ============
 
 export async function getServiceTransactionsOffline(userId: string, options?: { categoryType?: ServiceCategoryType; from?: string; to?: string }): Promise<ServiceTransaction[]> {
-  try {
-    let localTxns = await offlineServiceTransactions.getAll(userId);
+  let localTxns = await offlineServiceTransactions.getAll(userId);
 
-    if (options?.categoryType) localTxns = localTxns.filter(t => t.categoryType === options.categoryType);
-    if (options?.from) localTxns = localTxns.filter(t => t.date >= options.from!);
-    if (options?.to) localTxns = localTxns.filter(t => t.date <= options.to!);
+  if (options?.categoryType) localTxns = localTxns.filter(t => t.categoryType === options.categoryType);
+  if (options?.from) localTxns = localTxns.filter(t => t.date >= options.from!);
+  if (options?.to) localTxns = localTxns.filter(t => t.date <= options.to!);
 
-    if (localTxns.length > 0 || !isOnline()) {
-      const txns = localTxns
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        .map(({ _synced, _dirty, ...txn }) => txn as unknown as ServiceTransaction);
-      if (isOnline()) syncFromSupabase(userId).catch(() => {});
-      return txns;
-    }
-
-    if (isOnline()) {
-      const { getServiceTransactions } = await import('./supabase-service');
-      const result = await getServiceTransactions(userId, options);
-      return result.serviceTransactions as ServiceTransaction[];
-    }
-
-    return [];
-  } catch {
-    if (isOnline()) {
-      const { getServiceTransactions } = await import('./supabase-service');
-      const result = await getServiceTransactions(userId, options);
-      return result.serviceTransactions as ServiceTransaction[];
-    }
-    return [];
-  }
+  return localTxns
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .map(t => stripSync<ServiceTransaction>(t));
 }
 
 export async function createServiceTransactionOffline(data: {
@@ -1292,16 +895,18 @@ export async function createServiceTransactionOffline(data: {
   purpose: string;
   userId: string;
 }): Promise<{ serviceTransaction: ServiceTransaction }> {
-  const id = `local_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-  const now = new Date().toISOString();
+  const amount = Number(data.amount);
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Amount must be greater than 0');
+  if (!data.purpose.trim()) throw new Error('Purpose is required');
 
+  const now = new Date().toISOString();
   const serviceTransaction = {
-    id,
+    id: generateRecordId(),
     userId: data.userId,
     categoryType: data.categoryType,
     transactionType: data.transactionType,
-    amount: parseFloat(String(data.amount)) || 0,
-    purpose: data.purpose || '',
+    amount,
+    purpose: data.purpose.trim(),
     date: localDateStr(),
     createdAt: now,
     updatedAt: now,
@@ -1309,115 +914,21 @@ export async function createServiceTransactionOffline(data: {
 
   await offlineServiceTransactions.put({
     ...serviceTransaction,
-    _synced: 0,
-    _dirty: Date.now(),
+    _synced: Date.now(),
+    _dirty: 0,
   });
 
-  if (isOnline()) {
-    try {
-      const { createServiceTransaction } = await import('./supabase-service');
-      const result = await createServiceTransaction(data);
-      await offlineServiceTransactions.put({
-        ...result.serviceTransaction,
-        _synced: Date.now(),
-        _dirty: 0,
-      } as OfflineDBSchema['serviceTransactions']['value']);
-      await offlineServiceTransactions.delete(id);
-      return { serviceTransaction: result.serviceTransaction as unknown as ServiceTransaction };
-    } catch {
-      // Keep local - will sync later
-    }
-  }
-
-  return { serviceTransaction: serviceTransaction as ServiceTransaction };
+  return { serviceTransaction };
 }
 
-export async function deleteServiceTransactionOffline(id: string, userId: string): Promise<{ success: boolean }> {
+export async function deleteServiceTransactionOffline(id: string, _userId: string): Promise<{ success: boolean }> {
   await offlineServiceTransactions.delete(id);
-  await offlinePendingDeletes.add('serviceTransactions', id, userId);
-
-  if (isOnline()) {
-    try {
-      const { deleteServiceTransaction } = await import('./supabase-service');
-      await deleteServiceTransaction(id);
-      await offlinePendingDeletes.removeByItemId('serviceTransactions', id);
-    } catch {
-      // Will retry on next sync
-    }
-  }
-
   return { success: true };
 }
 
-// Track pending profile updates for offline sync.
-// Persisted in IndexedDB (syncMeta) so updates survive app restarts —
-// a RAM-only map lost offline edits forever.
-const PENDING_PROFILE_KEY = (id: string) => `pending-profile:${id}`;
-
-export async function updateProfileOffline(id: string, updates: { name?: string; shopName?: string; language?: string; theme?: string }) {
-  // Try to update on Supabase if online
-  if (isOnline()) {
-    try {
-      const { updateProfile } = await import('./supabase-service');
-      const result = await updateProfile(id, updates);
-      // Update IndexedDB cache
-      await offlineMeta.put({
-        key: `profile:${id}`,
-        userId: id,
-        lastSync: Date.now(),
-        data: result,
-      });
-      // Clear any pending updates since we succeeded
-      await offlineMeta.put({ key: PENDING_PROFILE_KEY(id), userId: id, lastSync: 0, data: null });
-      return result;
-    } catch {
-      // Fall through to offline handling
-    }
-  }
-
-  // Save pending profile update for later sync (durable across restarts)
-  const pendingMeta = await offlineMeta.get(PENDING_PROFILE_KEY(id));
-  const mergedPending = { ...((pendingMeta?.data as Record<string, unknown>) || {}), ...updates };
-  await offlineMeta.put({
-    key: PENDING_PROFILE_KEY(id),
-    userId: id,
-    lastSync: Date.now(),
-    data: mergedPending,
-  });
-
-  // Update IndexedDB profile cache with new values
-  const meta = await offlineMeta.get(`profile:${id}`);
-  let cachedUser: Record<string, unknown> | null = null;
-  if (meta?.data) {
-    cachedUser = (meta.data as { user: Record<string, unknown> }).user || null;
-    await offlineMeta.put({
-      key: `profile:${id}`,
-      userId: id,
-      lastSync: meta.lastSync,
-      data: { user: { ...cachedUser, ...updates } },
-    });
-  }
-
-  // Always return the FULL merged user — never a sparse { id, ...updates } object,
-  // which used to wipe email/shopName/role from the zustand store.
-  const mergedUser = { ...(cachedUser || {}), id, ...updates };
-  return { user: mergedUser };
-}
-
-// Get pending profile updates (used by sync engine)
-export async function getPendingProfileUpdates(id: string): Promise<{ name?: string; shopName?: string; language?: string; theme?: string } | null> {
-  const meta = await offlineMeta.get(PENDING_PROFILE_KEY(id));
-  return (meta?.data as { name?: string; shopName?: string; language?: string; theme?: string }) || null;
-}
-
-export async function clearPendingProfileUpdates(id: string) {
-  await offlineMeta.put({ key: PENDING_PROFILE_KEY(id), userId: id, lastSync: 0, data: null });
-}
-
-// ============ BACKUP (Offline-aware) ============
+// ============ BACKUP (Local) ============
 
 export async function exportBackupOffline(userId: string) {
-  // Export from local data - always works offline!
   const [localCategories, localProducts, localTransactions, localExpenses, localCashEntries, localServiceTxns] = await Promise.all([
     offlineCategories.getAll(userId),
     offlineProducts.getAll(userId),
@@ -1427,20 +938,13 @@ export async function exportBackupOffline(userId: string) {
     offlineServiceTransactions.getAll(userId),
   ]);
 
-  const categories = localCategories.map(({ _synced, _dirty, ...c }) => c);
-  const products = localProducts.map(({ _synced, _dirty, category, ...p }) => p);
-  const transactions = localTransactions.map(({ _synced, _dirty, product, ...t }) => t);
-  const expenses = localExpenses.map(({ _synced, _dirty, ...e }) => e);
-  const cashEntries = localCashEntries.map(({ _synced, _dirty, ...e }) => e);
-  const serviceTransactions = localServiceTxns.map(({ _synced, _dirty, ...s }) => s);
-
   return {
-    categories,
-    products,
-    transactions,
-    expenses,
-    cashEntries,
-    serviceTransactions,
+    categories: localCategories.map(c => stripSync(c)),
+    products: localProducts.map(p => { const { category: _c, ...rest } = stripSync<Record<string, unknown>>(p); return rest; }),
+    transactions: localTransactions.map(t => { const { product: _p, ...rest } = stripSync<Record<string, unknown>>(t); return rest; }),
+    expenses: localExpenses.map(e => stripSync(e)),
+    cashEntries: localCashEntries.map(e => stripSync(e)),
+    serviceTransactions: localServiceTxns.map(s => stripSync(s)),
     exportedAt: new Date().toISOString(),
   };
 }
@@ -1453,11 +957,10 @@ export async function importBackupOffline(userId: string, backupData: {
   cashEntries?: unknown[];
   serviceTransactions?: unknown[];
 }) {
-  // Import to local IndexedDB first.
   const now = Date.now();
 
-  // Validate rows: every row MUST have an id — malformed backups used to be
-  // written straight into IndexedDB and then synced to Supabase.
+  // Validate rows: every row MUST have an id — malformed backups must never
+  // be written into IndexedDB.
   const asRows = (rows: unknown[]): Record<string, unknown>[] => {
     if (!Array.isArray(rows)) return [];
     return rows.filter((r): r is Record<string, unknown> =>
@@ -1476,115 +979,8 @@ export async function importBackupOffline(userId: string, backupData: {
     throw new Error('Backup file contains no valid data');
   }
 
-  // REPLACE semantics (matches the server import): clear existing stores first so
-  // stale local-only rows can't survive a restore and re-upload via sync.
-  const allLocalCats = await offlineCategories.getAll(userId);
-  const allLocalProducts = await offlineProducts.getAll(userId);
-  const allLocalTxns = await offlineTransactions.getAll(userId);
-  const allLocalExpenses = await offlineExpenses.getAll(userId);
-  const allLocalCash = await offlineCashEntries.getAll(userId);
-  const allLocalSvc = await offlineServiceTransactions.getAll(userId);
-  for (const c of allLocalCats) await offlineCategories.delete(c.id);
-  for (const p of allLocalProducts) await offlineProducts.delete(p.id);
-  for (const t of allLocalTxns) await offlineTransactions.delete(t.id);
-  for (const e of allLocalExpenses) await offlineExpenses.delete(e.id);
-  for (const e of allLocalCash) await offlineCashEntries.delete(e.id);
-  for (const s of allLocalSvc) await offlineServiceTransactions.delete(s.id);
-
-  // Import categories
-  if (categories.length) {
-    await offlineCategories.putBulk(
-      categories.map((cat) => ({
-        ...cat,
-        userId,
-        _synced: 0,
-        _dirty: now,
-      })) as OfflineDBSchema['categories']['value'][]
-    );
-  }
-
-  // Import products
-  if (products.length) {
-    await offlineProducts.putBulk(
-      products.map((prod) => ({
-        ...prod,
-        userId,
-        _synced: 0,
-        _dirty: now,
-      })) as OfflineDBSchema['products']['value'][]
-    );
-  }
-
-  // Import transactions
-  if (transactions.length) {
-    await offlineTransactions.putBulk(
-      transactions.map((txn) => ({
-        ...txn,
-        userId,
-        _synced: 0,
-        _dirty: now,
-      })) as OfflineDBSchema['transactions']['value'][]
-    );
-  }
-
-  // Import expenses
-  if (expenses.length) {
-    await offlineExpenses.putBulk(
-      expenses.map((exp) => ({
-        ...exp,
-        userId,
-        _synced: 0,
-        _dirty: now,
-      })) as OfflineDBSchema['expenses']['value'][]
-    );
-  }
-
-  // Import cash entries
-  if (cashEntries.length) {
-    await offlineCashEntries.putBulk(
-      cashEntries.map((entry) => ({
-        ...entry,
-        userId,
-        _synced: 0,
-        _dirty: now,
-      })) as OfflineDBSchema['cashEntries']['value'][]
-    );
-  }
-
-  // Import service transactions
-  if (serviceTransactions.length) {
-    await offlineServiceTransactions.putBulk(
-      serviceTransactions.map((svc) => ({
-        ...svc,
-        userId,
-        _synced: 0,
-        _dirty: now,
-      })) as OfflineDBSchema['serviceTransactions']['value'][]
-    );
-  }
-
-  // Try to sync to Supabase if online
-  if (isOnline()) {
-    try {
-      const { importBackup } = await import('./supabase-service');
-      await importBackup(userId, { categories, products, transactions, expenses, cashEntries, serviceTransactions });
-      // Mark all as synced
-      await syncFromSupabase(userId);
-    } catch {
-      // Will sync later
-    }
-  }
-
-  return { message: 'Backup imported successfully' };
-}
-
-// ============ RESET DATA (Offline) ============
-
-export async function resetDataOffline(userId: string) {
-  // Queue server-side deletes for every row BEFORE clearing local data.
-  // Previously, resetting while offline cleared only the local copy — the next
-  // sync happily re-downloaded everything ("reset" silently undone).
-  const [cats, prods, txns, exps, cash, svc] = await Promise.all([
+  // REPLACE semantics: clear existing stores first so stale rows can't survive a restore.
+  const [allLocalCats, allLocalProducts, allLocalTxns, allLocalExpenses, allLocalCash, allLocalSvc] = await Promise.all([
     offlineCategories.getAll(userId),
     offlineProducts.getAll(userId),
     offlineTransactions.getAll(userId),
@@ -1592,26 +988,55 @@ export async function resetDataOffline(userId: string) {
     offlineCashEntries.getAll(userId),
     offlineServiceTransactions.getAll(userId),
   ]);
-  for (const c of cats) await offlinePendingDeletes.add('categories', c.id, userId);
-  for (const p of prods) await offlinePendingDeletes.add('products', p.id, userId);
-  for (const t of txns) await offlinePendingDeletes.add('transactions', t.id, userId);
-  for (const e of exps) await offlinePendingDeletes.add('expenses', e.id, userId);
-  for (const e of cash) await offlinePendingDeletes.add('cashEntries', e.id, userId);
-  for (const s of svc) await offlinePendingDeletes.add('serviceTransactions', s.id, userId);
+  await Promise.all([
+    ...allLocalCats.map(c => offlineCategories.delete(c.id)),
+    ...allLocalProducts.map(p => offlineProducts.delete(p.id)),
+    ...allLocalTxns.map(t => offlineTransactions.delete(t.id)),
+    ...allLocalExpenses.map(e => offlineExpenses.delete(e.id)),
+    ...allLocalCash.map(e => offlineCashEntries.delete(e.id)),
+    ...allLocalSvc.map(s => offlineServiceTransactions.delete(s.id)),
+  ]);
 
-  const { clearOfflineData } = await import('./offline-db');
-  await clearOfflineData(userId);
-  
-  if (isOnline()) {
-    try {
-      const { resetData } = await import('./supabase-service');
-      await resetData(userId);
-      // Server reset succeeded — the queued deletes are now redundant
-      await offlinePendingDeletes.clearForUser(userId);
-    } catch {
-      // Server reset failed — queued deletes will clean up on the next sync
-    }
+  if (categories.length) {
+    await offlineCategories.putBulk(
+      categories.map((cat) => ({ ...cat, userId, _synced: now, _dirty: 0 })) as OfflineDBSchema['categories']['value'][]
+    );
   }
-  
+  if (products.length) {
+    await offlineProducts.putBulk(
+      products.map((prod) => ({ ...prod, userId, _synced: now, _dirty: 0 })) as OfflineDBSchema['products']['value'][]
+    );
+  }
+  if (transactions.length) {
+    await offlineTransactions.putBulk(
+      transactions.map((txn) => ({ ...txn, userId, _synced: now, _dirty: 0 })) as OfflineDBSchema['transactions']['value'][]
+    );
+  }
+  if (expenses.length) {
+    await offlineExpenses.putBulk(
+      expenses.map((exp) => ({ ...exp, userId, _synced: now, _dirty: 0 })) as OfflineDBSchema['expenses']['value'][]
+    );
+  }
+  if (cashEntries.length) {
+    await offlineCashEntries.putBulk(
+      cashEntries.map((entry) => ({ ...entry, userId, _synced: now, _dirty: 0 })) as OfflineDBSchema['cashEntries']['value'][]
+    );
+  }
+  if (serviceTransactions.length) {
+    await offlineServiceTransactions.putBulk(
+      serviceTransactions.map((svc) => ({ ...svc, userId, _synced: now, _dirty: 0 })) as OfflineDBSchema['serviceTransactions']['value'][]
+    );
+  }
+
+  return { message: 'Backup imported successfully' };
+}
+
+// ============ RESET DATA (Local) ============
+
+export async function resetDataOffline(userId: string) {
+  await clearOfflineData(userId);
   return { message: 'All data reset successfully' };
 }
+
+// Keep the syncMeta export used by potential future features (last backup time etc.)
+export { offlineMeta };

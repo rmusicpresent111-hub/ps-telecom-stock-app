@@ -7,7 +7,7 @@ import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Language, User as UserType } from '@/lib/types';
 import { toast } from 'sonner';
-import { signup } from '@/lib/supabase-service';
+import { signup } from '@/lib/local-auth';
 
 export default function SignupScreen() {
   const { language, setUser, navigateTo, resetNavigation } = useAppStore();

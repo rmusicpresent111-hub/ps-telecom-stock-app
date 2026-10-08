@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Category, Product } from '@/lib/types';
-import { getProductsOffline } from '@/lib/offline-service';
+import { getProductsOffline, getTransactionsOffline, localDateStr } from '@/lib/offline-service';
 import { ArrowLeft, Plus, Search, Package, AlertTriangle, ArrowLeftRight, IndianRupee } from 'lucide-react';
 import { toast } from 'sonner';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -45,6 +45,7 @@ export default function CategoryDetailScreen() {
   const setStockOperationType = useAppStore(s => s.setStockOperationType);
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [todayTxnCount, setTodayTxnCount] = useState(0);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -56,14 +57,21 @@ export default function CategoryDetailScreen() {
     if (!user?.id || !selectedCategoryId) return;
     try {
       setLoading(true);
-      const prods = await getProductsOffline(user.id, { categoryId: selectedCategoryId });
+      const today = localDateStr();
+      const [prods, txns] = await Promise.all([
+        getProductsOffline(user.id, { categoryId: selectedCategoryId }),
+        getTransactionsOffline(user.id, { from: today, to: today }),
+      ]);
       setProducts(prods || []);
+      // Real "today's transactions" count for this category
+      const catProductIds = new Set((prods || []).map(p => p.id));
+      setTodayTxnCount((txns || []).filter(tx => catProductIds.has(tx.productId)).length);
     } catch {
       toast.error(t('error', language));
     } finally {
       setLoading(false);
     }
-  }, [user?.id, selectedCategoryId]);
+  }, [user?.id, selectedCategoryId, language]);
 
   useEffect(() => {
     fetchProducts();
@@ -113,7 +121,7 @@ export default function CategoryDetailScreen() {
           </button>
           <h1 className="text-lg font-bold neon-glow">{category?.name || 'Category'}</h1>
           <button
-            onClick={() => navigateTo('add-product')}
+            onClick={() => { setSelectedProductId(null); navigateTo('add-product'); }}
             className="p-2 rounded-full glass-card"
             aria-label="Add Product"
           >
@@ -138,7 +146,13 @@ export default function CategoryDetailScreen() {
             <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
             <div className="absolute bottom-3 left-4">
               <h2 className="text-white font-bold text-lg drop-shadow-lg">{category?.name}</h2>
-              <p className="text-white/70 text-xs">{products.length} products in this category</p>
+              <p className="text-white/70 text-xs">
+                {language === 'bn'
+                  ? `এই ক্যাটাগরিতে ${products.length}টি প্রোডাক্ট`
+                  : language === 'hi'
+                    ? `इस श्रेणी में ${products.length} उत्पाद`
+                    : `${products.length} products in this category`}
+              </p>
             </div>
           </motion.div>
         )}
@@ -164,7 +178,7 @@ export default function CategoryDetailScreen() {
               <ArrowLeftRight size={16} className="text-emerald-400" />
               <span className="text-xs text-white/60">{t('todayTransaction', language)}</span>
             </div>
-            <p className="text-2xl font-bold text-emerald-400">0</p>
+            <p className="text-2xl font-bold text-emerald-400">{todayTxnCount}</p>
           </div>
           <div className="stat-card-purple rounded-2xl p-4">
             <div className="flex items-center gap-2 mb-1">

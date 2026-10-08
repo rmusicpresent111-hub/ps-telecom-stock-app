@@ -22,7 +22,6 @@ export default function StockOperationScreen() {
   const goBack = useAppStore(s => s.goBack);
   const selectedProductId = useAppStore(s => s.selectedProductId);
   const stockOperationType = useAppStore(s => s.stockOperationType);
-  const selectedCategoryId = useAppStore(s => s.selectedCategoryId);
 
   const isSell = stockOperationType === 'SELL';
 
@@ -36,14 +35,16 @@ export default function StockOperationScreen() {
   const [fetching, setFetching] = useState(true);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const suggestionsRef = useRef<HTMLDivElement>(null);
+  const lastMatchedIdRef = useRef<string | null>(null);
+  const preselectedRef = useRef(false);
 
+  // Always search across ALL products — a stale global category filter used to
+  // make stock ops fail with "Product not found" for products of other categories.
   const fetchProducts = useCallback(async () => {
     if (!user?.id) return;
     try {
       setFetching(true);
-      const products = selectedCategoryId
-        ? await getProductsOffline(user.id, { categoryId: selectedCategoryId })
-        : await getProductsOffline(user.id);
+      const products = await getProductsOffline(user.id);
       setAllProducts(products || []);
       setProductName('');
     } catch {
@@ -51,11 +52,25 @@ export default function StockOperationScreen() {
     } finally {
       setFetching(false);
     }
-  }, [user?.id, selectedCategoryId]);
+  }, [user?.id, language]);
 
   useEffect(() => {
     fetchProducts();
   }, [fetchProducts]);
+
+  // Preselect the product when arriving from Product/Category detail
+  useEffect(() => {
+    if (preselectedRef.current || fetching) return;
+    if (!selectedProductId || allProducts.length === 0) return;
+    const pre = allProducts.find(p => p.id === selectedProductId);
+    if (pre) {
+      setProduct(pre);
+      setProductName(pre.name);
+      setPrice(stockOperationType === 'STOCK_IN' ? String(pre.purchasePrice) : String(pre.sellingPrice));
+      lastMatchedIdRef.current = pre.id;
+    }
+    preselectedRef.current = true;
+  }, [allProducts, fetching, selectedProductId, stockOperationType]);
 
   // Close suggestions on outside click
   useEffect(() => {
@@ -73,6 +88,7 @@ export default function StockOperationScreen() {
     if (isSell) return;
     if (!productName.trim()) {
       setProduct(null);
+      lastMatchedIdRef.current = null;
       return;
     }
     const matched = allProducts.find(
@@ -80,11 +96,17 @@ export default function StockOperationScreen() {
     );
     if (matched) {
       setProduct(matched);
-      if (stockOperationType === 'STOCK_IN') {
-        setPrice(String(matched.purchasePrice));
+      // Only auto-fill the price when the matched product CHANGES —
+      // re-running per keystroke used to clobber the user's manual edits.
+      if (lastMatchedIdRef.current !== matched.id) {
+        lastMatchedIdRef.current = matched.id;
+        if (stockOperationType === 'STOCK_IN') {
+          setPrice(String(matched.purchasePrice));
+        }
       }
     } else {
       setProduct(null);
+      lastMatchedIdRef.current = null;
     }
   }, [productName, allProducts, stockOperationType, isSell]);
 
@@ -147,9 +169,22 @@ export default function StockOperationScreen() {
       toast.error(t('error', language));
       return;
     }
-    const qty = parseInt(quantity);
-    if (qty <= 0) {
+    const qty = Number(quantity);
+    if (!Number.isInteger(qty) || qty <= 0) {
       toast.error(t('enterQuantity', language));
+      return;
+    }
+    const unitPrice = Number(price);
+    if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+      toast.error(t('error', language), { description: 'Price cannot be negative' });
+      return;
+    }
+    if ((stockOperationType === 'SELL' || stockOperationType === 'STOCK_IN') && unitPrice <= 0) {
+      toast.error(t('error', language), {
+        description: stockOperationType === 'SELL'
+          ? 'Selling price must be greater than 0'
+          : 'Purchase price must be greater than 0',
+      });
       return;
     }
     setShowConfirmDialog(true);
@@ -159,8 +194,8 @@ export default function StockOperationScreen() {
     setShowConfirmDialog(false);
     if (!product?.id || !user?.id || !stockOperationType) return;
 
-    const qty = parseInt(quantity);
-    const unitPrice = parseFloat(price) || 0;
+    const qty = Number(quantity);
+    const unitPrice = Number(price);
     const totalAmount = qty * unitPrice;
 
     setLoading(true);
@@ -200,7 +235,7 @@ export default function StockOperationScreen() {
   const meta = stockOperationType ? stockOpMeta[stockOperationType] : null;
   const ConfirmIcon = meta?.icon;
 
-  const totalAmount = quantity && price ? (parseInt(quantity) * parseFloat(price)) : 0;
+  const totalAmount = quantity && price ? (Number(quantity) * Number(price)) : 0;
 
   return (
     <div className="animated-bg min-h-screen pb-24">

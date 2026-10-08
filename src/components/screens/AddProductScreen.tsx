@@ -39,7 +39,7 @@ export default function AddProductScreen() {
             setName(product.name);
             setCategoryId(product.categoryId);
             setQuantity(String(product.quantity));
-            setBoxNumber(product.boxNumber);
+            setBoxNumber(product.boxNumber ?? '');
             setPurchasePrice(String(product.purchasePrice));
             setSellingPrice(String(product.sellingPrice));
             setLowStockThreshold(String(product.lowStockThreshold));
@@ -52,6 +52,28 @@ export default function AddProductScreen() {
   const handleSave = async () => {
     if (!name.trim() || !categoryId || !user?.id) {
       toast.error(t('error', language));
+      return;
+    }
+
+    // Numeric validation — negative/invalid values would corrupt stock reports
+    const qty = Number(quantity);
+    const purchase = Number(purchasePrice);
+    const selling = Number(sellingPrice);
+    const threshold = Number(lowStockThreshold);
+    if (!Number.isFinite(qty) || qty < 0 || !Number.isInteger(qty)) {
+      toast.error(t('error', language), { description: 'Quantity must be a non-negative whole number' });
+      return;
+    }
+    if (!Number.isFinite(purchase) || purchase < 0) {
+      toast.error(t('error', language), { description: 'Purchase price cannot be negative' });
+      return;
+    }
+    if (!Number.isFinite(selling) || selling < 0) {
+      toast.error(t('error', language), { description: 'Selling price cannot be negative' });
+      return;
+    }
+    if (!Number.isFinite(threshold) || threshold < 0) {
+      toast.error(t('error', language), { description: 'Low stock threshold cannot be negative' });
       return;
     }
 
@@ -79,22 +101,22 @@ export default function AddProductScreen() {
         await updateProductOffline(selectedProductId, {
           name: name.trim(),
           categoryId,
-          quantity: parseInt(quantity) || 0,
+          quantity: qty,
           boxNumber: boxNumber.trim(),
-          purchasePrice: parseFloat(purchasePrice) || 0,
-          sellingPrice: parseFloat(sellingPrice) || 0,
-          lowStockThreshold: parseInt(lowStockThreshold) || 5,
+          purchasePrice: purchase,
+          sellingPrice: selling,
+          lowStockThreshold: Number.isFinite(threshold) ? threshold : 5,
           userId: user.id,
         });
       } else {
         await createProductOffline({
           name: name.trim(),
           categoryId,
-          quantity: parseInt(quantity) || 0,
+          quantity: qty,
           boxNumber: boxNumber.trim(),
-          purchasePrice: parseFloat(purchasePrice) || 0,
-          sellingPrice: parseFloat(sellingPrice) || 0,
-          lowStockThreshold: parseInt(lowStockThreshold) || 5,
+          purchasePrice: purchase,
+          sellingPrice: selling,
+          lowStockThreshold: Number.isFinite(threshold) ? threshold : 5,
           userId: user.id,
         });
       }

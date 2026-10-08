@@ -6,7 +6,7 @@ import { t } from '@/lib/i18n';
 import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
-import { createCategoryOffline } from '@/lib/offline-service';
+import { createCategoryOffline, getCategoriesOffline } from '@/lib/offline-service';
 
 const presetCategories = [
   { name: 'Mobile', image: '/categories/mobile.png', emoji: '📱' },
@@ -74,7 +74,20 @@ export default function AddCategoryScreen() {
 
     setLoading(true);
     try {
-      const imageData = iconMode === 'image' ? selectedImage : selectedEmoji;
+      // Duplicate category name check (case-insensitive)
+      const existing = await getCategoriesOffline(user.id);
+      const isDuplicate = existing.some(
+        c => c.name.trim().toLowerCase() === name.trim().toLowerCase()
+      );
+      if (isDuplicate) {
+        toast.error(t('error', language), { description: 'A category with this name already exists' });
+        return;
+      }
+
+      // Never save an empty image — fall back to the selected/default emoji
+      const imageData = iconMode === 'image'
+        ? (selectedImage || selectedEmoji)
+        : selectedEmoji;
       await createCategoryOffline(name.trim(), imageData, user.id);
       toast.success(t('added', language));
       goBack();

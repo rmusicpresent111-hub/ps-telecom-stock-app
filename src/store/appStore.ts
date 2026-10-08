@@ -103,7 +103,22 @@ export const useAppStore = create<AppState>()(
       user: null,
       isAuthenticated: false,
       setUser: (user) => set({ user, isAuthenticated: !!user }),
-      logout: () => set({ user: null, isAuthenticated: false, currentScreen: 'login' }),
+      logout: () =>
+        set({
+          user: null,
+          isAuthenticated: false,
+          currentScreen: 'login',
+          // Clear ALL session state so nothing bleeds into the next account:
+          previousScreens: [],
+          selectedCategoryId: null,
+          selectedProductId: null,
+          stockOperationType: null,
+          selectedServiceCategory: null,
+          searchQuery: '',
+          categories: [],
+          products: [],
+          transactions: [],
+        }),
 
       // App State
       language: 'en',

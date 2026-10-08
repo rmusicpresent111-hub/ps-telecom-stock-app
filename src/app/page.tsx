@@ -13,7 +13,6 @@ import '@/lib/capacitor-init';
 
 // Lazy load ALL screen components - only loads what's needed
 const SplashScreen = lazy(() => import('@/components/screens/SplashScreen'));
-const OnboardingScreen = lazy(() => import('@/components/screens/OnboardingScreen'));
 const LanguageScreen = lazy(() => import('@/components/screens/LanguageScreen'));
 const LoginScreen = lazy(() => import('@/components/screens/LoginScreen'));
 const SignupScreen = lazy(() => import('@/components/screens/SignupScreen'));
@@ -36,7 +35,6 @@ const ServiceCategoryScreen = lazy(() => import('@/components/screens/ServiceCat
 
 const screenComponents: Record<Screen, React.ComponentType> = {
   splash: SplashScreen,
-  onboarding: OnboardingScreen,
   language: LanguageScreen,
   login: LoginScreen,
   signup: SignupScreen,

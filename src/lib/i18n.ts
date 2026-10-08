@@ -36,6 +36,7 @@ type TranslationKeys = {
   forgotPassword: string;
   email: string;
   password: string;
+  newPassword: string;
   confirmPassword: string;
   name: string;
   shopName: string;
@@ -139,6 +140,8 @@ type TranslationKeys = {
   areYouSure: string;
   thisActionCannot: string;
   added: string;
+  csvDownloaded: string;
+  jsonDownloaded: string;
   updated: string;
   deleted: string;
   success: string;
@@ -211,6 +214,7 @@ const translations: Record<Language, TranslationKeys> = {
     forgotPassword: 'পাসওয়ার্ড ভুলে গেছেন',
     email: 'ইমেইল',
     password: 'পাসওয়ার্ড',
+    newPassword: 'নতুন পাসওয়ার্ড',
     confirmPassword: 'পাসওয়ার্ড নিশ্চিত করুন',
     name: 'নাম',
     shopName: 'দোকানের নাম',
@@ -302,6 +306,8 @@ const translations: Record<Language, TranslationKeys> = {
     areYouSure: 'আপনি কি নিশ্চিত?',
     thisActionCannot: 'এই কাজটি আর পূর্বাবস্থায় ফেরানো যাবে না',
     added: 'যোগ হয়েছে',
+    csvDownloaded: 'CSV ডাউনলোড হয়েছে',
+    jsonDownloaded: 'JSON ডাউনলোড হয়েছে',
     updated: 'আপডেট হয়েছে',
     deleted: 'মুছে ফেলা হয়েছে',
     success: 'সফল',
@@ -371,6 +377,7 @@ const translations: Record<Language, TranslationKeys> = {
     forgotPassword: 'Forgot Password',
     email: 'Email',
     password: 'Password',
+    newPassword: 'New Password',
     confirmPassword: 'Confirm Password',
     name: 'Name',
     shopName: 'Shop Name',
@@ -462,6 +469,8 @@ const translations: Record<Language, TranslationKeys> = {
     areYouSure: 'Are you sure?',
     thisActionCannot: 'This action cannot be undone',
     added: 'Added successfully',
+    csvDownloaded: 'CSV downloaded successfully',
+    jsonDownloaded: 'JSON downloaded successfully',
     updated: 'Updated successfully',
     deleted: 'Deleted successfully',
     success: 'Success',
@@ -531,6 +540,7 @@ const translations: Record<Language, TranslationKeys> = {
     forgotPassword: 'पासवर्ड भूल गए',
     email: 'ईमेल',
     password: 'पासवर्ड',
+    newPassword: 'नया पासवर्ड',
     confirmPassword: 'पासवर्ड की पुष्टि करें',
     name: 'नाम',
     shopName: 'दुकान का नाम',
@@ -622,6 +632,8 @@ const translations: Record<Language, TranslationKeys> = {
     areYouSure: 'क्या आप सुनिश्चित हैं?',
     thisActionCannot: 'यह काम पूर्ववत नहीं किया जा सकता',
     added: 'सफलतापूर्वक जोड़ा गया',
+    csvDownloaded: 'CSV डाउनलोड हो गया',
+    jsonDownloaded: 'JSON डाउनलोड हो गया',
     updated: 'सफलतापूर्वक अपडेट किया',
     deleted: 'सफलतापूर्वक मिटाया गया',
     success: 'सफल',

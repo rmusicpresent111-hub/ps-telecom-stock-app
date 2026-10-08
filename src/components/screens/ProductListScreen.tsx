@@ -41,7 +41,9 @@ const ProductItem = memo(function ProductItem({ product, categoryName, onTap }: 
           </div>
         </div>
         <div className="text-right ml-3">
-          <p className="text-xs text-green-400 font-semibold">+₹{profit}</p>
+          <p className={`text-xs font-semibold ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {profit >= 0 ? '+' : ''}₹{profit.toLocaleString()}
+          </p>
           <span className={`text-[10px] px-2 py-0.5 rounded-full mt-1 inline-block ${
             isLow ? 'bg-orange-500/20 text-orange-400' : 'bg-green-500/20 text-green-400'
           }`}>
@@ -58,12 +60,19 @@ export default function ProductListScreen() {
   const language = useAppStore(s => s.language);
   const navigateTo = useAppStore(s => s.navigateTo);
   const searchQuery = useAppStore(s => s.searchQuery);
+  const setSearchQuery = useAppStore(s => s.setSearchQuery);
   const setSelectedProductId = useAppStore(s => s.setSelectedProductId);
   const categories = useAppStore(s => s.categories);
 
   const [products, setProducts] = useState<Product[]>([]);
+  // Seed once from the dashboard search handoff, then clear the global query so
+  // stale searches don't pre-filter every future visit.
   const [localSearch, setLocalSearch] = useState(searchQuery);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (searchQuery) setSearchQuery('');
+  }, []);
 
   // Debounce search to avoid API calls on every keystroke
   const debouncedSearch = useDebounce(localSearch, 400);
@@ -108,7 +117,7 @@ export default function ProductListScreen() {
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-lg font-bold neon-glow">{t('products', language)}</h1>
           <button
-            onClick={() => navigateTo('add-product')}
+            onClick={() => { setSelectedProductId(null); navigateTo('add-product'); }}
             className="p-2 rounded-full glass-card"
             aria-label="Add Product"
           >
@@ -136,7 +145,7 @@ export default function ProductListScreen() {
             <div className="text-center py-12">
               <p className="text-white/40 text-sm">{t('noData', language)}</p>
               <button
-                onClick={() => navigateTo('add-product')}
+                onClick={() => { setSelectedProductId(null); navigateTo('add-product'); }}
                 className="neon-btn mt-4 px-4 py-2 text-sm"
               >
                 + {t('addProduct', language)}

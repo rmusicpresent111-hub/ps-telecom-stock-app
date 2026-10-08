@@ -6,7 +6,7 @@ import { t } from '@/lib/i18n';
 import { Product, Transaction, ServiceTransaction } from '@/lib/types';
 import { TrendingUp, Calendar, ChevronDown, Package, IndianRupee, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { toast } from 'sonner';
-import { getTransactionsOffline, getProductsOffline, getServiceTransactionsOffline } from '@/lib/offline-service';
+import { getTransactionsOffline, getProductsOffline, getServiceTransactionsOffline, localDateStr } from '@/lib/offline-service';
 import { motion, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
 
@@ -71,32 +71,37 @@ const presetLabels: Record<DatePreset, { en: string; bn: string; hi: string }> =
 };
 
 function getDateRange(preset: DatePreset, customFrom?: string, customTo?: string): { from: string; to: string } {
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateStr();
   switch (preset) {
     case 'today':
       return { from: today, to: today };
     case 'yesterday': {
       const y = new Date();
       y.setDate(y.getDate() - 1);
-      return { from: y.toISOString().split('T')[0], to: y.toISOString().split('T')[0] };
+      const yStr = localDateStr(y);
+      return { from: yStr, to: yStr };
     }
     case '7days': {
       const d = new Date();
       d.setDate(d.getDate() - 6);
-      return { from: d.toISOString().split('T')[0], to: today };
+      return { from: localDateStr(d), to: today };
     }
     case '30days': {
       const d = new Date();
       d.setDate(d.getDate() - 29);
-      return { from: d.toISOString().split('T')[0], to: today };
+      return { from: localDateStr(d), to: today };
     }
     case 'thisMonth': {
       const now = new Date();
-      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-      return { from: firstDay, to: today };
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { from: localDateStr(firstDay), to: today };
     }
-    case 'custom':
-      return { from: customFrom || today, to: customTo || today };
+    case 'custom': {
+      // Guard against inverted custom ranges (from > to) — swap instead of silently showing nothing.
+      const from = customFrom || today;
+      const to = customTo || today;
+      return from <= to ? { from, to } : { from: to, to: from };
+    }
     default:
       return { from: today, to: today };
   }
@@ -107,8 +112,8 @@ export default function ProfitScreen() {
   const language = useAppStore(s => s.language);
 
   const [preset, setPreset] = useState<DatePreset>('today');
-  const [customFrom, setCustomFrom] = useState(new Date().toISOString().split('T')[0]);
-  const [customTo, setCustomTo] = useState(new Date().toISOString().split('T')[0]);
+  const [customFrom, setCustomFrom] = useState(localDateStr());
+  const [customTo, setCustomTo] = useState(localDateStr());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -160,14 +165,26 @@ export default function ProfitScreen() {
     return map;
   }, [products]);
 
-  // Calculate total profit for the selected period
-  const totalProfit = useMemo(() => {
+  // Cost basis uses the SNAPSHOT captured on the transaction at sale time —
+  // editing a product's purchase price today must never rewrite historical profit.
+  const costOf = useCallback((t: Transaction): number => {
+    const snapshot = t.product?.purchasePrice;
+    const current = productMap.get(t.productId)?.purchasePrice;
+    return (t.quantity || 0) * (snapshot ?? current ?? 0);
+  }, [productMap]);
+
+  // Product-only profit (Revenue − Cost) — consistent with the stat cards below.
+  const productProfit = useMemo(() => {
     let profit = 0;
     for (const t of sellTransactions) {
-      const product = productMap.get(t.productId);
-      const cost = (t.quantity || 0) * (product?.purchasePrice ?? 0);
-      profit += (t.totalAmount || 0) - cost;
+      profit += (t.totalAmount || 0) - costOf(t);
     }
+    return profit;
+  }, [sellTransactions, costOf]);
+
+  // Calculate total profit for the selected period (product profit + net service income)
+  const totalProfit = useMemo(() => {
+    let profit = productProfit;
     // Add service income and subtract service expense
     const filteredServiceTxns = serviceTransactions.filter(
       s => s.date >= dateRange.from && s.date <= dateRange.to
@@ -180,7 +197,7 @@ export default function ProfitScreen() {
       }
     }
     return profit;
-  }, [sellTransactions, productMap, serviceTransactions, dateRange]);
+  }, [productProfit, serviceTransactions, dateRange]);
 
   const totalRevenue = useMemo(() => {
     return sellTransactions.reduce((sum, t) => sum + (t.totalAmount || 0), 0);
@@ -189,11 +206,10 @@ export default function ProfitScreen() {
   const totalCost = useMemo(() => {
     let cost = 0;
     for (const t of sellTransactions) {
-      const product = productMap.get(t.productId);
-      cost += (t.quantity || 0) * (product?.purchasePrice ?? 0);
+      cost += costOf(t);
     }
     return cost;
-  }, [sellTransactions, productMap]);
+  }, [sellTransactions, costOf]);
 
   const totalItemsSold = useMemo(() => {
     return sellTransactions.reduce((sum, t) => sum + (t.quantity || 0), 0);
@@ -205,11 +221,13 @@ export default function ProfitScreen() {
 
     for (const t of sellTransactions) {
       const product = productMap.get(t.productId);
-      if (!product) continue;
+      // Deleted products still count — their sale-time snapshot (t.product) keeps
+      // totals consistent with the breakdown.
+      const name = product?.name ?? t.product?.name ?? 'Unknown';
 
       const existing = map.get(t.productId) || {
         productId: t.productId,
-        productName: product.name,
+        productName: name,
         quantitySold: 0,
         revenue: 0,
         cost: 0,
@@ -217,10 +235,13 @@ export default function ProfitScreen() {
         margin: 0,
       };
 
+      const saleRevenue = t.totalAmount || 0;
+      const saleCost = (t.quantity || 0) * (t.product?.purchasePrice ?? product?.purchasePrice ?? 0);
+
       existing.quantitySold += t.quantity || 0;
-      existing.revenue += t.totalAmount || 0;
-      existing.cost += (t.quantity || 0) * product.purchasePrice;
-      existing.profit += (t.totalAmount || 0) - (t.quantity || 0) * product.purchasePrice;
+      existing.revenue += saleRevenue;
+      existing.cost += saleCost;
+      existing.profit += saleRevenue - saleCost;
       existing.margin = existing.revenue > 0 ? Math.round((existing.profit / existing.revenue) * 100) : 0;
 
       map.set(t.productId, existing);
@@ -234,11 +255,13 @@ export default function ProfitScreen() {
   const chartData = useMemo(() => {
     const dailyMap = new Map<string, { name: string; profit: number; revenue: number }>();
 
-    // Fill all dates in range
-    const start = new Date(dateRange.from);
-    const end = new Date(dateRange.to);
+    // Fill all dates in range (local dates — never UTC)
+    const [sy, sm, sd] = dateRange.from.split('-').map(Number);
+    const [ey, em, ed] = dateRange.to.split('-').map(Number);
+    const start = new Date(sy, (sm || 1) - 1, sd || 1);
+    const end = new Date(ey, (em || 1) - 1, ed || 1);
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = localDateStr(d);
       const dayLabel = d.toLocaleDateString('en-US', { day: '2-digit', month: 'short' });
       dailyMap.set(dateStr, { name: dayLabel, profit: 0, revenue: 0 });
     }
@@ -246,8 +269,7 @@ export default function ProfitScreen() {
     for (const t of sellTransactions) {
       const existing = dailyMap.get(t.date);
       if (existing) {
-        const product = productMap.get(t.productId);
-        const cost = (t.quantity || 0) * (product?.purchasePrice ?? 0);
+        const cost = (t.quantity || 0) * (t.product?.purchasePrice ?? productMap.get(t.productId)?.purchasePrice ?? 0);
         existing.revenue += t.totalAmount || 0;
         existing.profit += (t.totalAmount || 0) - cost;
       }
@@ -261,7 +283,9 @@ export default function ProfitScreen() {
     return showAllProducts ? productProfits : productProfits.slice(0, 5);
   }, [productProfits, showAllProducts]);
 
-  const profitMargin = totalRevenue > 0 ? Math.round((totalProfit / totalRevenue) * 100) : 0;
+  // Margin based on PRODUCT profit vs product revenue (service income would
+  // otherwise push margin above 100%).
+  const profitMargin = totalRevenue > 0 ? Math.round((productProfit / totalRevenue) * 100) : 0;
 
   return (
     <div className="animated-bg min-h-screen pb-24">

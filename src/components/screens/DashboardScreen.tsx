@@ -4,9 +4,7 @@ import { useEffect, useState, useCallback, useMemo, memo, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
-import { getDashboard } from '@/lib/offline-service';
-import { isOnline as checkOnline } from '@/lib/sync-engine';
-import { invalidateCache, cacheKeys } from '@/lib/cache';
+import { getDashboard, localDateStr } from '@/lib/offline-service';
 import { DashboardStats, Category, Product } from '@/lib/types';
 import { Search, Plus, Package, AlertTriangle, ArrowLeftRight, IndianRupee, User, ChevronRight, TrendingUp, BarChart3, ArrowUpRight, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
@@ -199,6 +197,7 @@ export default function DashboardScreen() {
   const navigateTo = useAppStore(s => s.navigateTo);
   const navigateToTab = useAppStore(s => s.navigateToTab);
   const setSelectedCategoryId = useAppStore(s => s.setSelectedCategoryId);
+  const setSelectedProductId = useAppStore(s => s.setSelectedProductId);
   const setSelectedServiceCategory = useAppStore(s => s.setSelectedServiceCategory);
   const setSearchQuery = useAppStore(s => s.setSearchQuery);
   const searchQuery = useAppStore(s => s.searchQuery);
@@ -211,10 +210,7 @@ export default function DashboardScreen() {
   const [stockOverview, setStockOverview] = useState<StockOverviewItem[]>([]);
   const [todayProfit, setTodayProfit] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [isOffline, setIsOffline] = useState(!checkOnline());
   const isFetchingRef = useRef(false);
-
-  // Listen for online/offline status changes
   const fetchDashboard = useCallback(async (isBackground = false) => {
     if (!user?.id || isFetchingRef.current) return;
 
@@ -231,19 +227,16 @@ export default function DashboardScreen() {
       }
 
       // Calculate today's profit from transactions
-      // Profit = sellingPrice - purchasePrice per unit sold
-      const today = new Date().toISOString().split('T')[0];
-      const { getTransactionsOffline: getTxns, getProductsOffline: getProds } = await import('@/lib/offline-service');
-      const [todayTxns, allProducts] = await Promise.all([
-        getTxns(user.id, { from: today, to: today }),
-        getProds(user.id),
-      ]);
-      const sellTxns = (todayTxns || []).filter((tx: { type: string }) => tx.type === 'SELL');
-      const prodMap = new Map((allProducts || []).map((p: Product) => [p.id, p]));
+      // Profit = totalAmount - (quantity × purchase price SNAPSHOT at sale time)
+      const today = localDateStr();
+      const { getTransactionsOffline: getTxns } = await import('@/lib/offline-service');
+      const todayTxns = await getTxns(user.id, { from: today, to: today });
+      const sellTxns = (todayTxns || []).filter((tx) => tx.type === 'SELL');
       let profit = 0;
       for (const tx of sellTxns) {
-        const prod = prodMap.get(tx.productId);
-        const cost = (tx.quantity || 0) * (prod?.purchasePrice ?? 0);
+        // Use the snapshot captured on the transaction — current product price edits
+        // must not rewrite today's profit.
+        const cost = (tx.quantity || 0) * (tx.product?.purchasePrice ?? 0);
         profit += (tx.totalAmount || 0) - cost;
       }
       setTodayProfit(profit);
@@ -260,36 +253,14 @@ export default function DashboardScreen() {
     fetchDashboard();
   }, [fetchDashboard]);
 
-  // ✅ Listen for online/offline changes
-  useEffect(() => {
-    const handleOnlineStatus = (e: Event) => {
-      const online = e instanceof CustomEvent ? e.detail : navigator.onLine;
-      setIsOffline(!online);
-      if (online) {
-        // Back online - refresh data
-        invalidateCache(cacheKeys.dashboard(user?.id || ''));
-        fetchDashboard(true);
-      }
-    };
-    window.addEventListener('app:online-status', handleOnlineStatus);
-    window.addEventListener('online', handleOnlineStatus);
-    window.addEventListener('offline', handleOnlineStatus);
-    return () => {
-      window.removeEventListener('app:online-status', handleOnlineStatus);
-      window.removeEventListener('online', handleOnlineStatus);
-      window.removeEventListener('offline', handleOnlineStatus);
-    };
-  }, [user?.id, fetchDashboard]);
-
   // ✅ Background refresh on window focus (stale-while-revalidate)
   useEffect(() => {
     const handleFocus = () => {
-      invalidateCache(cacheKeys.dashboard(user?.id || ''));
       fetchDashboard(true);
     };
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
-  }, [user?.id, fetchDashboard]);
+  }, [fetchDashboard]);
 
   const handleCategoryTap = useCallback((cat: Category) => {
     setSelectedCategoryId(cat.id);
@@ -345,16 +316,6 @@ export default function DashboardScreen() {
   return (
     <div className="animated-bg min-h-screen pb-24">
       <div className="max-w-md mx-auto px-4 pt-4">
-        {/* Offline Banner */}
-        {isOffline && (
-          <div className="mb-4 px-4 py-2 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-orange-400 animate-pulse" />
-            <span className="text-xs text-orange-300 font-medium">
-              {language === 'bn' ? 'অফলাইন মোড - লোকাল ডেটা দেখাচ্ছে' : language === 'hi' ? 'ऑफ़लाइन मोड - स्थानीय डेटा दिखा रहा है' : 'Offline Mode - Showing local data'}
-            </span>
-          </div>
-        )}
-
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <button
@@ -366,7 +327,7 @@ export default function DashboardScreen() {
           </button>
           <h1 className="text-xl font-bold neon-glow">{shopName}</h1>
           <button
-            onClick={() => navigateTo('add-product')}
+            onClick={() => { setSelectedProductId(null); navigateTo('add-product'); }}
             className="p-2 rounded-full glass-card"
             aria-label="Add Product"
           >

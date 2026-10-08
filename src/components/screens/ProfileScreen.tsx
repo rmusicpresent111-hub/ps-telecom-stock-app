@@ -104,6 +104,7 @@ export default function ProfileScreen() {
         transactions: backupData.transactions || [],
         expenses: backupData.expenses || [],
         cashEntries: backupData.cashEntries || [],
+        serviceTransactions: backupData.serviceTransactions || [],
       });
       toast.success(t('restore', language) + ' ✓');
     } catch (error) {

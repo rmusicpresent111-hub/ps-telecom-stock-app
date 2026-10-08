@@ -23,6 +23,7 @@ export default function ProductDetailScreen() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Memoize category lookup
   const categoryMap = useMemo(() => {
@@ -61,7 +62,8 @@ export default function ProductDetailScreen() {
   }, [navigateTo]);
 
   const handleDelete = useCallback(async () => {
-    if (!selectedProductId) return;
+    if (!selectedProductId || deleting) return;
+    setDeleting(true);
     try {
       await deleteProductOffline(selectedProductId, user?.id || '');
       toast.success(t('deleted', language));
@@ -69,9 +71,11 @@ export default function ProductDetailScreen() {
       goBack();
     } catch (error) {
       toast.error((error as Error).message || t('error', language));
+    } finally {
+      setDeleting(false);
+      setShowDeleteDialog(false);
     }
-    setShowDeleteDialog(false);
-  }, [selectedProductId, language, setSelectedProductId, goBack]);
+  }, [selectedProductId, deleting, language, setSelectedProductId, goBack, user?.id]);
 
   const handleStockOperation = useCallback((type: 'STOCK_IN' | 'STOCK_OUT' | 'SELL') => {
     setStockOperationType(type);
@@ -161,7 +165,9 @@ export default function ProductDetailScreen() {
               <IndianRupee size={14} className="text-white/40" />
               <div>
                 <p className="text-[10px] text-white/40">Profit/Unit</p>
-                <p className="text-sm font-bold text-green-400">+₹{profit}</p>
+                <p className={`text-sm font-bold ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {profit >= 0 ? '+' : ''}₹{profit.toLocaleString()}
+                </p>
               </div>
             </div>
           </div>
@@ -256,9 +262,10 @@ export default function ProductDetailScreen() {
                 </button>
                 <button
                   onClick={handleDelete}
-                  className="flex-1 py-2 text-sm font-semibold rounded-xl bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30 transition-colors"
+                  disabled={deleting}
+                  className="flex-1 py-2 text-sm font-semibold rounded-xl bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-50"
                 >
-                  {t('delete', language)}
+                  {deleting ? t('loading', language) : t('delete', language)}
                 </button>
               </div>
             </motion.div>

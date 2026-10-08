@@ -34,15 +34,19 @@ export async function initCapacitorBridge(): Promise<void> {
 
     // Pre-register back button handler at the native level
     // This prevents the app from closing before React even mounts
+    // NOTE: flag is set SYNCHRONOUSLY before the async addListener call —
+    // two rapid initCapacitorBridge() calls (e.g. HMR) could otherwise both
+    // pass the guard and register duplicate native listeners.
     if (!_backButtonRegistered) {
+      _backButtonRegistered = true;
       App.addListener('backButton', () => {
         // Dispatch a custom event that the React app will listen to
         console.log('[CapacitorInit] Native back button pressed → dispatching app:back-button');
         window.dispatchEvent(new CustomEvent('app:back-button'));
       }).then(() => {
-        _backButtonRegistered = true;
         console.log('[CapacitorInit] Native backButton listener registered ✅');
       }).catch((err: unknown) => {
+        _backButtonRegistered = false; // allow retry on next call
         console.warn('[CapacitorInit] Failed to register backButton listener:', err);
       });
     }

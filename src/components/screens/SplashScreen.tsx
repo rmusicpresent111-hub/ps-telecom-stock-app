@@ -3,8 +3,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAppStore } from '@/store/appStore';
-import { getProfileOffline } from '@/lib/offline-service';
-import { initialSyncForUser } from '@/lib/sync-engine';
 
 const floatingIcons = ['📱', '🎧', '🔌', '⌚', '📺'];
 
@@ -56,33 +54,10 @@ export default function SplashScreen() {
       if (!seenTutorial) {
         // First time user → Welcome + Tutorial + Login flow
         resetNavigation('welcome');
-      } else if (authenticated) {
-        // Returning user - verify user still exists in Supabase
-        const currentUser = useAppStore.getState().user;
-        if (currentUser?.id) {
-          getProfileOffline(currentUser.id)
-            .then((data) => {
-              // If offline, data will be null - still allow dashboard access
-              if (data === null) {
-                // Offline mode - proceed with cached user
-                resetNavigation('dashboard');
-                initialSyncForUser(currentUser.id).catch(() => {});
-                return;
-              }
-              resetNavigation('dashboard');
-              // Start background offline sync
-              initialSyncForUser(currentUser.id).catch(() => {});
-            })
-            .catch(() => {
-              // Even on error, allow offline access if we have cached user
-              resetNavigation('dashboard');
-              initialSyncForUser(currentUser.id).catch(() => {});
-            });
-        } else {
-          resetNavigation('login');
-        }
+      } else if (authenticated && useAppStore.getState().user?.id) {
+        // Returning user — session is stored locally, go straight to dashboard
+        resetNavigation('dashboard');
       } else {
-        // Returning user, not logged in → Login directly
         resetNavigation('login');
       }
     }

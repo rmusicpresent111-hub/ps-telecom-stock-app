@@ -19,6 +19,7 @@ import {
   updateExpenseOffline, 
   deleteExpenseOffline 
 } from '@/lib/offline-service';
+import { localDateStr } from '@/lib/offline-service';
 
 interface CashEntry {
   id: string;
@@ -63,7 +64,7 @@ export default function DailyBookScreen() {
   const [cashEntries, setCashEntries] = useState<CashEntry[]>([]);
   const [summary, setSummary] = useState({ totalHandCash: 0, totalLiquidCash: 0, totalCash: 0 });
   const [showCashForm, setShowCashForm] = useState(false);
-  const [cashDate, setCashDate] = useState(new Date().toISOString().split('T')[0]);
+  const [cashDate, setCashDate] = useState(localDateStr());
   const [handCashInput, setHandCashInput] = useState('');
   const [liquidCashInput, setLiquidCashInput] = useState('');
   const [cashNote, setCashNote] = useState('');
@@ -73,7 +74,7 @@ export default function DailyBookScreen() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [expenseSummary, setExpenseSummary] = useState({ totalExpense: 0, byCategory: {} as Record<string, number>, count: 0 });
   const [showExpenseForm, setShowExpenseForm] = useState(false);
-  const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split('T')[0]);
+  const [expenseDate, setExpenseDate] = useState(localDateStr());
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseCategory, setExpenseCategory] = useState('other');
   const [expenseDesc, setExpenseDesc] = useState('');
@@ -83,6 +84,9 @@ export default function DailyBookScreen() {
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(false);
+
+  // Delete confirmation (single-tap delete used to destroy data instantly)
+  const [confirmDelete, setConfirmDelete] = useState<{ type: 'cash' | 'expense'; id: string } | null>(null);
 
   const isBn = language === 'bn';
   const isHi = language === 'hi';
@@ -117,28 +121,41 @@ export default function DailyBookScreen() {
   // Cash form handlers
   const handleSaveCash = async () => {
     if (!user?.id) return;
+
+    // Validate amounts — NaN/negative values poison the cash summary ("₹NaN")
+    const hand = Number(handCashInput || 0);
+    const liquid = Number(liquidCashInput || 0);
+    if (!Number.isFinite(hand) || hand < 0 || !Number.isFinite(liquid) || liquid < 0) {
+      toast.error(isBn ? 'ত্রুটি' : isHi ? 'ত্রুটি' : 'Error', { description: 'Cash amounts cannot be negative' });
+      return;
+    }
+    if (hand === 0 && liquid === 0) {
+      toast.error(isBn ? 'ত্রুটি' : isHi ? 'ত্রুটি' : 'Error', { description: 'Enter at least one cash amount' });
+      return;
+    }
+
     setLoading(true);
     try {
       if (editingCashId) {
         await updateCashEntryOffline(editingCashId, {
-          handCash: parseFloat(handCashInput) || 0,
-          liquidCash: parseFloat(liquidCashInput) || 0,
+          handCash: hand,
+          liquidCash: liquid,
           note: cashNote,
         }, user.id);
       } else {
         await upsertCashEntryOffline({
           userId: user.id,
           date: cashDate,
-          handCash: parseFloat(handCashInput) || 0,
-          liquidCash: parseFloat(liquidCashInput) || 0,
+          handCash: hand,
+          liquidCash: liquid,
           note: cashNote,
         });
       }
       toast.success(isBn ? 'সংরক্ষিত হয়েছে' : isHi ? 'संरक्षित' : 'Saved successfully');
       resetCashForm();
       fetchCashEntries();
-    } catch {
-      toast.error(isBn ? 'ত্রুটি' : isHi ? 'त्रुटि' : 'Error');
+    } catch (error) {
+      toast.error(isBn ? 'ত্রুটি' : isHi ? 'त्रुटि' : 'Error', { description: (error as Error).message });
     } finally {
       setLoading(false);
     }
@@ -150,7 +167,7 @@ export default function DailyBookScreen() {
     setLiquidCashInput('');
     setCashNote('');
     setEditingCashId(null);
-    setCashDate(new Date().toISOString().split('T')[0]);
+    setCashDate(localDateStr());
   };
 
   const handleEditCash = (entry: CashEntry) => {
@@ -162,9 +179,13 @@ export default function DailyBookScreen() {
     setShowCashForm(true);
   };
 
-  const handleDeleteCash = async (id: string) => {
+  const confirmDeleteCash = async () => {
+    // Close the dialog FIRST so a double-tap can never fire the delete twice
+    const target = confirmDelete;
+    setConfirmDelete(null);
+    if (!target || target.type !== 'cash') return;
     try {
-      await deleteCashEntryOffline(id, user?.id || '');
+      await deleteCashEntryOffline(target.id, user?.id || '');
       toast.success(isBn ? 'মুছে ফেলা হয়েছে' : isHi ? 'मिटाया गया' : 'Deleted');
       fetchCashEntries();
     } catch {
@@ -174,11 +195,18 @@ export default function DailyBookScreen() {
 
   const handleSaveExpense = async () => {
     if (!user?.id || !expenseAmount) return;
+
+    const amount = Number(expenseAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error(isBn ? 'ত্রুটি' : isHi ? 'त्रुटि' : 'Error', { description: 'Expense amount must be greater than 0' });
+      return;
+    }
+
     setLoading(true);
     try {
       if (editingExpenseId) {
         await updateExpenseOffline(editingExpenseId, {
-          amount: parseFloat(expenseAmount),
+          amount,
           category: expenseCategory,
           description: expenseDesc,
         }, user.id);
@@ -186,7 +214,7 @@ export default function DailyBookScreen() {
         await createExpenseOffline({
           userId: user.id,
           date: expenseDate,
-          amount: parseFloat(expenseAmount),
+          amount,
           category: expenseCategory,
           description: expenseDesc,
         });
@@ -194,8 +222,8 @@ export default function DailyBookScreen() {
       toast.success(isBn ? 'সংরক্ষিত হয়েছে' : isHi ? 'संरक्षित' : 'Saved successfully');
       resetExpenseForm();
       fetchExpenses();
-    } catch {
-      toast.error(isBn ? 'ত্রুটি' : isHi ? 'त्रुटि' : 'Error');
+    } catch (error) {
+      toast.error(isBn ? 'ত্রুটি' : isHi ? 'त्रुटि' : 'Error', { description: (error as Error).message });
     } finally {
       setLoading(false);
     }
@@ -207,7 +235,7 @@ export default function DailyBookScreen() {
     setExpenseCategory('other');
     setExpenseDesc('');
     setEditingExpenseId(null);
-    setExpenseDate(new Date().toISOString().split('T')[0]);
+    setExpenseDate(localDateStr());
   };
 
   const handleEditExpense = (exp: Expense) => {
@@ -219,9 +247,12 @@ export default function DailyBookScreen() {
     setShowExpenseForm(true);
   };
 
-  const handleDeleteExpense = async (id: string) => {
+  const confirmDeleteExpense = async () => {
+    const target = confirmDelete;
+    setConfirmDelete(null);
+    if (!target || target.type !== 'expense') return;
     try {
-      await deleteExpenseOffline(id, user?.id || '');
+      await deleteExpenseOffline(target.id, user?.id || '');
       toast.success(isBn ? 'মুছে ফেলা হয়েছে' : isHi ? 'मिटाया गया' : 'Deleted');
       fetchExpenses();
     } catch {
@@ -561,7 +592,7 @@ export default function DailyBookScreen() {
                         <button onClick={() => handleEditCash(entry)} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
                           <Edit3 size={14} className="text-white/40" />
                         </button>
-                        <button onClick={() => handleDeleteCash(entry.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors">
+                        <button onClick={() => setConfirmDelete({ type: 'cash', id: entry.id })} className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors" aria-label="Delete entry">
                           <Trash2 size={14} className="text-red-400/60" />
                         </button>
                       </div>
@@ -640,7 +671,7 @@ export default function DailyBookScreen() {
                             <button onClick={() => handleEditExpense(exp)} className="p-1 rounded hover:bg-white/10">
                               <Edit3 size={12} className="text-white/30" />
                             </button>
-                            <button onClick={() => handleDeleteExpense(exp.id)} className="p-1 rounded hover:bg-red-500/10">
+                            <button onClick={() => setConfirmDelete({ type: 'expense', id: exp.id })} className="p-1 rounded hover:bg-red-500/10" aria-label="Delete expense">
                               <Trash2 size={12} className="text-red-400/40" />
                             </button>
                           </div>
@@ -800,7 +831,8 @@ export default function DailyBookScreen() {
                   type="date"
                   value={cashDate}
                   onChange={(e) => setCashDate(e.target.value)}
-                  className="glass-input w-full px-4 py-3 text-sm"
+                  disabled={!!editingCashId}
+                  className="glass-input w-full px-4 py-3 text-sm disabled:opacity-50"
                 />
               </div>
 
@@ -907,7 +939,8 @@ export default function DailyBookScreen() {
                   type="date"
                   value={expenseDate}
                   onChange={(e) => setExpenseDate(e.target.value)}
-                  className="glass-input w-full px-4 py-3 text-sm"
+                  disabled={!!editingExpenseId}
+                  className="glass-input w-full px-4 py-3 text-sm disabled:opacity-50"
                 />
               </div>
 
@@ -987,6 +1020,57 @@ export default function DailyBookScreen() {
                   }}
                 >
                   {loading ? '...' : isBn ? 'সংরক্ষণ' : isHi ? 'संरक्षित करें' : 'Save'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete confirmation dialog (cash & expense) */}
+      <AnimatePresence>
+        {confirmDelete && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-6"
+            onClick={() => setConfirmDelete(null)}
+          >
+            <div className="absolute inset-0 bg-black/60" />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              onClick={(e) => e.stopPropagation()}
+              className="glass-card-strong p-6 w-full max-w-sm relative z-10"
+            >
+              <div className="w-14 h-14 rounded-full bg-red-500/15 flex items-center justify-center mx-auto mb-4">
+                <Trash2 size={24} className="text-red-400" />
+              </div>
+              <h3 className="text-lg font-bold text-center mb-2">
+                {isBn ? 'মুছে ফেলবেন?' : isHi ? 'हटाएं?' : 'Delete this entry?'}
+              </h3>
+              <p className="text-sm text-white/50 text-center mb-6">
+                {isBn ? 'এই অ্যাকশনটি ফেরানো যাবে না।' : isHi ? 'यह कार्य वापस नहीं किया जा सकता।' : 'This action cannot be undone.'}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setConfirmDelete(null)}
+                  className="flex-1 glass-card py-3 text-sm font-semibold text-white/70 rounded-xl hover:bg-white/10 transition-colors"
+                >
+                  {isBn ? 'বাতিল' : isHi ? 'रद्द करें' : 'Cancel'}
+                </button>
+                <button
+                  onClick={confirmDelete.type === 'cash' ? confirmDeleteCash : confirmDeleteExpense}
+                  className="flex-1 py-3 text-sm font-semibold rounded-xl text-white transition-all"
+                  style={{
+                    background: 'linear-gradient(135deg, #dc2626, #b91c1c)',
+                    border: '1px solid rgba(220,38,38,0.5)',
+                  }}
+                >
+                  {isBn ? 'মুছুন' : isHi ? 'हटाएं' : 'Delete'}
                 </button>
               </div>
             </motion.div>

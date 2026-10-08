@@ -141,11 +141,14 @@ export default function ReportsScreen() {
       return;
     }
 
+    // Proper CSV escaping - a quote/comma in a name used to corrupt the file
+    const esc = (v: unknown) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+
     let csv = '';
     if (tab === 'stock-value') {
       csv = 'Category,Products,Quantity,Purchase Value,Selling Value,Profit,Low Stock\n';
       stockValueData.forEach((d) => {
-        csv += `"${d.categoryName}",${d.productCount},${d.totalQty},${d.totalPurchaseValue},${d.totalSellingValue},${d.totalProfit},${d.lowStockCount}\n`;
+        csv += `${esc(d.categoryName)},${d.productCount},${d.totalQty},${d.totalPurchaseValue},${d.totalSellingValue},${d.totalProfit},${d.lowStockCount}\n`;
       });
       if (grandTotal) {
         csv += `\nTOTAL,${grandTotal.totalProducts},${grandTotal.totalQty},${grandTotal.totalPurchaseValue},${grandTotal.totalSellingValue},${grandTotal.totalProfit},${grandTotal.totalLowStock}\n`;
@@ -155,13 +158,13 @@ export default function ReportsScreen() {
       csv += 'Category,Product,Quantity,Purchase Price,Selling Price,Stock Value,Low Stock\n';
       stockValueData.forEach((cat) => {
         cat.products.forEach((p) => {
-          csv += `"${cat.categoryName}","${p.name}",${p.quantity},${p.purchasePrice},${p.sellingPrice},${p.stockValue},${p.lowStock ? 'Yes' : 'No'}\n`;
+          csv += `${esc(cat.categoryName)},${esc(p.name)},${p.quantity},${p.purchasePrice},${p.sellingPrice},${p.stockValue},${p.lowStock ? 'Yes' : 'No'}\n`;
         });
       });
     } else if (tab === 'category') {
       csv = 'Category,Revenue,Cost,Profit,Items Sold,Items Stocked In\n';
       categoryData.forEach((d) => {
-        csv += `${d.categoryName},${d.revenue},${d.cost},${d.profit},${d.sell},${d.stockIn}\n`;
+        csv += `${esc(d.categoryName)},${d.revenue},${d.cost},${d.profit},${d.sell},${d.stockIn}\n`;
       });
     } else if (tab === 'daily') {
       csv = 'Date,Revenue,Cost,Profit,Items Sold,Stock In,Stock Out\n';
@@ -182,7 +185,7 @@ export default function ReportsScreen() {
     a.download = `ps-telecom-${tab}-report-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success('CSV ' + t('added', language).replace(/^[^]*? /, ''));
+    toast.success(t('csvDownloaded', language));
   };
 
   const exportJSON = () => {
@@ -203,7 +206,7 @@ export default function ReportsScreen() {
     a.download = `ps-telecom-${tab}-report-${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success('JSON ✓');
+    toast.success(t('jsonDownloaded', language));
   };
 
   const toggleCategory = (catId: string) => {

@@ -39,6 +39,8 @@ export default function ServiceCategoryScreen() {
   const [transactionType, setTransactionType] = useState<'income' | 'expense'>('income');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Delete needs an explicit confirmation - single-tap delete destroyed data instantly
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const fetchTransactions = useCallback(async () => {
     if (!user?.id || !categoryType) return;
@@ -61,7 +63,7 @@ export default function ServiceCategoryScreen() {
     if (!user?.id || !categoryType) return;
     const parsedAmount = parseFloat(amount);
     if (!parsedAmount || parsedAmount <= 0) {
-      toast.error(language === 'bn' ? 'পরিমাণ লিখুন' : language === 'hi' ? 'राशन दर्ज करें' : 'Enter amount');
+      toast.error(language === 'bn' ? 'পরিমাণ লিখুন' : language === 'hi' ? 'राशि दर्ज करें' : 'Enter amount');
       return;
     }
 
@@ -85,10 +87,13 @@ export default function ServiceCategoryScreen() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!user?.id) return;
+  const confirmDelete = async () => {
+    // Close the dialog FIRST so a double-tap can never fire the delete twice
+    const target = confirmDeleteId;
+    setConfirmDeleteId(null);
+    if (!target || !user?.id) return;
     try {
-      await deleteServiceTransactionOffline(id, user.id);
+      await deleteServiceTransactionOffline(target, user.id);
       toast.success(language === 'bn' ? 'মুছে ফেলা হয়েছে' : language === 'hi' ? 'हटाया गया' : 'Deleted');
       fetchTransactions();
     } catch {
@@ -281,7 +286,7 @@ export default function ServiceCategoryScreen() {
                           {txn.transactionType === 'income' ? '+' : '-'}₹{txn.amount.toLocaleString()}
                         </span>
                         <button
-                          onClick={() => handleDelete(txn.id)}
+                          onClick={() => setConfirmDeleteId(txn.id)}
                           className="p-1.5 rounded-lg hover:bg-red-500/20 transition-colors"
                           aria-label="Delete"
                         >
@@ -296,6 +301,57 @@ export default function ServiceCategoryScreen() {
           )}
         </div>
       </div>
+
+      {/* Delete confirmation dialog */}
+      <AnimatePresence>
+        {confirmDeleteId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-6"
+            onClick={() => setConfirmDeleteId(null)}
+          >
+            <div className="absolute inset-0 bg-black/60" />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              onClick={(e) => e.stopPropagation()}
+              className="glass-card-strong p-6 w-full max-w-sm relative z-10"
+            >
+              <div className="w-14 h-14 rounded-full bg-red-500/15 flex items-center justify-center mx-auto mb-4">
+                <Trash2 size={24} className="text-red-400" />
+              </div>
+              <h3 className="text-lg font-bold text-center mb-2">
+                {language === 'bn' ? 'মুছে ফেলবেন?' : language === 'hi' ? 'हटाएं?' : 'Delete this entry?'}
+              </h3>
+              <p className="text-sm text-white/50 text-center mb-6">
+                {language === 'bn' ? 'এই অ্যাকশনটি ফেরানো যাবে না।' : language === 'hi' ? 'यह कार्य वापस नहीं किया जा सकता।' : 'This action cannot be undone.'}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setConfirmDeleteId(null)}
+                  className="flex-1 glass-card py-3 text-sm font-semibold text-white/70 rounded-xl hover:bg-white/10 transition-colors"
+                >
+                  {language === 'bn' ? 'বাতিল' : language === 'hi' ? 'रद्द करें' : 'Cancel'}
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  className="flex-1 py-3 text-sm font-semibold rounded-xl text-white transition-all"
+                  style={{
+                    background: 'linear-gradient(135deg, #dc2626, #b91c1c)',
+                    border: '1px solid rgba(220,38,38,0.5)',
+                  }}
+                >
+                  {language === 'bn' ? 'মুছুন' : language === 'hi' ? 'हटाएं' : 'Delete'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

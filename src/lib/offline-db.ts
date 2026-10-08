@@ -1,12 +1,28 @@
 /**
- * Offline Database - IndexedDB layer for offline-first architecture
- * All Supabase data is automatically saved here for offline access
+ * Offline Database - IndexedDB layer for 100% local (offline-first) architecture
+ * All app data (users, categories, products, transactions, ...) lives here —
+ * there is NO cloud/server database.
  */
 
 import { openDB, type IDBPDatabase } from 'idb';
 
 const DB_NAME = 'ps-telecom-offline';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
+
+// ============ LOCAL USERS (authentication) ============
+
+export interface LocalUserRecord {
+  id: string;
+  name: string;
+  email: string; // always stored lowercase
+  password: string; // "salt:sha256(salt+password)" hex
+  shopName: string;
+  role: string;
+  language: string;
+  theme: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface OfflineDBSchema {
   categories: {
@@ -132,9 +148,22 @@ export interface OfflineDBSchema {
     };
     indexes: { 'by-userId': string; 'by-categoryType': string; 'by-date': string; 'by-dirty': number };
   };
+  users: {
+    key: string;
+    value: LocalUserRecord;
+    indexes: { 'by-email': string };
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<OfflineDBSchema>> | null = null;
+
+/**
+ * Direct DB handle — used for multi-store atomic transactions
+ * (e.g. stock updates that must touch products + transactions together).
+ */
+export function getOfflineDB(): Promise<IDBPDatabase<OfflineDBSchema>> {
+  return getDB();
+}
 
 function getDB(): Promise<IDBPDatabase<OfflineDBSchema>> {
   if (!dbPromise) {
@@ -182,6 +211,10 @@ function getDB(): Promise<IDBPDatabase<OfflineDBSchema>> {
           svcStore.createIndex('by-categoryType', 'categoryType');
           svcStore.createIndex('by-date', 'date');
           svcStore.createIndex('by-dirty', '_dirty');
+        }
+        if (!db.objectStoreNames.contains('users')) {
+          const userStore = db.createObjectStore('users', { keyPath: 'id' });
+          userStore.createIndex('by-email', 'email');
         }
       },
     }).catch((err) => {

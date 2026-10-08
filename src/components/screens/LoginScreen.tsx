@@ -7,7 +7,7 @@ import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Language, User } from '@/lib/types';
 import { toast } from 'sonner';
-import { login } from '@/lib/supabase-service';
+import { login } from '@/lib/local-auth';
 
 export default function LoginScreen() {
   const { language, setUser, navigateTo, resetNavigation } = useAppStore();
@@ -40,7 +40,6 @@ export default function LoginScreen() {
       setIsLoading(false);
     }
   };
-
   return (
     <div className="animated-bg min-h-screen flex flex-col max-w-md mx-auto px-6 py-8">
       {/* Logo section */}
