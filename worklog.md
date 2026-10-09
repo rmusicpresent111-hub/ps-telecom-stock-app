@@ -558,3 +558,26 @@ Stage Summary:
 - Search is now instant everywhere (in-memory filtering, <3ms per keystroke measured), screens open with fewer/cheaper IDB reads, dashboard computes in one pass
 - Bonus: product search now also matches Box Number on both product-list and category-detail
 - Queued tasks remain: full app security/dead-code audit
+
+---
+Task ID: 10
+Agent: main (Z.ai Code)
+Task: User created a new Cloudflare API token and asked "check whether it succeeded and whether the last backup is showing"
+
+Work Log:
+- dev.log showed 21 POST /api/cloud/d1 calls, ALL HTTP 200 — BUT discovered the proxy returns HTTP 200 even for Cloudflare-level failures (error travels in the body as ok:false), so log status alone proves nothing
+- Browser state forensics (shared preview profile, account avijit@pstelecom.in):
+  - ps-d1-creds still held MY Task-8 TEST credentials (fake accountId a1b2c3d4…, fake token "mock…") — the user's real token was NEVER saved
+  - Code fact: creds/last-backup persist ONLY after a passing test / successful backup (handleTest, handleBackup) — so no user backup ever succeeded here
+  - ps-d1-last-backup showed "09 Oct 01:01 PM" — that was MY mock-era test backup, misleading the user
+  - ps-d1-dirty still held the unsynced Samsung A15 → all recent auto-sync attempts failed (fake creds vs real Cloudflare after Task-8 cleanup)
+- ROOT CAUSE of the user's failed attempt: the Cloud Backup boxes were prefilled with MY fake test IDs; the user's new token was tested against a FAKE account → auth error shown as "API token কাজ করছে না" → nothing saved
+- Cleanup (localStorage, preview profile): removed fake ps-d1-creds, ps-d1-last-backup, ps-d1-last-autosync; KEPT ps-d1-autosync=1 (user's preference) and ps-d1-dirty (real pending changes)
+- src/app/api/cloud/d1/route.ts: added server-side result logging — `[d1-proxy] OK changes=N rows=N` / `[d1-proxy] FAIL http=… code=…` / `FAIL network=…` (no token/SQL logged) so future success/failure is provable from dev.log
+- Verified after reload: status "সংযোগ করা হয়নি", "শেষ ক্লাউড ব্যাকআপ: এখনো হয়নি", all 3 boxes EMPTY, no red error; lint + tsc clean
+
+Stage Summary:
+- The user's backup has NOT succeeded yet — blocker was my leftover fake test credentials in the shared preview profile
+- App is now in a clean fresh-connect state; user must re-enter Account ID + Database ID + new token, Save & Test, then Backup
+- Proxy now logs ok/fail + error code server-side, making next verification definitive
+- Queued tasks remain: back-navigation exit-dialog polish, full app security/dead-code audit

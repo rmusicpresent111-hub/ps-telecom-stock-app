@@ -225,6 +225,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     if (!res.ok || !parsed || parsed.success === false) {
       const fe = friendlyCloudflareError(res.status, parsed, text);
+      // Server-side diagnosis: dev.log now shows WHY a cloud call failed
+      // (never log the token or SQL contents).
+      console.log(`[d1-proxy] FAIL http=${res.status} code=${fe.code || 'unknown'}`);
       return json({ ok: false, error: fe.message, errorCode: fe.code, status: res.status });
     }
 
@@ -242,6 +245,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (rr?.meta && typeof rr.meta.changes === 'number') changes += rr.meta.changes;
     }
 
+    console.log(`[d1-proxy] OK changes=${changes} rows=${rows.length}`);
     return json({ ok: true, rows, changes });
   } catch (e) {
     const err = e as Error;
@@ -249,6 +253,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const msg = timedOut
       ? 'Cloudflare request timed out'
       : err.message || 'Network error while contacting Cloudflare';
+    console.log(`[d1-proxy] FAIL network=${timedOut ? 'timeout' : 'error'}`);
     return json({ ok: false, error: msg, ...(timedOut ? { errorCode: 'timeout' } : {}) });
   } finally {
     // Never leave a stray 30s abort timer behind, even when fetch throws.
