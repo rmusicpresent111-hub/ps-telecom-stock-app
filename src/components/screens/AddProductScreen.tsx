@@ -7,7 +7,7 @@ import { Product } from '@/lib/types';
 import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
-import { createProductOffline, updateProductOffline, getProductsOffline } from '@/lib/offline-service';
+import { createProductOffline, updateProductOffline, getProductByIdOffline, getProductsOffline } from '@/lib/offline-service';
 import { playSuccessSound } from '@/lib/sound-service';
 
 export default function AddProductScreen() {
@@ -30,10 +30,10 @@ export default function AddProductScreen() {
   const isEditing = !!selectedProductId;
 
   useEffect(() => {
-    if (selectedProductId && user?.id) {
-      getProductsOffline(user.id)
-        .then((prods) => {
-          const product = prods?.find((p: Product) => p.id === selectedProductId);
+    if (selectedProductId) {
+      // ⚡ Direct O(1) IndexedDB get — the old path loaded ALL products to find one
+      getProductByIdOffline(selectedProductId)
+        .then((product) => {
           if (product) {
             setExistingProduct(product);
             setName(product.name);
@@ -47,7 +47,7 @@ export default function AddProductScreen() {
         })
         .catch(() => {});
     }
-  }, [selectedProductId, user?.id]);
+  }, [selectedProductId]);
 
   const handleSave = async () => {
     if (!name.trim() || !categoryId || !user?.id) {
@@ -78,13 +78,12 @@ export default function AddProductScreen() {
     }
 
     // Duplicate product name check (only when adding new product, not editing)
+    // ⚡ Only fetches THIS category's products instead of the user's whole list
     if (!isEditing) {
       try {
-        const existingProducts = await getProductsOffline(user.id);
-        const isDuplicate = existingProducts?.some(
-          (p: Product) =>
-            p.categoryId === categoryId &&
-            p.name.trim().toLowerCase() === name.trim().toLowerCase()
+        const categoryProducts = await getProductsOffline(user.id, { categoryId });
+        const isDuplicate = categoryProducts?.some(
+          (p: Product) => p.name.trim().toLowerCase() === name.trim().toLowerCase()
         );
         if (isDuplicate) {
           toast.error(t('duplicateProduct', language));

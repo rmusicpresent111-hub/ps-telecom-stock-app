@@ -1,0 +1,636 @@
+     1→'use client';
+     2→
+     3→import { useEffect, useState, useCallback, useMemo, memo, useRef } from 'react';
+     4→import { motion } from 'framer-motion';
+     5→import { useAppStore } from '@/store/appStore';
+     6→import { t } from '@/lib/i18n';
+     7→import { getDashboard, localDateStr } from '@/lib/offline-service';
+     8→import { DashboardStats, Category, Product } from '@/lib/types';
+     9→import { Search, Plus, Package, AlertTriangle, ArrowLeftRight, IndianRupee, User, ChevronRight, TrendingUp, BarChart3, ArrowUpRight, Wrench } from 'lucide-react';
+    10→import { toast } from 'sonner';
+    11→import dynamic from 'next/dynamic';
+    12→
+    13→// Lazy load recharts - saves ~200KB from initial bundle
+    14→const LazyBarChart = dynamic(
+    15→  () => import('recharts').then(mod => {
+    16→    const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell, ResponsiveContainer } = mod;
+    17→    return function BarChartComponent({ data, config }: { data: SaleOverviewItem[]; config: ChartConfig }) {
+    18→      return (
+    19→        <ResponsiveContainer width="100%" height={180}>
+    20→          <BarChart data={data} margin={{ top: 5, right: 5, left: -15, bottom: 5 }}>
+    21→            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+    22→            <XAxis
+    23→              dataKey="label"
+    24→              tickLine={false}
+    25→              axisLine={false}
+    26→              tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 10 }}
+    27→            />
+    28→            <YAxis
+    29→              tickLine={false}
+    30→              axisLine={false}
+    31→              tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 10 }}
+    32→              tickFormatter={(val: number) => `₹${val >= 1000 ? `${(val/1000).toFixed(0)}k` : val}`}
+    33→            />
+    34→            <Bar dataKey="sales" radius={[4, 4, 0, 0]} maxBarSize={28}>
+    35→              {data.map((_entry, index) => (
+    36→                <Cell
+    37→                  key={`cell-${index}`}
+    38→                  fill={index === data.length - 1 ? '#D4A853' : 'rgba(212,168,83,0.4)'}
+    39→                />
+    40→              ))}
+    41→            </Bar>
+    42→          </BarChart>
+    43→        </ResponsiveContainer>
+    44→      );
+    45→    };
+    46→  }),
+    47→  { ssr: false, loading: () => <div className="h-[180px] flex items-center justify-center"><div className="w-6 h-6 border-2 border-[#D4A853]/30 border-t-[#D4A853] rounded-full animate-spin" /></div> }
+    48→);
+    49→
+    50→const LazyPieChart = dynamic(
+    51→  () => import('recharts').then(mod => {
+    52→    const { PieChart, Pie, Cell, ResponsiveContainer } = mod;
+    53→    return function PieChartComponent({ data, colors }: { data: StockOverviewItem[]; colors: string[] }) {
+    54→      return (
+    55→        <ResponsiveContainer width="100%" height={200}>
+    56→          <PieChart>
+    57→            <Pie
+    58→              data={data}
+    59→              dataKey="quantity"
+    60→              nameKey="category"
+    61→              cx="50%"
+    62→              cy="50%"
+    63→              outerRadius={75}
+    64→              innerRadius={40}
+    65→              strokeWidth={2}
+    66→              stroke="rgba(10,10,30,0.8)"
+    67→            >
+    68→              {data.map((_entry, index) => (
+    69→                <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
+    70→              ))}
+    71→            </Pie>
+    72→          </PieChart>
+    73→        </ResponsiveContainer>
+    74→      );
+    75→    };
+    76→  }),
+    77→  { ssr: false, loading: () => <div className="h-[200px] flex items-center justify-center"><div className="w-6 h-6 border-2 border-[#D4A853]/30 border-t-[#D4A853] rounded-full animate-spin" /></div> }
+    78→);
+    79→
+    80→const defaultCategories = [
+    81→  { name: 'Mobile', image: '/categories/mobile.png', emoji: '📱' },
+    82→  { name: 'Display/Combo', image: '/categories/display.png', emoji: '🖥️' },
+    83→  { name: 'Tempered Glass', image: '/categories/tempered-glass.png', emoji: '🛡️' },
+    84→  { name: 'Flip Cover', image: '/categories/flip-cover.png', emoji: '📱' },
+    85→  { name: 'Back Cover', image: '/categories/back-cover.png', emoji: '📱' },
+    86→  { name: 'UV Glass', image: '/categories/uv-glass.png', emoji: '✨' },
+    87→  { name: 'Smart Watch', image: '/categories/smart-watch.png', emoji: '⌚' },
+    88→  { name: 'Battery', image: '/categories/battery.png', emoji: '🔋' },
+    89→  { name: 'Charger', image: '/categories/charger.png', emoji: '🔌' },
+    90→  { name: 'Neck Band', image: '/categories/neckband.png', emoji: '🎵' },
+    91→  { name: 'Ear Pods', image: '/categories/earpods.png', emoji: '🎧' },
+    92→  { name: 'Selfie Stick', image: '/categories/selfie-stick.png', emoji: '📸' },
+    93→  { name: 'Ring Light', image: '/categories/ring-light.png', emoji: '💡' },
+    94→  { name: 'Mobile Stand', image: '/categories/mobile-stand.png', emoji: '📐' },
+    95→  { name: 'Watch Strap', image: '/categories/watch-strap.png', emoji: '⌚' },
+    96→  { name: 'Earphone', image: '/categories/earphone.png', emoji: '🎧' },
+    97→  { name: 'Memory Card', image: '/categories/memory-card.png', emoji: '💾' },
+    98→  { name: 'Data Cable', image: '/categories/data-cable.png', emoji: '🔌' },
+    99→  { name: 'Home Theater', image: '/categories/home-theater.png', emoji: '🔊' },
+   100→  { name: 'Refrigerator', image: '/categories/refrigerator.png', emoji: '❄️' },
+   101→];
+   102→
+   103→const PIE_COLORS = ['#D4A853', '#A07C3E', '#F5DEB3', '#ff6b00', '#ff006e', '#ffd700', '#00e5ff', '#e040fb', '#76ff03', '#ff9100', '#f50057', '#ffea00', '#18ffff', '#d500f9', '#64dd17', '#ff3d00', '#c51162', '#aeea00', '#00b8d4'];
+   104→
+   105→interface SaleOverviewItem {
+   106→  date: string;
+   107→  label: string;
+   108→  sales: number;
+   109→  quantity: number;
+   110→}
+   111→
+   112→interface StockOverviewItem {
+   113→  category: string;
+   114→  quantity: number;
+   115→  value: number;
+   116→}
+   117→
+   118→// Stagger animation variants for category grid
+   119→const categoryContainerVariants = {
+   120→  hidden: { opacity: 0 },
+   121→  show: {
+   122→    opacity: 1,
+   123→    transition: { staggerChildren: 0.06, delayChildren: 0.1 },
+   124→  },
+   125→};
+   126→
+   127→const categoryItemVariants = {
+   128→  hidden: { opacity: 0, y: 16, scale: 0.92 },
+   129→  show: {
+   130→    opacity: 1,
+   131→    y: 0,
+   132→    scale: 1,
+   133→    transition: { type: 'spring' as const, stiffness: 260, damping: 20 },
+   134→  },
+   135→};
+   136→
+   137→// Memoized category card component
+   138→const CategoryCard = memo(function CategoryCard({ cat, defaultCat, onTap, index }: { cat: Category; defaultCat: typeof defaultCategories[0] | undefined; onTap: () => void; index: number }) {
+   139→  const imgSrc = cat.image?.startsWith('/categories/') ? cat.image : (defaultCat?.image || '');
+   140→  return (
+   141→    <motion.div
+   142→      variants={categoryItemVariants}
+   143→      whileHover={{ scale: 1.06, y: -2 }}
+   144→      whileTap={{ scale: 0.95 }}
+   145→      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+   146→    >
+   147→      <button
+   148→        onClick={onTap}
+   149→        className="glass-card category-card p-3 flex flex-col items-center gap-2 w-full"
+   150→      >
+   151→        <div className="category-img-wrapper w-14 h-14 bg-white/5 flex items-center justify-center">
+   152→          {imgSrc ? (
+   153→            <>
+   154→              <img src={imgSrc} alt={cat.name} className="w-full h-full object-cover category-img-zoom" loading="lazy" />
+   155→              <div className="category-img-overlay" />
+   156→            </>
+   157→          ) : (
+   158→            <span className="text-2xl category-emoji-bounce">{cat.image || '📦'}</span>
+   159→          )}
+   160→        </div>
+   161→        <span className="text-[11px] font-medium text-white/90 truncate w-full text-center leading-tight">
+   162→          {cat.name}
+   163→        </span>
+   164→        <span className="text-[10px] text-emerald-400/70 font-medium">
+   165→          {cat._count?.products ?? 0} items
+   166→        </span>
+   167→      </button>
+   168→    </motion.div>
+   169→  );
+   170→});
+   171→
+   172→// ✅ Memoized stat card to prevent re-renders
+   173→const StatCard = memo(function StatCard({ icon: Icon, label, value, iconColor, className }: {
+   174→  icon: React.ComponentType<{ size: number; className?: string }>;
+   175→  label: string;
+   176→  value: string;
+   177→  iconColor: string;
+   178→  className: string;
+   179→}) {
+   180→  return (
+   181→    <div className={`${className} rounded-2xl p-4`}>
+   182→      <div className="flex items-center gap-2 mb-1">
+   183→        <Icon size={16} className={iconColor} />
+   184→        <span className="text-xs text-white/60">{label}</span>
+   185→      </div>
+   186→      <p className={`text-2xl font-bold ${iconColor}`}>
+   187→        {value}
+   188→      </p>
+   189→    </div>
+   190→  );
+   191→});
+   192→
+   193→export default function DashboardScreen() {
+   194→  const user = useAppStore(s => s.user);
+   195→  const language = useAppStore(s => s.language);
+   196→  const shopName = useAppStore(s => s.shopName);
+   197→  const navigateTo = useAppStore(s => s.navigateTo);
+   198→  const navigateToTab = useAppStore(s => s.navigateToTab);
+   199→  const setSelectedCategoryId = useAppStore(s => s.setSelectedCategoryId);
+   200→  const setSelectedProductId = useAppStore(s => s.setSelectedProductId);
+   201→  const setSelectedServiceCategory = useAppStore(s => s.setSelectedServiceCategory);
+   202→  const setSearchQuery = useAppStore(s => s.setSearchQuery);
+   203→  const searchQuery = useAppStore(s => s.searchQuery);
+   204→  const categories = useAppStore(s => s.categories);
+   205→  const setCategories = useAppStore(s => s.setCategories);
+   206→
+   207→  const [stats, setStats] = useState<DashboardStats | null>(null);
+   208→  const [lowStockProducts, setLowStockProducts] = useState<Product[]>([]);
+   209→  const [saleOverview, setSaleOverview] = useState<SaleOverviewItem[]>([]);
+   210→  const [stockOverview, setStockOverview] = useState<StockOverviewItem[]>([]);
+   211→  const [todayProfit, setTodayProfit] = useState(0);
+   212→  const [loading, setLoading] = useState(true);
+   213→  const isFetchingRef = useRef(false);
+   214→  const fetchDashboard = useCallback(async (isBackground = false) => {
+   215→    if (!user?.id || isFetchingRef.current) return;
+   216→
+   217→    isFetchingRef.current = true;
+   218→    try {
+   219→      if (!isBackground) setLoading(true);
+   220→      const data = await getDashboard(user.id) as Record<string, unknown>;
+   221→      setStats(data.stats as DashboardStats | null);
+   222→      setLowStockProducts((data.lowStockProducts as Product[]) || []);
+   223→      setSaleOverview((data.saleOverview as SaleOverviewItem[]) || []);
+   224→      setStockOverview((data.stockOverview as StockOverviewItem[]) || []);
+   225→      if ((data.categories as Category[] | undefined)?.length) {
+   226→        setCategories(data.categories as Category[]);
+   227→      } else {
+   228→        // Empty DB (fresh account or after Reset All Data / restore) must also
+   229→        // reach the store — otherwise stale categories keep rendering.
+   230→        setCategories([]);
+   231→      }
+   232→
+   233→      // Calculate today's profit from transactions
+   234→      // Profit = totalAmount - (quantity × purchase price SNAPSHOT at sale time)
+   235→      const today = localDateStr();
+   236→      const { getTransactionsOffline: getTxns } = await import('@/lib/offline-service');
+   237→      const todayTxns = await getTxns(user.id, { from: today, to: today });
+   238→      const sellTxns = (todayTxns || []).filter((tx) => tx.type === 'SELL');
+   239→      let profit = 0;
+   240→      for (const tx of sellTxns) {
+   241→        // Use the snapshot captured on the transaction — current product price edits
+   242→        // must not rewrite today's profit.
+   243→        const cost = (tx.quantity || 0) * (tx.product?.purchasePrice ?? 0);
+   244→        profit += (tx.totalAmount || 0) - cost;
+   245→      }
+   246→      setTodayProfit(profit);
+   247→    } catch {
+   248→      if (!isBackground) toast.error(t('error', language));
+   249→    } finally {
+   250→      setLoading(false);
+   251→      isFetchingRef.current = false;
+   252→    }
+   253→  }, [user?.id]);
+   254→
+   255→  // Initial load
+   256→  useEffect(() => {
+   257→    fetchDashboard();
+   258→  }, [fetchDashboard]);
+   259→
+   260→  // ✅ Background refresh on window focus (stale-while-revalidate)
+   261→  useEffect(() => {
+   262→    const handleFocus = () => {
+   263→      fetchDashboard(true);
+   264→    };
+   265→    window.addEventListener('focus', handleFocus);
+   266→    return () => window.removeEventListener('focus', handleFocus);
+   267→  }, [fetchDashboard]);
+   268→
+   269→  const handleCategoryTap = useCallback((cat: Category) => {
+   270→    setSelectedCategoryId(cat.id);
+   271→    navigateTo('category-detail');
+   272→  }, [setSelectedCategoryId, navigateTo]);
+   273→
+   274→  const handleSearch = useCallback((value: string) => {
+   275→    setSearchQuery(value);
+   276→  }, [setSearchQuery]);
+   277→
+   278→  const handleSearchSubmit = useCallback(() => {
+   279→    if (searchQuery.trim()) {
+   280→      navigateToTab('product-list');
+   281→    }
+   282→  }, [searchQuery, navigateToTab]);
+   283→
+   284→  // Memoize computed values
+   285→  const totalSaleAmount = useMemo(() => saleOverview.reduce((sum, d) => sum + d.sales, 0), [saleOverview]);
+   286→  const totalSoldItems = useMemo(() => saleOverview.reduce((sum, d) => sum + d.quantity, 0), [saleOverview]);
+   287→  const totalStockQty = useMemo(() => stockOverview.reduce((sum, d) => sum + d.quantity, 0), [stockOverview]);
+   288→  const totalStockVal = useMemo(() => stockOverview.reduce((sum, d) => sum + d.value, 0), [stockOverview]);
+   289→
+   290→  // Precompute defaultCategory lookup - stable reference
+   291→  const defaultCatMap = useMemo(() => {
+   292→    const map = new Map<string, typeof defaultCategories[0]>();
+   293→    for (const dc of defaultCategories) {
+   294→      map.set(dc.name, dc);
+   295→    }
+   296→    return map;
+   297→  }, []);
+   298→
+   299→  // ✅ Memoize stat values to prevent string recreation
+   300→  const statValues = useMemo(() => ({
+   301→    totalItems: loading ? '...' : String(stats?.totalItems ?? 0),
+   302→    lowItems: loading ? '...' : String(stats?.lowItems ?? 0),
+   303→    todayTransactions: loading ? '...' : String(stats?.todayTransactions ?? 0),
+   304→    stockValue: loading ? '...' : `₹${(stats?.stockValue ?? 0).toLocaleString()}`,
+   305→  }), [loading, stats]);
+   306→
+   307→  // ✅ Memoize i18n labels
+   308→  const labels = useMemo(() => ({
+   309→    totalItems: t('totalItems', language),
+   310→    lowItems: t('lowItems', language),
+   311→    todayTransaction: t('todayTransaction', language),
+   312→    stockValue: t('stockValue', language),
+   313→    searchProducts: t('searchProducts', language),
+   314→    categories: t('categories', language),
+   315→    addCategory: t('addCategory', language),
+   316→    lowStockAlert: t('lowStockAlert', language),
+   317→    lowStockMsg: t('lowStockMsg', language).toLowerCase(),
+   318→  }), [language]);
+   319→
+   320→  return (
+   321→    <div className="animated-bg min-h-screen pb-24">
+   322→      <div className="max-w-md mx-auto px-4 pt-4">
+   323→        {/* Header */}
+   324→        <div className="flex items-center justify-between mb-6">
+   325→          <button
+   326→            onClick={() => navigateToTab('profile')}
+   327→            className="p-2 rounded-full glass-card"
+   328→            aria-label="Profile"
+   329→          >
+   330→            <User size={20} className="text-emerald-400" />
+   331→          </button>
+   332→          <h1 className="text-xl font-bold neon-glow">{shopName}</h1>
+   333→          <button
+   334→            onClick={() => { setSelectedProductId(null); navigateTo('add-product'); }}
+   335→            className="p-2 rounded-full glass-card"
+   336→            aria-label="Add Product"
+   337→          >
+   338→            <Plus size={20} className="text-emerald-400" />
+   339→          </button>
+   340→        </div>
+   341→
+   342→        {/* Search bar */}
+   343→        <div className="relative mb-6">
+   344→          <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40" />
+   345→          <input
+   346→            type="text"
+   347→            value={searchQuery}
+   348→            onChange={(e) => handleSearch(e.target.value)}
+   349→            onKeyDown={(e) => e.key === 'Enter' && handleSearchSubmit()}
+   350→            placeholder={labels.searchProducts}
+   351→            className="glass-input w-full pl-11 pr-4 py-3 text-sm"
+   352→          />
+   353→        </div>
+   354→
+   355→        {/* Stats section */}
+   356→        <div className="grid grid-cols-2 gap-3 mb-6">
+   357→          <StatCard icon={Package} label={labels.totalItems} value={statValues.totalItems} iconColor="text-green-400" className="stat-card-green" />
+   358→          <StatCard
+   359→            icon={AlertTriangle}
+   360→            label={labels.lowItems}
+   361→            value={statValues.lowItems}
+   362→            iconColor={(stats?.lowItems ?? 0) > 0 ? 'text-orange-400' : 'text-green-400'}
+   363→            className={(stats?.lowItems ?? 0) > 0 ? 'stat-card-orange' : 'stat-card-green'}
+   364→          />
+   365→          <StatCard icon={ArrowLeftRight} label={labels.todayTransaction} value={statValues.todayTransactions} iconColor="text-emerald-400" className="stat-card-blue" />
+   366→          <StatCard icon={IndianRupee} label={labels.stockValue} value={statValues.stockValue} iconColor="text-emerald-600" className="stat-card-purple" />
+   367→        </div>
+   368→
+   369→        {/* Today's Profit Card */}
+   370→        <button
+   371→          onClick={() => navigateToTab('profit')}
+   372→          className="glass-card w-full p-4 mb-6 flex items-center justify-between"
+   373→          style={{
+   374→            background: 'linear-gradient(135deg, rgba(74, 222, 128, 0.06), rgba(212, 168, 83, 0.04))',
+   375→            border: '1px solid rgba(74, 222, 128, 0.15)',
+   376→          }}
+   377→        >
+   378→          <div className="flex items-center gap-3">
+   379→            <div className="w-10 h-10 rounded-full bg-green-500/15 flex items-center justify-center">
+   380→              <TrendingUp size={20} className="text-green-400" />
+   381→            </div>
+   382→            <div className="text-left">
+   383→              <p className="text-xs text-white/60">
+   384→                {language === 'bn' ? "আজকের প্রফিট" : language === 'hi' ? "आज का लाभ" : "Today's Profit"}
+   385→              </p>
+   386→              <p className="text-lg font-bold text-green-400">
+   387→                ₹{todayProfit.toLocaleString()}
+   388→              </p>
+   389→            </div>
+   390→          </div>
+   391→          <div className="flex items-center gap-1 text-emerald-400/60">
+   392→            <span className="text-xs">
+   393→              {language === 'bn' ? 'বিস্তারিত' : language === 'hi' ? 'विवरण' : 'Details'}
+   394→            </span>
+   395→            <ChevronRight size={16} />
+   396→          </div>
+   397→        </button>
+   398→
+   399→        {/* Low stock alert */}
+   400→        {lowStockProducts.length > 0 && (
+   401→          <div
+   402→            className="glass-card p-4 mb-6 border-orange-500/30"
+   403→            onClick={() => navigateToTab('product-list')}
+   404→            role="button"
+   405→          >
+   406→            <div className="flex items-center gap-3">
+   407→              <div className="w-10 h-10 rounded-full bg-orange-500/20 flex items-center justify-center">
+   408→                <AlertTriangle size={20} className="text-orange-400" />
+   409→              </div>
+   410→              <div className="flex-1">
+   411→                <p className="text-sm font-semibold text-orange-400">{labels.lowStockAlert}</p>
+   412→                <p className="text-xs text-white/60">
+   413→                  {lowStockProducts.length} {labels.lowStockMsg}
+   414→                </p>
+   415→              </div>
+   416→              <ChevronRight size={18} className="text-white/40" />
+   417→            </div>
+   418→          </div>
+   419→        )}
+   420→
+   421→        {/* Categories section */}
+   422→        <div>
+   423→          <div className="flex items-center justify-between mb-4">
+   424→            <h2 className="text-lg font-bold">{labels.categories}</h2>
+   425→            <button
+   426→              onClick={() => navigateTo('add-category')}
+   427→              className="neon-btn px-3 py-1.5 text-xs font-semibold"
+   428→            >
+   429→              + {labels.addCategory}
+   430→            </button>
+   431→          </div>
+   432→
+   433→          {categories.length > 0 ? (
+   434→            <motion.div
+   435→              className="grid grid-cols-3 gap-3"
+   436→              variants={categoryContainerVariants}
+   437→              initial="hidden"
+   438→              animate="show"
+   439→            >
+   440→              {categories.map((cat, idx) => (
+   441→                <CategoryCard
+   442→                  key={cat.id}
+   443→                  cat={cat}
+   444→                  defaultCat={defaultCatMap.get(cat.name)}
+   445→                  onTap={() => handleCategoryTap(cat)}
+   446→                  index={idx}
+   447→                />
+   448→              ))}
+   449→            </motion.div>
+   450→          ) : (
+   451→            <motion.div
+   452→              className="grid grid-cols-3 gap-3"
+   453→              variants={categoryContainerVariants}
+   454→              initial="hidden"
+   455→              animate="show"
+   456→            >
+   457→              {defaultCategories.map((cat, idx) => (
+   458→                <motion.div
+   459→                  key={cat.name}
+   460→                  variants={categoryItemVariants}
+   461→                  whileHover={{ scale: 1.06, y: -2 }}
+   462→                  whileTap={{ scale: 0.95 }}
+   463→                  transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+   464→                >
+   465→                  <div
+   466→                    onClick={() => navigateTo('add-category')}
+   467→                    className="glass-card category-card p-3 flex flex-col items-center gap-2 cursor-pointer"
+   468→                  >
+   469→                    <div className="category-img-wrapper w-14 h-14 bg-white/5 flex items-center justify-center">
+   470→                      {cat.image ? (
+   471→                        <>
+   472→                          <img src={cat.image} alt={cat.name} className="w-full h-full object-cover category-img-zoom" loading="lazy" />
+   473→                          <div className="category-img-overlay" />
+   474→                        </>
+   475→                      ) : (
+   476→                        <span className="text-2xl category-emoji-bounce">{cat.emoji}</span>
+   477→                      )}
+   478→                    </div>
+   479→                    <span className="text-[11px] font-medium text-white/90 truncate w-full text-center leading-tight">
+   480→                      {cat.name}
+   481→                    </span>
+   482→                    <span className="text-[10px] text-emerald-400/70 font-medium">0 items</span>
+   483→                  </div>
+   484→                </motion.div>
+   485→              ))}
+   486→            </motion.div>
+   487→          )}
+   488→        </div>
+   489→
+   490→        {/* Services Section */}
+   491→        <div className="mt-8">
+   492→          <div className="flex items-center gap-2 mb-4">
+   493→            <Wrench size={18} className="text-emerald-400" />
+   494→            <h2 className="text-lg font-bold">Services</h2>
+   495→          </div>
+   496→
+   497→          <div className="grid grid-cols-2 gap-3">
+   498→            <motion.button
+   499→              whileHover={{ scale: 1.03, y: -2 }}
+   500→              whileTap={{ scale: 0.97 }}
+   501→              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+   502→              onClick={() => {
+   503→                setSelectedServiceCategory('repairing');
+   504→                navigateTo('service-category');
+   505→              }}
+   506→              className="glass-card p-4 flex flex-col items-center gap-3"
+   507→              style={{
+   508→                background: 'linear-gradient(135deg, rgba(212,168,83,0.08), rgba(180,140,60,0.04))',
+   509→                border: '1px solid rgba(212,168,83,0.2)',
+   510→              }}
+   511→            >
+   512→              <div className="w-14 h-14 rounded-full bg-emerald-500/15 flex items-center justify-center">
+   513→                <span className="text-2xl">🔧</span>
+   514→              </div>
+   515→              <div className="text-center">
+   516→                <p className="text-sm font-semibold text-white/90">Repairing</p>
+   517→                <p className="text-[10px] text-white/40">Track repair income & expenses</p>
+   518→              </div>
+   519→            </motion.button>
+   520→
+   521→            <motion.button
+   522→              whileHover={{ scale: 1.03, y: -2 }}
+   523→              whileTap={{ scale: 0.97 }}
+   524→              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+   525→              onClick={() => {
+   526→                setSelectedServiceCategory('withdraw-deposit');
+   527→                navigateTo('service-category');
+   528→              }}
+   529→              className="glass-card p-4 flex flex-col items-center gap-3"
+   530→              style={{
+   531→                background: 'linear-gradient(135deg, rgba(74,222,128,0.08), rgba(34,197,94,0.04))',
+   532→                border: '1px solid rgba(74,222,128,0.2)',
+   533→              }}
+   534→            >
+   535→              <div className="w-14 h-14 rounded-full bg-green-500/15 flex items-center justify-center">
+   536→                <span className="text-2xl">💰</span>
+   537→              </div>
+   538→              <div className="text-center">
+   539→                <p className="text-sm font-semibold text-white/90">Withdraw/Deposit</p>
+   540→                <p className="text-[10px] text-white/40">Manage deposits & withdrawals</p>
+   541→              </div>
+   542→            </motion.button>
+   543→          </div>
+   544→        </div>
+   545→
+   546→        {/* Sale Overview Section */}
+   547→        <div className="mt-8">
+   548→          <div className="flex items-center gap-2 mb-4">
+   549→            <TrendingUp size={18} className="text-emerald-400" />
+   550→            <h2 className="text-lg font-bold">Sale Overview</h2>
+   551→          </div>
+   552→
+   553→          <div className="glass-card-strong p-4">
+   554→            <div className="grid grid-cols-2 gap-3 mb-4">
+   555→              <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(212,168,83,0.12), rgba(180,140,60,0.05))', border: '1px solid rgba(212,168,83,0.2)' }}>
+   556→                <p className="text-[10px] text-white/50 mb-1">7-Day Sales</p>
+   557→                <p className="text-lg font-bold text-emerald-400">₹{totalSaleAmount.toLocaleString()}</p>
+   558→              </div>
+   559→              <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(160,124,62,0.12), rgba(140,105,50,0.05))', border: '1px solid rgba(160,124,62,0.2)' }}>
+   560→                <p className="text-[10px] text-white/50 mb-1">Items Sold</p>
+   561→                <p className="text-lg font-bold text-emerald-600">{totalSoldItems}</p>
+   562→              </div>
+   563→            </div>
+   564→
+   565→            {saleOverview.length > 0 ? (
+   566→              <LazyBarChart data={saleOverview} config={saleChartConfig} />
+   567→            ) : (
+   568→              <div className="h-[120px] flex items-center justify-center">
+   569→                <p className="text-xs text-white/30">No sales data yet</p>
+   570→              </div>
+   571→            )}
+   572→          </div>
+   573→        </div>
+   574→
+   575→        {/* Stock Overview Section */}
+   576→        <div className="mt-6">
+   577→          <div className="flex items-center gap-2 mb-4">
+   578→            <BarChart3 size={18} className="text-green-400" />
+   579→            <h2 className="text-lg font-bold">Stock Overview</h2>
+   580→          </div>
+   581→
+   582→          <div className="glass-card-strong p-4">
+   583→            <div className="grid grid-cols-2 gap-3 mb-4">
+   584→              <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(245,222,179,0.12), rgba(200,160,80,0.05))', border: '1px solid rgba(245,222,179,0.2)' }}>
+   585→                <p className="text-[10px] text-white/50 mb-1">Total Stock</p>
+   586→                <p className="text-lg font-bold text-green-400">{totalStockQty.toLocaleString()} pcs</p>
+   587→              </div>
+   588→              <div className="rounded-xl p-3" style={{ background: 'linear-gradient(135deg, rgba(212,168,83,0.12), rgba(34,90,75,0.05))', border: '1px solid rgba(212,168,83,0.2)' }}>
+   589→                <p className="text-[10px] text-white/50 mb-1">Stock Value</p>
+   590→                <p className="text-lg font-bold text-emerald-400">₹{totalStockVal.toLocaleString()}</p>
+   591→              </div>
+   592→            </div>
+   593→
+   594→            {stockOverview.length > 0 ? (
+   595→              <>
+   596→                <LazyPieChart data={stockOverview} colors={PIE_COLORS} />
+   597→
+   598→                {/* Legend */}
+   599→                <div className="mt-3 max-h-36 overflow-y-auto space-y-1.5">
+   600→                  {stockOverview.map((item, index) => (
+   601→                    <div key={item.category} className="flex items-center justify-between text-xs">
+   602→                      <div className="flex items-center gap-2">
+   603→                        <div
+   604→                          className="w-2.5 h-2.5 rounded-sm shrink-0"
+   605→                          style={{ backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }}
+   606→                        />
+   607→                        <span className="text-white/70 truncate max-w-[120px]">{item.category}</span>
+   608→                      </div>
+   609→                      <div className="flex items-center gap-3">
+   610→                        <span className="text-white/50">{item.quantity} pcs</span>
+   611→                        <span className="text-emerald-400/70 font-medium">₹{item.value.toLocaleString()}</span>
+   612→                      </div>
+   613→                    </div>
+   614→                  ))}
+   615→                </div>
+   616→              </>
+   617→            ) : (
+   618→              <div className="h-[120px] flex items-center justify-center">
+   619→                <p className="text-xs text-white/30">No stock data yet</p>
+   620→              </div>
+   621→            )}
+   622→          </div>
+   623→        </div>
+   624→      </div>
+   625→    </div>
+   626→  );
+   627→}
+   628→
+   629→// Chart configs - outside component to avoid recreation
+   630→const saleChartConfig = {
+   631→  sales: { label: 'Sales (₹)', color: '#D4A853' },
+   632→  quantity: { label: 'Items Sold', color: '#A07C3E' },
+   633→};
+   634→
+   635→type ChartConfig = Record<string, { label: string; color: string }>;
+   636→

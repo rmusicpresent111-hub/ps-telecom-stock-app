@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo, memo, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
-import { getDashboard, localDateStr } from '@/lib/offline-service';
+import { getDashboard } from '@/lib/offline-service';
 import { DashboardStats, Category, Product } from '@/lib/types';
 import { Search, Plus, Package, AlertTriangle, ArrowLeftRight, IndianRupee, User, ChevronRight, TrendingUp, BarChart3, ArrowUpRight, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
@@ -230,20 +230,10 @@ export default function DashboardScreen() {
         setCategories([]);
       }
 
-      // Calculate today's profit from transactions
-      // Profit = totalAmount - (quantity × purchase price SNAPSHOT at sale time)
-      const today = localDateStr();
-      const { getTransactionsOffline: getTxns } = await import('@/lib/offline-service');
-      const todayTxns = await getTxns(user.id, { from: today, to: today });
-      const sellTxns = (todayTxns || []).filter((tx) => tx.type === 'SELL');
-      let profit = 0;
-      for (const tx of sellTxns) {
-        // Use the snapshot captured on the transaction — current product price edits
-        // must not rewrite today's profit.
-        const cost = (tx.quantity || 0) * (tx.product?.purchasePrice ?? 0);
-        profit += (tx.totalAmount || 0) - cost;
-      }
-      setTodayProfit(profit);
+      // ⚡ Today's profit now arrives from the SAME dashboard pass (computed from
+      // already-loaded transactions). The old code re-imported the service and
+      // re-scanned the entire transactions store a second time on every load/focus.
+      setTodayProfit((data.todayProfit as number | undefined) ?? 0);
     } catch {
       if (!isBackground) toast.error(t('error', language));
     } finally {

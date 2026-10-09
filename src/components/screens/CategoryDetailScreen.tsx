@@ -7,7 +7,6 @@ import { Category, Product } from '@/lib/types';
 import { getProductsOffline, getTransactionsOffline, localDateStr } from '@/lib/offline-service';
 import { ArrowLeft, Plus, Search, Package, AlertTriangle, ArrowLeftRight, IndianRupee } from 'lucide-react';
 import { toast } from 'sonner';
-import { useDebounce } from '@/hooks/useDebounce';
 import { motion } from 'framer-motion';
 
 // Map for category images - defined outside component
@@ -49,8 +48,6 @@ export default function CategoryDetailScreen() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
 
-  const debouncedSearch = useDebounce(search, 300);
-
   const category = useMemo(() => categories.find((c) => c.id === selectedCategoryId), [categories, selectedCategoryId]);
 
   const fetchProducts = useCallback(async () => {
@@ -77,13 +74,16 @@ export default function CategoryDetailScreen() {
     fetchProducts();
   }, [fetchProducts]);
 
-  // Client-side search filter
+  // ⚡ Instant client-side search — products are already in memory, so filtering
+  // on every keystroke costs <1ms. The old 300ms debounce just added lag.
   const filteredProducts = useMemo(() => {
-    if (!debouncedSearch.trim()) return products;
+    const q = search.trim().toLowerCase();
+    if (!q) return products;
     return products.filter((p) =>
-      p.name.toLowerCase().includes(debouncedSearch.toLowerCase())
+      p.name.toLowerCase().includes(q) ||
+      (p.boxNumber ? p.boxNumber.toLowerCase().includes(q) : false)
     );
-  }, [products, debouncedSearch]);
+  }, [products, search]);
 
   const totalItems = products.length;
   const lowStockCount = useMemo(() => products.filter((p) => p.quantity <= p.lowStockThreshold).length, [products]);
@@ -238,7 +238,10 @@ export default function CategoryDetailScreen() {
                 key={product.id}
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: idx * 0.04, type: 'spring', stiffness: 260, damping: 22 }}
+                // ⚡ Cap the stagger: beyond the first 8 rows everything appears
+                // together. An unbounded idx*delay made long lists feel frozen
+                // (item 50 waited ~2s) and re-animated on every search keystroke.
+                transition={{ delay: Math.min(idx, 8) * 0.03, type: 'spring', stiffness: 260, damping: 22 }}
                 whileHover={{ scale: 1.01, x: 3 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => handleProductTap(product)}

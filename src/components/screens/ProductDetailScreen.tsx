@@ -6,7 +6,7 @@ import { t } from '@/lib/i18n';
 import { Product, Transaction } from '@/lib/types';
 import { ArrowLeft, Edit, Trash2, Package, Archive, IndianRupee, Tag } from 'lucide-react';
 import { toast } from 'sonner';
-import { deleteProductOffline, getProductsOffline, getTransactionsOffline } from '@/lib/offline-service';
+import { deleteProductOffline, getProductByIdOffline, getTransactionsOffline } from '@/lib/offline-service';
 import { registerBackModal } from '@/lib/modal-back';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -39,20 +39,21 @@ export default function ProductDetailScreen() {
     if (!user?.id || !selectedProductId) return;
     try {
       setLoading(true);
+      // ⚡ Direct O(1) product get — the old path loaded the user's ENTIRE
+      // product list just to find one row
       const [prodData, txnData] = await Promise.all([
-        getProductsOffline(user.id),
+        getProductByIdOffline(selectedProductId),
         getTransactionsOffline(user.id),
       ]);
 
-      const found = prodData?.find((p: Product) => p.id === selectedProductId);
-      if (found) setProduct(found);
+      if (prodData) setProduct(prodData);
       setTransactions(txnData?.filter((t: Transaction) => t.productId === selectedProductId) || []);
     } catch {
       toast.error(t('error', language));
     } finally {
       setLoading(false);
     }
-  }, [user?.id, selectedProductId]);
+  }, [user?.id, selectedProductId, language]);
 
   useEffect(() => {
     fetchProduct();

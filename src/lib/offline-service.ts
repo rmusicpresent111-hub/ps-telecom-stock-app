@@ -128,6 +128,16 @@ export async function createCategoryOffline(name: string, image: string, userId:
 
 // ============ PRODUCTS (Local) ============
 
+/**
+ * ⚡ Single product by id — direct IndexedDB key get (O(1)).
+ * Used where only ONE product is needed (edit prefill); the old path loaded
+ * the user's entire product list just to find one row.
+ */
+export async function getProductByIdOffline(id: string): Promise<Product | null> {
+  const row = await offlineProducts.getById(id);
+  return row ? stripSync<Product>(row) : null;
+}
+
 export async function getProductsOffline(userId: string, options?: { categoryId?: string; search?: string }): Promise<Product[]> {
   let localProducts: OfflineDBSchema['products']['value'][];
 
@@ -402,6 +412,9 @@ export async function getDashboardOffline(userId: string) {
     ...c,
     _count: { products: productCountMap[c.id] || 0 },
   }));
+  // ⚡ Map lookup instead of catsWithCount.find() inside the product loop
+  // (was O(products × categories), now O(products))
+  const catNameMap = new Map(catsWithCount.map(c => [c.id, c.name]));
 
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
@@ -428,8 +441,7 @@ export async function getDashboardOffline(userId: string) {
 
   const stockByCategory = new Map<string, { quantity: number; value: number }>();
   for (const p of products) {
-    const cat = catsWithCount.find(c => c.id === p.categoryId);
-    const catName = cat?.name || 'Unknown';
+    const catName = catNameMap.get(p.categoryId) || 'Unknown';
     const existing = stockByCategory.get(catName) || { quantity: 0, value: 0 };
     existing.quantity += p.quantity;
     existing.value += p.quantity * p.purchasePrice;
@@ -439,6 +451,15 @@ export async function getDashboardOffline(userId: string) {
   const stockOverview = Array.from(stockByCategory.entries())
     .filter(([_, data]) => data.quantity > 0)
     .map(([category, data]) => ({ category, ...data }));
+
+  // ⚡ Today's profit computed from the ALREADY-LOADED transactions — the
+  // dashboard used to re-scan the whole transactions store a second time.
+  // Profit = totalAmount − (quantity × purchase-price SNAPSHOT at sale time).
+  const todayProfit = todayTxns.reduce((sum, tx) => {
+    if (tx.type !== 'SELL') return sum;
+    const cost = (tx.quantity || 0) * (tx.product?.purchasePrice ?? 0);
+    return sum + ((tx.totalAmount || 0) - cost);
+  }, 0);
 
   return {
     stats: {
@@ -452,6 +473,7 @@ export async function getDashboardOffline(userId: string) {
     categories: catsWithCount,
     saleOverview,
     stockOverview,
+    todayProfit,
   };
 }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Product, Transaction } from '@/lib/types';
@@ -127,12 +127,22 @@ export default function StockOperationScreen() {
     }
   }, [productName, allProducts, stockOperationType, isSell]);
 
-  // SELL: filtered suggestions
-  const sellSuggestions = isSell && productName.trim()
-    ? allProducts.filter(p =>
-        p.name.toLowerCase().includes(productName.toLowerCase())
-      )
-    : isSell ? allProducts : [];
+  // SELL: filtered suggestions — memoized + capped at 30 rows.
+  // Rendering hundreds of dropdown rows per keystroke was a hidden lag source.
+  const MAX_SUGGESTIONS = 30;
+  const sellSuggestions = useMemo(() => {
+    if (!isSell) return [] as Product[];
+    const q = productName.trim().toLowerCase();
+    if (!q) return allProducts.slice(0, MAX_SUGGESTIONS);
+    const matches: Product[] = [];
+    for (const p of allProducts) {
+      if (p.name.toLowerCase().includes(q)) {
+        matches.push(p);
+        if (matches.length >= MAX_SUGGESTIONS) break;
+      }
+    }
+    return matches;
+  }, [isSell, allProducts, productName]);
 
   const handleSelectSuggestion = (p: Product) => {
     setProduct(p);

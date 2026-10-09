@@ -346,6 +346,11 @@ export const offlineCategories = {
 
 export const offlineProducts = {
   getAll: (userId: string) => getAllByUser('products', userId),
+  // ⚡ Direct key get — O(1) instead of loading the user's whole product list
+  getById: async (id: string) => {
+    const db = await getDB();
+    return db.get('products', id);
+  },
   put: (prod: OfflineDBSchema['products']['value']) => putItem('products', prod),
   putBulk: (prods: OfflineDBSchema['products']['value'][]) => putBulk('products', prods),
   delete: (id: string) => deleteItem('products', id),
