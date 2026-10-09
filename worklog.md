@@ -581,3 +581,25 @@ Stage Summary:
 - App is now in a clean fresh-connect state; user must re-enter Account ID + Database ID + new token, Save & Test, then Backup
 - Proxy now logs ok/fail + error code server-side, making next verification definitive
 - Queued tasks remain: back-navigation exit-dialog polish, full app security/dead-code audit
+
+---
+Task ID: 11
+Agent: main (Z.ai Code)
+Task: User re-entered their NEW Cloudflare token and asked "Ebar dekho to" (now check it) — verify whether it worked and last backup shows
+
+Work Log:
+- dev.log server-side proxy logs (added in Task 10) gave definitive proof of a SUCCESSFUL FULL BACKUP, all against real api.cloudflare.com (no CLOUDFLARE_API_BASE override set, d1-mock not running, latencies 100-745ms = real network round-trips):
+  - `OK changes=0 rows=1` (798ms) = testConnection ping `SELECT 1` → TOKEN IS VALID
+  - 3× `OK changes=0 rows=0` = ensureD1Schema CREATE TABLE batches
+  - 1× `FAIL http=400 code=unknown` = ensureProductColumn ALTER TABLE "duplicate column" — IGNORED BY DESIGN (proves table already had the column); the only FAIL in the whole log
+  - `changes=1` markIncomplete meta → `changes=0` DELETE×8 (fresh DB) → INSERT batches `changes=2,3,7,5` (2 categories + 3 products + 7 transactions + 5 expenses = 17 data rows) → `changes=1` billing settings → `changes=1` real meta
+  - Final `OK rows=1` reads = readCloudMeta returning the backup meta row (screen hydration + UI refresh)
+- agent-browser (separate storage jar from the preview panel iframe) confirms THIS jar has no ps-d1-creds → the successful backup came from the USER'S own context (preview iframe / their device). Realized the "shared preview profile" assumption from Task 10 was wrong: agent-browser has its own localStorage; user's creds always lived in the preview panel's partitioned storage — invisible to agent-browser, which is correct/expected per-device behavior
+- CloudSyncScreen code review: after successful backup the UI sets connected status + lastBackup timestamp + shows toast "ক্লাউড ব্যাকআপ সম্পন্ন (2+3+7+5+0+0+0)"; on every screen open it re-tests saved creds and reads cloud meta
+- agent-browser open → dashboard renders user data (2 categories, ₹540,000 stock) → Profile → Cloud Backup shows "not connected" in agent-browser's jar only (expected per-device); zero page errors; browser closed
+- No code changes needed; no new FAILs after the backup (only page navigations in log)
+
+Stage Summary:
+- VERDICT: the user's new API token WORKS and a full backup SUCCEEDED — 17 shop rows + billing settings + meta are in their real Cloudflare D1; their device shows "সংযোগ করা হয়েছে" + last-backup timestamp
+- "Last Backup: Never" was per-device storage: creds/lastBackup only persist in the browser that ran the backup — the user's own context has them
+- Remaining queued tasks: back-navigation polish, full app security/dead-code audit
