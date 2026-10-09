@@ -513,3 +513,25 @@ Stage Summary:
 - Code was NOT the bug; added translated (bn/hi/en) cloud error messages so the owner can self-diagnose
 - User guidance given in Bengali: create new Custom Token with Account→D1→Edit permission, copy 40-char token, paste in app, Save & Test, then Backup to Cloud
 - Queued tasks remain: back navigation (prev page → home → exit dialog), full app security/dead-code audit
+
+---
+Task ID: 8
+Agent: main (Z.ai Code)
+Task: Auto Sync — user asked for instant cloud updates on stock in/out ("2to iphone bikri korle database e sathe sathe update hoye jabe?"). Built incremental real-time cloud sync.
+
+Work Log:
+- Explored data layer: all mutations flow through offline-service.ts functions; CLOUD_TABLES maps local camelCase ↔ cloud snake_case; createTransactionOffline atomically updates product qty + transaction row
+- NEW src/lib/sync-dirty.ts: pure-localStorage dirty tracking (changed/deleted ids per cloud table, fullResync overflow valve at 5000 ids, autoSync toggle, last-sync ts). Zero imports → no cycle with offline-service; markDirty fires 'ps-d1-dirty' window event
+- src/lib/cloud-d1.ts: exported internals for the sync engine (CLOUD_TABLES, toRow, buildInsertStatements, runStatements, sanitizeText, BILLING_SETTINGS_COLUMNS, d1Query); extracted upsertBillingSettingsRow (shared with backup); added readCloudMeta/readCloudBillingSettings; backupToD1 now clearDirty()s on success (full backup obsoletes all deltas)
+- NEW src/lib/cloud-sync.ts: engine — 12s debounce per user (multi-sell bursts batch into ONE sync), serializes runs, failure backoff (3+ fails → up to 10min), full-backup fallback when cloud empty/table overflow, pushes changed rows via idempotent INSERT OR REPLACE + deletes by id, recomputes ps_backup_meta counts FROM CLOUD after each push (restore integrity stays exact), initCloudSync() installs dirty-event + 'online' + 60s sweep listeners
+- src/lib/offline-service.ts: all 15 mutating functions now markDirty (categories, products, transactions+products side-effect, expenses, cash entries, service transactions, bills, billing settings; deletes → deleted ids incl. product-delete cascade); importBackupOffline + resetDataOffline clearDirty
+- src/app/page.tsx: initCloudSync() once on mount
+- CloudSyncScreen: Auto Sync card (toggle + pending count + last-sync + "Sync now") visible when connected; i18n keys ×3 languages
+- mini-services/d1-mock: bun:sqlite mock of D1 /query endpoint (port 3031) for e2e testing; CLOUDFLARE_API_BASE env override pointed the proxy at it during testing (REMOVED after)
+- E2E verified with agent-browser: signup → add category+product (iPhone 15 qty 10) → Save & Test Connection (mock) → Connected → enable Auto Sync → FULL backup auto-ran (cloud had 1 category + 1 product + meta with correct owner/counts) → stock out 2 → ~15s later cloud showed quantity=8, new STOCK_OUT transaction row (2 @ ₹70000), meta counts auto-updated → UI showed "Last auto sync" timestamp
+- Cleanup: env override removed, mock stopped, dev server restarted on real Cloudflare API; lint + tsc clean
+
+Stage Summary:
+- Auto Sync is OFF by default; user flips one switch in Profile → Cloud Backup. First enable auto-runs a full backup, then every stock/sale/expense/bill change reaches the cloud within ~12s (or instantly via "Sync now")
+- Offline-safe: changes queue in localStorage and flush on reconnect; failures retry with backoff; restore/backup keep integrity (counts recomputed from cloud)
+- Queued tasks remain: back navigation polish, full app security/dead-code audit

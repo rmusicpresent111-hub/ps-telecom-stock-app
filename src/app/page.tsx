@@ -10,6 +10,8 @@ import { useBackHandler } from '@/hooks/useBackHandler';
 
 // Initialize Capacitor bridge early (registers native back button at system level)
 import '@/lib/capacitor-init';
+// Auto Sync engine — installs dirty-event / online / periodic-sweep listeners.
+import { initCloudSync } from '@/lib/cloud-sync';
 
 // Lazy load ALL screen components - only loads what's needed
 const SplashScreen = lazy(() => import('@/components/screens/SplashScreen'));
@@ -93,6 +95,11 @@ export default function Home() {
 
   // ✅ Navigation Stack + Back Handler (browser, Capacitor, in-app)
   const { showExitDialog, handleExitConfirm, handleExitCancel, handleBack } = useBackHandler();
+
+  // ✅ Auto Sync — one-time listener setup (dirty events, back-online, sweep)
+  useEffect(() => {
+    initCloudSync();
+  }, []);
 
   // ✅ Listen for native Capacitor back button (dispatched by capacitor-init.ts)
   // This is the ONLY path for native Android back button → handleBack()

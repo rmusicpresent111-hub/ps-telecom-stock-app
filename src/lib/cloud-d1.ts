@@ -21,6 +21,7 @@
  */
 
 import { exportBackupOffline, importBackupOffline } from './offline-service';
+import { clearDirty } from './sync-dirty';
 
 // ============ CREDENTIALS (localStorage, per user) ============
 
@@ -197,7 +198,8 @@ const CF_DIRECT_BASE = 'https://api.cloudflare.com/client/v4';
 const QUERY_TIMEOUT_MS = 30_000; // parity with the server-side proxy timeout
 
 /**
- * Executes one SQL statement.
+ * Executes one SQL statement. Exported for cloud-sync.ts (meta/counts rows
+ * use bound params).
  *
  * Transport:
  *  - Web: POSTs to the same-origin /api/cloud/d1 proxy (no CORS, creds relayed
@@ -206,7 +208,7 @@ const QUERY_TIMEOUT_MS = 30_000; // parity with the server-side proxy timeout
  *    the proxy route is unreachable — the query goes straight to the official
  *    Cloudflare REST API instead (same body shape, Bearer token auth).
  */
-async function d1Query(
+export async function d1Query(
   creds: D1Credentials,
   sql: string,
   params?: unknown[]
@@ -328,9 +330,9 @@ function normalizeCloudflareResponse(text: string, status: number): D1QueryResul
 /**
  * Executes several statements. Multi-statement SQL is sent in one call; if the
  * endpoint refuses it, every statement is retried individually so the feature
- * works with both behaviours.
+ * works with both behaviours. Exported for cloud-sync.ts.
  */
-async function runStatements(
+export async function runStatements(
   creds: D1Credentials,
   statements: string[]
 ): Promise<D1QueryResult> {
@@ -350,7 +352,7 @@ async function runStatements(
 // ============ SQL VALUE ESCAPING ============
 
 /** Strips NUL bytes and unpaired UTF-16 surrogates (corrupt through JSON/UTF-8). */
-function sanitizeText(s: string): string {
+export function sanitizeText(s: string): string {
   let out = '';
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i);
@@ -537,7 +539,9 @@ async function ensureProductColumn(creds: D1Credentials): Promise<void> {
 
 // ============ TABLE MAPPINGS (camelCase local ↔ snake_case cloud) ============
 
-interface CloudTable {
+// Exported for the incremental sync engine (src/lib/cloud-sync.ts) — the
+// backup/sync layers must share the exact same column mappings.
+export interface CloudTable {
   cloud: string; // D1 table name
   local: string; // key in exportBackupOffline/importBackupOffline payload
   /** [localCamelKey, cloudSnakeColumn] in column order */
@@ -557,7 +561,7 @@ function jsonDefault(key: string): unknown {
   return {};
 }
 
-const CLOUD_TABLES: CloudTable[] = [
+export const CLOUD_TABLES: CloudTable[] = [
   {
     cloud: 'ps_categories',
     local: 'categories',
@@ -679,7 +683,8 @@ const CLOUD_TABLES: CloudTable[] = [
   },
 ];
 
-function toRow(table: CloudTable, record: Record<string, unknown>): unknown[] {
+// Exported for cloud-sync.ts (same escaping/mapping on every write path).
+export function toRow(table: CloudTable, record: Record<string, unknown>): unknown[] {
   return table.columns.map(([camel]) => {
     const v = record[camel];
     if (v === undefined) {
@@ -716,7 +721,7 @@ function fromRow(table: CloudTable, row: Record<string, unknown>): Record<string
 }
 
 /** billing_settings mapping (keyed by user_id, includes large dataURLs). */
-const BILLING_SETTINGS_COLUMNS: [string, string][] = [
+export const BILLING_SETTINGS_COLUMNS: [string, string][] = [
   ['shopName', 'shop_name'],
   ['proprietorName', 'proprietor_name'],
   ['shopAddress', 'shop_address'],
@@ -756,7 +761,8 @@ const MAX_STATEMENT_LEN = 48_000; // stay far below D1's per-statement limit
 const MAX_ROWS_PER_STATEMENT = 25;
 const STATEMENTS_PER_CALL = 10;
 
-function buildInsertStatements(
+// Exported for cloud-sync.ts.
+export function buildInsertStatements(
   table: CloudTable,
   rows: Record<string, unknown>[]
 ): string[] {
@@ -866,21 +872,7 @@ export async function backupToD1(
   const bs = (data.billingSettings && typeof data.billingSettings === 'object'
     ? data.billingSettings
     : {}) as Record<string, unknown>;
-  const bsCols = BILLING_SETTINGS_COLUMNS.map(([, snake]) => snake);
-  const bsPlaceholders = BILLING_SETTINGS_COLUMNS.map(() => '?').join(', ');
-  const bsParams: unknown[] = [
-    userId,
-    ...BILLING_SETTINGS_COLUMNS.map(([camel]) => {
-      const v = bs[camel];
-      if (camel === 'gstEnabled') return v ? 1 : 0;
-      return v === undefined || v === null ? '' : v;
-    }),
-  ];
-  const bsRes = await d1Query(
-    creds,
-    `INSERT OR REPLACE INTO ps_billing_settings (user_id, ${bsCols.join(', ')}) VALUES (?, ${bsPlaceholders})`,
-    bsParams
-  );
+  const bsRes = await upsertBillingSettingsRow(creds, userId, bs);
   if (!bsRes.ok) return { ok: false, error: bsRes.error };
 
   // 7. Write the REAL backup meta row (overwrites the _incomplete marker)
@@ -899,10 +891,56 @@ export async function backupToD1(
   );
   if (!metaRes.ok) return { ok: false, error: metaRes.error };
 
-  // 8. Remember locally for instant "last backup" display
+  // 8. Remember locally for instant "last backup" display + the cloud now has
+  //    EVERYTHING — pending auto-sync deltas are obsolete.
   setD1LastBackup(userId);
+  clearDirty(userId);
 
   return { ok: true, counts };
+}
+
+/**
+ * Writes one user's billing settings row. Bound params (huge dataURLs must not
+ * be inlined). Shared by full backup and incremental sync.
+ */
+export async function upsertBillingSettingsRow(
+  creds: D1Credentials,
+  userId: string,
+  bs: Record<string, unknown>
+): Promise<D1QueryResult> {
+  const bsCols = BILLING_SETTINGS_COLUMNS.map(([, snake]) => snake);
+  const bsPlaceholders = BILLING_SETTINGS_COLUMNS.map(() => '?').join(', ');
+  const bsParams: unknown[] = [
+    userId,
+    ...BILLING_SETTINGS_COLUMNS.map(([camel]) => {
+      const v = bs[camel];
+      if (camel === 'gstEnabled') return v ? 1 : 0;
+      return v === undefined || v === null ? '' : v;
+    }),
+  ];
+  return d1Query(
+    creds,
+    `INSERT OR REPLACE INTO ps_billing_settings (user_id, ${bsCols.join(', ')}) VALUES (?, ${bsPlaceholders})`,
+    bsParams
+  );
+}
+
+/** Reads the cloud meta row (id=1). Null when the cloud database has no backup yet. */
+export async function readCloudMeta(
+  creds: D1Credentials
+): Promise<Record<string, unknown> | null> {
+  const res = await d1Query(creds, 'SELECT * FROM ps_backup_meta WHERE id = 1');
+  if (!res.ok) return null;
+  return res.rows?.[0] || null;
+}
+
+/** Reads one user's billing settings row from the cloud (null when absent). */
+export async function readCloudBillingSettings(
+  creds: D1Credentials,
+  userId: string
+): Promise<Record<string, unknown> | null> {
+  const res = await d1Query(creds, 'SELECT * FROM ps_billing_settings WHERE user_id = ?', [userId]);
+  return res.ok ? res.rows?.[0] || null : null;
 }
 
 // ============ RESTORE ============

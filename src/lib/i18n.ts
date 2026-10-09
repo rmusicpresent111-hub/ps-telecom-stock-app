@@ -266,6 +266,16 @@ type TranslationKeys = {
   noAccountOnDeviceDesc: string;
   // Cloud credential field validation
   invalidAccountIdHint: string;
+  // Auto Sync (incremental real-time cloud updates)
+  autoSync: string;
+  autoSyncDesc: string;
+  autoSyncLast: string;
+  autoSyncPending: string;
+  autoSyncFirstNote: string;
+  autoSyncRunNow: string;
+  autoSyncRunning: string;
+  autoSyncDone: string;
+  autoSyncFailed: string;
   // Friendly, translated cloud error messages (matched by errorCode from the D1 layer)
   errTokenInvalid: string;
   errIdsWrong: string;
@@ -524,6 +534,15 @@ const translations: Record<Language, TranslationKeys> = {
     errIdsMalformed: 'Account ID বা Database ID-এর লেখা ঠিক নেই — শুধু কোডটাই পেস্ট করুন, বাড়তা কোনো লেখা ছাড়া।',
     errRateLimit: 'Cloudflare একটু বেশি request পেয়ে গেছে — এক মিনিট পর আবার চেষ্টা করুন।',
     errTimeout: 'Cloudflare-এর সাথে সংযোগে দেরি হচ্ছে — ইন্টারনেট ঠিক আছে কিনা দেখে আবার চেষ্টা করুন।',
+    autoSync: 'অটো সিঙ্ক (সাথে সাথে ক্লাউড আপডেট)',
+    autoSyncDesc: 'Stock in/out বা বিক্রি করলেই কয়েক সেকেন্ডের মধ্যে cloud database নিজে থেকেই আপডেট হয়ে যাবে — আর বাটন চাপতে হবে না।',
+    autoSyncLast: 'সর্বশেষ অটো সিঙ্ক',
+    autoSyncPending: 'কিছু পরিবর্তন এখনো সিঙ্ক হয়নি — অনলাইন হলেই নিজে থেকে হবে',
+    autoSyncFirstNote: 'চালু করলে প্রথমে একবার পূর্ণ ব্যাকআপ হবে, তারপর থেকে শুধু পরিবর্তনগুলোই যাবে',
+    autoSyncRunNow: 'এখনই সিঙ্ক করুন',
+    autoSyncRunning: 'সিঙ্ক হচ্ছে…',
+    autoSyncDone: 'অটো সিঙ্ক সফল — ক্লাউড আপডেট হয়ে গেছে',
+    autoSyncFailed: 'অটো সিঙ্ক ব্যর্থ — পরে আবার চেষ্টা হবে',
     invalidDatabaseIdHint: 'Database ID ঠিক নেই — এটা xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx এই আকৃতির। পুরো URL পেস্ট করলেও সঠিক অংশটা নিজেই ধরা হবে।',
   },
   en: {
@@ -774,6 +793,15 @@ const translations: Record<Language, TranslationKeys> = {
     errIdsMalformed: 'Account ID or Database ID looks malformed — paste the ID only, without any extra text.',
     errRateLimit: 'Cloudflare rate limit reached — please wait a minute and try again.',
     errTimeout: 'The connection to Cloudflare timed out — check your internet and try again.',
+    autoSync: 'Auto Sync (instant cloud updates)',
+    autoSyncDesc: 'Every stock in/out or sale reaches your cloud database within seconds — no button to press.',
+    autoSyncLast: 'Last auto sync',
+    autoSyncPending: 'Some changes are not synced yet — they will sync automatically when you are online',
+    autoSyncFirstNote: 'When enabled, a full backup runs first; after that only the changes are pushed',
+    autoSyncRunNow: 'Sync now',
+    autoSyncRunning: 'Syncing…',
+    autoSyncDone: 'Auto sync complete — cloud is up to date',
+    autoSyncFailed: 'Auto sync failed — will retry automatically',
     invalidDatabaseIdHint: 'Database ID does not look right — it looks like xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx. Pasting the whole URL also works; the correct part is picked automatically.',
   },
   hi: {
@@ -1024,6 +1052,15 @@ const translations: Record<Language, TranslationKeys> = {
     errIdsMalformed: 'Account ID या Database ID का फॉर्मैट सही नहीं — सिर्फ कोड पेस्ट करें, बिना किसी अतिरिक्त टेक्स्ट के।',
     errRateLimit: 'Cloudflare पर बहुत ज़्यादा request गई — एक मिनट बाद फिर कोशिश करें।',
     errTimeout: 'Cloudflare से कनेक्शन में देरी हो रही है — इंटरनेट जाँचकर फिर कोशिश करें।',
+    autoSync: 'ऑटो सिंक (तुरंत क्लाउड अपडेट)',
+    autoSyncDesc: 'स्टॉक इन/आउट या बिक्री करते ही कुछ सेकंड में क्लाउड डेटाबेस अपने आप अपडेट हो जाएगा — कोई बटन दबाना नहीं पड़ेगा।',
+    autoSyncLast: 'अंतिम ऑटो सिंक',
+    autoSyncPending: 'कुछ बदलाव अभी सिंक नहीं हुए — ऑनलाइन आने पर अपने आप हो जाएँगे',
+    autoSyncFirstNote: 'चालू करने पर पहले एक पूरा बैकअप चलेगा, उसके बाद सिर्फ बदलाव ही जाएँगे',
+    autoSyncRunNow: 'अभी सिंक करें',
+    autoSyncRunning: 'सिंक हो रहा है…',
+    autoSyncDone: 'ऑटो सिंक पूरा — क्लाउड अपडेट हो गया',
+    autoSyncFailed: 'ऑटो सिंक विफल — अपने आप फिर कोशिश होगी',
     invalidDatabaseIdHint: 'Database ID सही नहीं लग रहा — यह xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx आकार का होता है। पूरा URL पेस्ट करने पर भी सही हिस्सा अपने आप निकाल लिया जाता है।',
   },
 };

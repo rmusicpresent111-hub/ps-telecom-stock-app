@@ -24,6 +24,7 @@ import {
   type OfflineDBSchema,
 } from './offline-db';
 import { getLocalUser, updateLocalUser } from './local-auth';
+import { markDirty, clearDirty } from './sync-dirty';
 import { generateRecordId } from './id';
 import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillingSettings, PaymentMethod } from './types';
 
@@ -120,6 +121,8 @@ export async function createCategoryOffline(name: string, image: string, userId:
     _dirty: 0,
   } as OfflineDBSchema['categories']['value']);
 
+  markDirty(userId, { table: 'ps_categories', changed: [category.id] });
+
   return { category };
 }
 
@@ -177,6 +180,8 @@ export async function createProductOffline(productData: {
     _dirty: 0,
   } as OfflineDBSchema['products']['value']);
 
+  markDirty(productData.userId, { table: 'ps_products', changed: [product.id] });
+
   return { product };
 }
 
@@ -223,6 +228,8 @@ export async function updateProductOffline(id: string, updates: Partial<Product>
     _dirty: 0,
   } as OfflineDBSchema['products']['value']);
 
+  markDirty(updates.userId, { table: 'ps_products', changed: [id] });
+
   const { _synced, _dirty, ...prodData } = updatedProduct;
   return { product: prodData as Product };
 }
@@ -245,6 +252,18 @@ export async function deleteProductOffline(id: string, userId: string): Promise<
 
   void tx.objectStore('products').delete(id);
   await tx.done;
+
+  // Cloud: drop the product AND its cascaded transactions.
+  markDirty(userId, {
+    table: 'ps_products',
+    deleted: [id],
+    changed: [],
+  });
+  const removedTxnIds = localTxns.filter(t => t.productId === id).map(t => t.id);
+  if (removedTxnIds.length > 0) {
+    markDirty(userId, { table: 'ps_transactions', deleted: removedTxnIds });
+  }
+
   return { message: 'Product deleted successfully' };
 }
 
@@ -332,6 +351,13 @@ export async function createTransactionOffline(transactionData: {
 
   // Commit — rejects (and rolls back both stores) if anything failed.
   await tx.done;
+
+  // Cloud auto-sync: the stock change AND the transaction itself.
+  markDirty(transactionData.userId, {
+    table: 'ps_products',
+    changed: [transactionData.productId],
+  });
+  markDirty(transactionData.userId, { table: 'ps_transactions', changed: [id] });
 
   return { transaction: stripSync<Transaction>(row) };
 }
@@ -486,6 +512,8 @@ export async function createExpenseOffline(expenseData: {
     _dirty: 0,
   });
 
+  markDirty(expenseData.userId, { table: 'ps_expenses', changed: [expense.id] });
+
   return { expense };
 }
 
@@ -513,6 +541,8 @@ export async function updateExpenseOffline(id: string, updates: { amount?: numbe
     _dirty: 0,
   });
 
+  markDirty(userId, { table: 'ps_expenses', changed: [id] });
+
   return { expense: stripSync<Expense>(updatedExpense) };
 }
 
@@ -522,6 +552,7 @@ export async function deleteExpenseOffline(id: string, userId: string): Promise<
   const row = await db.get('expenses', id);
   if (!row || (userId && row.userId !== userId)) throw new Error('Not found');
   await offlineExpenses.delete(id);
+  markDirty(userId, { table: 'ps_expenses', deleted: [id] });
   return { success: true };
 }
 
@@ -583,6 +614,8 @@ export async function upsertCashEntryOffline(entryData: {
       _dirty: 0,
     });
 
+    markDirty(entryData.userId, { table: 'ps_cash_entries', changed: [existing.id] });
+
     return { entry: stripSync<CashEntry>(updated) };
   }
 
@@ -602,6 +635,8 @@ export async function upsertCashEntryOffline(entryData: {
     _synced: Date.now(),
     _dirty: 0,
   });
+
+  markDirty(entryData.userId, { table: 'ps_cash_entries', changed: [newEntry.id] });
 
   return { entry: newEntry };
 }
@@ -632,6 +667,8 @@ export async function updateCashEntryOffline(id: string, updates: { handCash?: n
     _dirty: 0,
   });
 
+  markDirty(userId, { table: 'ps_cash_entries', changed: [id] });
+
   return { entry: stripSync<CashEntry>(updatedEntry) };
 }
 
@@ -641,6 +678,7 @@ export async function deleteCashEntryOffline(id: string, userId: string): Promis
   const row = await db.get('cashEntries', id);
   if (!row || (userId && row.userId !== userId)) throw new Error('Not found');
   await offlineCashEntries.delete(id);
+  markDirty(userId, { table: 'ps_cash_entries', deleted: [id] });
   return { success: true };
 }
 
@@ -902,6 +940,8 @@ export async function createServiceTransactionOffline(data: {
     _dirty: 0,
   });
 
+  markDirty(data.userId, { table: 'ps_service_transactions', changed: [serviceTransaction.id] });
+
   return { serviceTransaction };
 }
 
@@ -911,6 +951,7 @@ export async function deleteServiceTransactionOffline(id: string, userId: string
   const row = await db.get('serviceTransactions', id);
   if (!row || (userId && row.userId !== userId)) throw new Error('Not found');
   await offlineServiceTransactions.delete(id);
+  markDirty(userId, { table: 'ps_service_transactions', deleted: [id] });
   return { success: true };
 }
 
@@ -958,6 +999,7 @@ export async function saveBillingSettingsOffline(userId: string, updates: Partia
   };
   const db = await getOfflineDB();
   await db.put('billingSettings', next);
+  markDirty(userId, { table: 'ps_billing_settings', changed: ['settings'] });
   return next;
 }
 
@@ -1104,6 +1146,8 @@ export async function createBillOffline(data: {
   void billsOs.put(bill);
   await tx.done;
 
+  markDirty(data.userId, { table: 'ps_bills', changed: [bill.id] });
+
   return { bill: bill as unknown as Bill };
 }
 
@@ -1144,6 +1188,7 @@ export async function deleteBillOffline(id: string, userId: string): Promise<{ s
   const row = await db.get('bills', id);
   if (row && row.userId === userId) {
     await db.delete('bills', id);
+    markDirty(userId, { table: 'ps_bills', deleted: [id] });
   }
   return { success: true };
 }
@@ -1338,6 +1383,10 @@ export async function importBackupOffline(userId: string, backupData: {
   // Commits everything or nothing — any failed request rejects and rolls back.
   await tx.done;
 
+  // Local data now mirrors the restored snapshot exactly — any pending
+  // auto-sync deltas are stale (they'd re-push identical rows at best).
+  clearDirty(userId);
+
   return { message: 'Backup imported successfully' };
 }
 
@@ -1345,5 +1394,8 @@ export async function importBackupOffline(userId: string, backupData: {
 
 export async function resetDataOffline(userId: string) {
   await clearOfflineData(userId);
+  // The wipe is local-only (the cloud backup stays restorable) — but any
+  // pending auto-sync deltas for the deleted rows must go too.
+  clearDirty(userId);
   return { message: 'All data reset successfully' };
 }

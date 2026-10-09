@@ -18,6 +18,14 @@ import {
   type BackupProgress,
 } from '@/lib/cloud-d1';
 import { registerBackModal } from '@/lib/modal-back';
+import {
+  scheduleCloudSync,
+  runCloudSync,
+  isAutoSyncEnabled,
+  setAutoSyncEnabled,
+  getLastAutoSync,
+} from '@/lib/cloud-sync';
+import { getDirty } from '@/lib/sync-dirty';
 import { motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -34,6 +42,8 @@ import {
   ChevronDown,
   ShieldCheck,
   AlertTriangle,
+  Zap,
+  RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -109,6 +119,12 @@ export default function CloudSyncScreen() {
 
   const [busy, setBusy] = useState<'backup' | 'restore' | null>(null);
   const [progress, setProgress] = useState<BackupProgress | null>(null);
+
+  // Auto Sync state
+  const [autoSync, setAutoSync] = useState(false);
+  const [lastAutoSyncTs, setLastAutoSyncTs] = useState(0);
+  const [pendingIds, setPendingIds] = useState(0);
+  const [syncingNow, setSyncingNow] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [showRestoreDialog, setShowRestoreDialog] = useState(false);
   const [showEmailMismatchDialog, setShowEmailMismatchDialog] = useState(false);
@@ -164,6 +180,62 @@ export default function CloudSyncScreen() {
       cancelled = true;
     };
   }, [user?.id]);
+
+  // Auto Sync status — read on mount + light poll while the screen is open
+  // (covers the "sync ran in the background" case without any store wiring).
+  useEffect(() => {
+    if (!user?.id) return;
+    const refresh = () => {
+      setAutoSync(isAutoSyncEnabled(user.id));
+      setLastAutoSyncTs(getLastAutoSync(user.id));
+      const d = getDirty(user.id);
+      setPendingIds(
+        Object.values(d.changed).reduce((n, a) => n + a.length, 0) +
+          Object.values(d.deleted).reduce((n, a) => n + a.length, 0) +
+          d.fullResync.length
+      );
+    };
+    refresh();
+    const iv = setInterval(refresh, 5000);
+    return () => clearInterval(iv);
+  }, [user?.id]);
+
+  const toggleAutoSync = useCallback(() => {
+    if (!user?.id) return;
+    const next = !autoSync;
+    setAutoSyncEnabled(user.id, next);
+    setAutoSync(next);
+    if (next) {
+      // Kick a sync right away — the engine decides: no cloud backup yet →
+      // full backup first; otherwise it pushes only the pending changes.
+      scheduleCloudSync(user.id, 600);
+      toast.success(t('autoSync', language), {
+        description: t('autoSyncDesc', language),
+        duration: 6000,
+      });
+    }
+  }, [user?.id, autoSync, language]);
+
+  const syncNow = useCallback(async () => {
+    if (!user?.id || syncingNow) return;
+    setSyncingNow(true);
+    try {
+      const res = await runCloudSync(user.id);
+      if (res.ok) {
+        toast.success(t('autoSyncDone', language));
+        setLastAutoSyncTs(getLastAutoSync(user.id));
+        const d = getDirty(user.id);
+        setPendingIds(
+          Object.values(d.changed).reduce((n, a) => n + a.length, 0) +
+            Object.values(d.deleted).reduce((n, a) => n + a.length, 0)
+        );
+      } else {
+        toast.error(t('autoSyncFailed', language) + (res.error && res.error !== 'auto sync disabled' ? `: ${res.error}` : ''));
+      }
+    } finally {
+      setSyncingNow(false);
+    }
+  }, [user?.id, syncingNow, language]);
 
   /** Typed values (auto-cleaned), falling back to the stored token when the field is untouched. */
   const currentCreds = (): D1Credentials => ({
@@ -561,6 +633,56 @@ export default function CloudSyncScreen() {
                 className="h-full bg-emerald-400 rounded-full transition-all duration-300"
                 style={{ width: `${progressPct}%` }}
               />
+            </div>
+          )}
+
+          {/* Auto Sync — instant incremental cloud updates */}
+          {conn === 'connected' && (
+            <div className="glass-card p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center shrink-0">
+                    <Zap size={16} className="text-emerald-300" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-sm font-semibold block">{t('autoSync', language)}</span>
+                    <span className="text-[10px] text-white/50 block mt-0.5">{t('autoSyncDesc', language)}</span>
+                    {!autoSync && (
+                      <span className="text-[10px] text-amber-300/80 block mt-1">{t('autoSyncFirstNote', language)}</span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  role="switch"
+                  aria-checked={autoSync}
+                  aria-label={t('autoSync', language)}
+                  onClick={toggleAutoSync}
+                  className={`relative w-11 h-6 rounded-full transition-colors shrink-0 mt-0.5 ${autoSync ? 'bg-emerald-500' : 'bg-white/15'}`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${autoSync ? 'translate-x-5' : ''}`}
+                  />
+                </button>
+              </div>
+              {(autoSync || pendingIds > 0) && (
+                <div className="mt-3 pt-3 border-t border-white/10 flex items-center justify-between gap-3">
+                  <span className="text-[10px] text-white/60 min-w-0">
+                    {pendingIds > 0
+                      ? t('autoSyncPending', language)
+                      : lastAutoSyncTs > 0
+                        ? `${t('autoSyncLast', language)}: ${fmtDate(lastAutoSyncTs)}`
+                        : ''}
+                  </span>
+                  <button
+                    onClick={syncNow}
+                    disabled={syncingNow}
+                    className="text-[11px] px-3 py-1.5 rounded-lg bg-white/10 border border-white/15 text-white/90 flex items-center gap-1.5 disabled:opacity-50 active:scale-95 transition-all shrink-0"
+                  >
+                    {syncingNow ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+                    {syncingNow ? t('autoSyncRunning', language) : t('autoSyncRunNow', language)}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
