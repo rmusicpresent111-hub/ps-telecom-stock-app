@@ -835,3 +835,23 @@ Stage Summary:
 - Dev server now runs persistently (PPid=1 orphan technique) — preview will work without container restart
 - App fully functional end-to-end, zero client errors
 - Boot flow remains boot-proof via db:push no-op script (Task 21)
+
+---
+Task ID: 22
+Agent: Main Agent (Z.ai Code)
+Task: Diagnose & fix "database not connected" in the app
+
+Work Log:
+- Studied DB architecture: local = IndexedDB (offline-db.ts), cloud = user's own Cloudflare D1 via POST /api/cloud/d1 proxy
+- Read cloud-d1.ts: 3 credential paths — user-pasted Setup Code (base64 JSON), manual key entry, server-managed env fallback (CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_D1_DATABASE_ID / CLOUDFLARE_D1_API_TOKEN)
+- Verified in sandbox: .env had NO Cloudflare vars; mini-services empty; no [d1-proxy] log entries
+- Live API test with no creds → `missing_creds` error (route + validation working)
+- Live API test with fake creds → proxy reached REAL api.cloudflare.com and mapped 401 → friendly `token_invalid` error — proves outbound internet + proxy + error mapping all work
+- Navigated app UI: Cloud Backup screen correctly shows "Not connected / Last cloud backup: Never" with Setup Code paste + manual key form
+- Added commented CLOUDFLARE_* placeholders to .env documenting where each value comes from
+
+Stage Summary:
+- NOTHING in the app code is broken — local IndexedDB works, proxy works, UI works
+- Cloud D1 "not connected" root cause: no Cloudflare credentials in this sandbox (previous deployment was Vercel with env vars set)
+- Fix requires user's own Cloudflare D1 credentials (Setup Code paste OR 3 env values for server-managed mode)
+- Once provided: set env vars → restart → connection test → boot auto-restore pulls user's existing cloud backup automatically
