@@ -664,3 +664,21 @@ Stage Summary:
 - All 24 pending commits are on GitHub; remote main = b486f90 = local main
 - Repo is now ready for Vercel "Import Project" → Deploy (no env vars needed)
 - User should delete the PAT from GitHub settings once done
+
+---
+Task ID: 15
+Agent: main (Z.ai Code)
+Task: User asked "Tahole ami ki ekhon Android Studio diye apk build korte parbo?" (can I build the APK with Android Studio now?)
+
+Work Log:
+- Checked sandbox: NO android/ folder (never committed to git history either), no Android SDK/gradle (only java) — cannot build here; build-apk.js exists, is complete and cross-platform
+- capacitor.config.json (appId com.pstelecom.stockapp, webDir out) + all Capacitor 8 deps ARE committed; /android/ intentionally gitignored — build-apk.js auto-adds the platform when missing ("bunx cap add android" → sync → opens Android Studio)
+- Inspected old PS-TELECOM-release.apk (Oct 8, also tracked in git): resources obfuscated; extracted res/as.png 432x432 = the DEFAULT Capacitor launcher icon (not custom) → a fresh `cap add android` on the user's PC reproduces identical branding; no icon work needed
+- public/ps-telecom-logo.png is 1024x1024 (usable later if custom icons are wanted via @capacitor/assets)
+- Stale APKs remain in repo as a quick-install fallback, but lack Tasks 9-13 features (auto-sync, speed, Vercel prep)
+- No repo changes required for the answer; nothing to push
+
+Stage Summary:
+- Answer: YES — user can build on their own PC: install Android Studio + Node.js, clone repo, npm/bun install, run `node scripts/build-apk.js` (auto web build + android platform + sync + opens Studio), then Build → Build APK(s)
+- Sandbox cannot build APKs (no SDK); old APKs on GitHub are stale but installable
+- Optional future: custom PS TELECOM launcher icons via @capacitor/assets from public/ps-telecom-logo.png; signed release build needs a keystore
