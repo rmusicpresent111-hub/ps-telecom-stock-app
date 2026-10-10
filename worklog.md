@@ -720,3 +720,23 @@ Stage Summary:
 - Root cause: the APK build script hijacked Vercel's `npm run build` and expected a static ./out that server mode never produces
 - Zero-config fix: the push auto-triggers a Vercel redeploy which should now pass; user must keep Vercel Build & Output Settings at Next.js defaults (Output Directory empty)
 - APK flow on the user's PC is unchanged (no VERCEL env locally → same pipeline as before, icons included)
+
+---
+Task ID: 18
+Agent: main (Z.ai Code)
+Task: User asked "App theke login system remove kore dao" — remove the login system
+
+Work Log:
+- Mapped the auth surface: LoginScreen/SignupScreen/ForgotPasswordScreen, local-auth.ts (PBKDF2 + throttle + signup/login/reset), isAuthenticated/logout in appStore, auth branches in SplashScreen/LanguageScreen/TutorialScreen/useBackHandler/page.tsx, password re-auth dialogs in ProfileScreen
+- Key constraint discovered: every screen keys its data on user.id (offline DB stores, cloud-sync meta), so the user concept had to survive — only the AUTH was removed
+- local-auth.ts rewritten as a profile service: DEFAULT_USER_ID='local-owner', ensureDefaultUser() auto-creates the profile on boot (password field kept in schema, empty, zero DB migration); existing users' records untouched
+- SplashScreen boot(): ensures profile → welcome (first run) or dashboard; page.tsx drops the 3 auth routes; types.ts Screen union trimmed; appStore isAuthenticated/logout removed; LanguageScreen always goBack (profile-only); TutorialScreen always dashboard; useBackHandler auth list = splash/welcome/tutorial, language guard uses hasSeenTutorial
+- ProfileScreen: logout button + password re-auth removed (Reset/Restore = simple confirm dialogs); email line renders only when present
+- Verified in agent-browser end-to-end: splash → welcome → tutorial → dashboard (no login), Profile shows "Owner"/PS TELECOM with no logout, reload goes splash → dashboard directly, IndexedDB ps-telecom-offline has users=[local-owner/Owner/PS TELECOM/empty pw], created category "Accessories" (userId local-owner) then product "Samsung 25W Charger" qty10 ₹1100 — dashboard showed "1 items" live; mobile viewport 390x844 renders correctly; zero console errors; tsc + eslint clean
+- Dashboard's hardcoded default category tiles (line ~447) are decoration only — fresh installs always had an empty category DB (pre-existing behaviour, not a regression)
+- Committed and pushed to GitHub main with the still-valid PAT
+
+Stage Summary:
+- App is now login-free: opens directly into the shop UI on every launch; APK and web both benefit
+- Data safety: existing devices keep all their data (same user.id); new devices get a fixed 'local-owner' profile automatically
+- i18n dead keys for removed screens left in place (harmless); Cloud Backup, billing, daily book, reports all unaffected
