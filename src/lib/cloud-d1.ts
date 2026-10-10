@@ -198,12 +198,22 @@ const CF_DIRECT_BASE = 'https://api.cloudflare.com/client/v4';
 const QUERY_TIMEOUT_MS = 30_000; // parity with the server-side proxy timeout
 
 /**
+ * Flipped permanently once the same-origin proxy proves to be missing
+ * (HTTP 404/405 — happens on static-export hosting without a Next.js server).
+ * After that every web query goes straight to the Cloudflare REST API.
+ */
+let webDirectMode = false;
+
+/**
  * Executes one SQL statement. Exported for cloud-sync.ts (meta/counts rows
  * use bound params).
  *
  * Transport:
- *  - Web: POSTs to the same-origin /api/cloud/d1 proxy (no CORS, creds relayed
- *    per request, never stored server-side).
+ *  - Web (server hosting, e.g. Vercel): POSTs to the same-origin /api/cloud/d1
+ *    proxy (no CORS, creds relayed per request, never stored server-side).
+ *  - Web (static export hosting, e.g. GitHub Pages): the proxy route does not
+ *    exist there — the first 404/405 from the proxy permanently switches the
+ *    session to direct Cloudflare REST calls (same as native mode).
  *  - Native APK: the Next.js server does not exist inside the app bundle, so
  *    the proxy route is unreachable — the query goes straight to the official
  *    Cloudflare REST API instead (same body shape, Bearer token auth).
@@ -214,11 +224,12 @@ export async function d1Query(
   params?: unknown[]
 ): Promise<D1QueryResult> {
   const native = await isNativeCapacitor();
+  const direct = native || webDirectMode;
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   let url: string;
   let body: string;
 
-  if (native) {
+  if (direct) {
     headers.Authorization = `Bearer ${creds.apiToken}`;
     body = JSON.stringify(params && params.length > 0 ? { sql, params } : { sql });
     url = `${CF_DIRECT_BASE}/accounts/${encodeURIComponent(creds.accountId)}/d1/database/${encodeURIComponent(creds.databaseId)}/query`;
@@ -241,8 +252,14 @@ export async function d1Query(
       payload = null;
     }
     if (!res.ok || !payload || typeof payload.ok !== 'boolean') {
-      // Native mode returns the RAW Cloudflare response — normalize it here.
-      if (native && text) return normalizeCloudflareResponse(text, res.status);
+      // Proxy missing (static-export hosting) → flip to direct mode once and
+      // retry the same statement through the Cloudflare REST API.
+      if (!native && !webDirectMode && (res.status === 404 || res.status === 405)) {
+        webDirectMode = true;
+        return d1Query(creds, sql, params);
+      }
+      // Direct mode returns the RAW Cloudflare response — normalize it here.
+      if (direct && text) return normalizeCloudflareResponse(text, res.status);
       return { ok: false, error: payload?.error || `Request failed (HTTP ${res.status})` };
     }
     return payload;

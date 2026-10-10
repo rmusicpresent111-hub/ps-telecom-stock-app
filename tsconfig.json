@@ -38,6 +38,10 @@
   ],
   "exclude": [
     "node_modules",
-    "mini-services"
+    "mini-services",
+    "examples",
+    "skills",
+    "out",
+    "android"
   ]
 }
