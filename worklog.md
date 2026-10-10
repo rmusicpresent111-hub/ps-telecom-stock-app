@@ -701,3 +701,22 @@ Stage Summary:
 - App now ships with custom PS TELECOM branding: neon artwork adaptive icon on modern Android launchers, full-logo legacy icon, branded native splash — regenerated automatically on the user's machine by build-apk.js
 - User flow unchanged: clone → npm install → node scripts/build-apk.js → Studio → Build APK(s); icon step is automatic
 - Old PAT still valid (used once more for push); reminded user to revoke it
+
+---
+Task ID: 17
+Agent: main (Z.ai Code)
+Task: User reported Vercel deploy failure ("Vercel deploy error dekho" + screenshot showing "Build output ./out not found! Something went wrong.")
+
+Work Log:
+- Diagnosed from the screenshot build log: Vercel runs `bun run build` = `node scripts/build-apk.js` (package.json "build" script), which unconditionally executed the APK pipeline — moved api/ to .api-routes-temp, ran the build, restored api/, then failed at the `./out` existence check
+- Root cause chain: VERCEL=1 makes next.config.ts use server mode (output = .next, never ./out) while the script still demanded ./out → guaranteed failure; the deploy at remote main (223eda4) confirmed api-move/restore ran fine, only the wrong output dir was expected
+- Verified everything else is Vercel-ready: src/app/api/cloud/d1/route.ts is pure fetch (no Prisma/SQLite/z-ai-sdk), no vercel.json, no engines pin, page prerendered OK in the failed log's server-mode build
+- Fix: added "STEP 0 — Vercel deploy guard" at the top of scripts/build-apk.js — when process.env.VERCEL is set it runs the locally installed Next binary (`node node_modules/next/dist/bin/next build`, bunx/npx fallback), prints progress, and exits 0/1 BEFORE any APK/Capacitor/static-export step
+- Tested safely in sandbox: node --check passed; end-to-end simulation with a FAKE next binary in /tmp/faketree (VERCEL=1 → guard path runs and exits 0; without VERCEL → falls through to the APK banner path); real .next and dev server untouched; eslint clean
+- Housekeeping: added /upload/ to .gitignore so platform user-uploads (the screenshot) stop appearing as untracked
+- Committed 1e3b47c (script + gitignore), appended this entry, pushed everything to GitHub main with the still-valid PAT
+
+Stage Summary:
+- Root cause: the APK build script hijacked Vercel's `npm run build` and expected a static ./out that server mode never produces
+- Zero-config fix: the push auto-triggers a Vercel redeploy which should now pass; user must keep Vercel Build & Output Settings at Next.js defaults (Output Directory empty)
+- APK flow on the user's PC is unchanged (no VERCEL env locally → same pipeline as before, icons included)
