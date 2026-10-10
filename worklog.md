@@ -740,3 +740,28 @@ Stage Summary:
 - App is now login-free: opens directly into the shop UI on every launch; APK and web both benefit
 - Data safety: existing devices keep all their data (same user.id); new devices get a fixed 'local-owner' profile automatically
 - i18n dead keys for removed screens left in place (harmless); Cloud Backup, billing, daily book, reports all unaffected
+
+---
+Task ID: 19
+Agent: main (Z.ai Code)
+Task: User reported "App e je data dekhachhe, Vercel e deploy korar por deploy link e open korle oi data dekhachhena" — data visible in the app does not appear on the Vercel deploy link
+
+Work Log:
+- Root cause: IndexedDB + localStorage are PER-ORIGIN — the Vercel link is a different origin with a fresh empty DB, and cloud credentials (ps-d1-creds:<userId>) are per-origin too, so cloud backup was unusable there without re-entering keys
+- Built "server-managed cloud" mode: /api/cloud/d1 now falls back per-field to CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_D1_DATABASE_ID / CLOUDFLARE_D1_API_TOKEN env vars when the request body has empty creds (token stays server-side, never in the JS bundle); missing everywhere → new errorCode 'missing_creds'
+- cloud-d1.ts: SERVER_MANAGED_CREDS sentinel, getEffectiveD1Credentials (local keys > web server-managed > null on APK), isNativePlatformCached/serverManagedCloudPossible sync helpers
+- NEW src/lib/auto-restore.ts: boot-time autoRestoreIfEmpty — pulls the cloud backup into a COMPLETELY EMPTY local DB (fail-safe emptiness check), one-time localStorage flag per outcome, deliberate Reset (ProfileScreen) sets markAutoRestoreSkipped, transient network errors retried next boot, single-run guard
+- SplashScreen boot(): awaits auto-restore capped at 15s (slow network can never trap the splash; restore finishes in background worst-case), shows i18n status line "Fetching your data from the cloud…"
+- cloud-sync engine: runCloudSync uses getEffectiveD1Credentials, scheduleCloudSync prefilter accepts server-managed web origins; CloudSyncScreen: probe server-managed when no local keys → "App-managed cloud connection" card (manual creds form available via link), effectiveCreds()/persistCredsIfManual() so backup/restore/autosync all work keyless on web
+- BUG found by e2e testing and fixed: handleBackup/doRestore useCallback closures captured stale serverManaged=false → "Please fill in all three fields" toast; added serverManaged to both deps arrays
+- i18n: cloudAutoRestore, cloudManagedTitle, cloudManagedDesc, cloudUseOwnCreds, errMissingCreds (bn/en/hi); cloudErrorKey maps 'Missing accountId' → errMissingCreds
+- Testing: mini-services/d1-mock (bun:sqlite stateful Cloudflare /query mock, /__reset + /__dump) + dev server restarted with CLOUDFLARE_API_BASE→mock + dummy env creds. Verified end-to-end in agent-browser: server-managed probe → Connected + app-managed card; UI backup (no keys!) → mock received 1 category + 1 product + meta; storage wipe → reload → auto-restore flag 'restored' + dashboard shows "Accessories 1 items"; device WITH data → reload → no re-restore/duplicates; Auto Sync ON → second product pushed incrementally + meta counts recomputed {products:2,total_rows:3}; third fresh device → 2 items restored; clean server (no env) → missing_creds + manual form fallback with disabled buttons; zero console errors
+- Cleanup: dev server restarted WITHOUT test env vars (user preview must keep using their real saved creds), mock stopped, /tool-results/ gitignored; tsc + eslint clean
+- Committed 9a872fd, pushed 5f535c7..9a872fd main (PAT reused — remind user to revoke)
+
+Stage Summary:
+- The deploy link now shows the shop's data automatically: any fresh browser/device that opens the app pulls the cloud backup on boot (when local DB is empty)
+- To activate on Vercel the user must set 3 env vars (CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_D1_DATABASE_ID, CLOUDFLARE_D1_API_TOKEN) and redeploy; values come from the device where Cloud Backup was configured (or Cloudflare dashboard)
+- Data must reach D1 once: run "Backup to Cloud" (or enable Auto Sync) on the device/origin that has the data
+- APK unaffected: native path still uses locally saved keys; without env vars everything degrades to today's manual-creds behaviour
+- Security note passed to user: anyone with the deploy link can view/edit shop data through the app (no login) — keep the link private
