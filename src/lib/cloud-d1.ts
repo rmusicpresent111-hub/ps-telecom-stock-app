@@ -159,6 +159,8 @@ function setD1LastBackup(userId: string): void {
 // ============ NATIVE (APK) DETECTION ============
 
 let nativeCheck: Promise<boolean> | null = null;
+/** Cached result of the native check — readable synchronously. */
+let nativePlatformCached = false;
 
 /**
  * True when running inside a native Capacitor shell (the Android APK).
@@ -172,15 +174,69 @@ function isNativeCapacitor(): Promise<boolean> {
         const mod = (await import('@capacitor/core')) as {
           Capacitor?: { isNativePlatform?: () => boolean };
         };
-        return typeof mod.Capacitor?.isNativePlatform === 'function'
+        const native = typeof mod.Capacitor?.isNativePlatform === 'function'
           ? mod.Capacitor.isNativePlatform()
           : false;
+        nativePlatformCached = native;
+        return native;
       } catch {
         return false; // @capacitor/core unavailable → plain web.
       }
     })();
   }
   return nativeCheck;
+}
+
+/**
+ * Synchronous best-effort native flag (false until the async check resolves —
+ * safe: the worst case is one extra sync attempt that the async path vetoes).
+ */
+export function isNativePlatformCached(): boolean {
+  return nativePlatformCached;
+}
+
+// ============ SERVER-MANAGED CLOUD (env-backed credentials) ============
+
+/**
+ * Sentinel credentials for the "server-managed" cloud mode: on a server
+ * hosting (Vercel) the /api/cloud/d1 proxy fills the empty fields from the
+ * deployment's own environment variables, so the browser never needs (or
+ * sees) the Cloudflare keys. NEVER send these through the DIRECT Cloudflare
+ * REST path — there the empty token would simply fail (guarded below).
+ */
+export const SERVER_MANAGED_CREDS: D1Credentials = {
+  accountId: '',
+  databaseId: '',
+  apiToken: '',
+};
+
+/** True when the sentinel looks like a real credential set. */
+export function isServerManaged(creds: D1Credentials): boolean {
+  return !creds.accountId && !creds.databaseId && !creds.apiToken;
+}
+
+/**
+ * Cheap synchronous check used by the sync scheduler: on the web (non-native)
+ * the server-managed mode is POSSIBLE (the engine re-verifies properly later);
+ * inside the APK it never is — there only locally saved keys can work.
+ */
+export function serverManagedCloudPossible(): boolean {
+  return typeof window !== 'undefined' && !nativePlatformCached;
+}
+
+/**
+ * Resolves the credentials any cloud operation should use for this user:
+ *  1. Locally saved keys (entered on this device) — always win.
+ *  2. Web (server hosting): the server-managed sentinel — the proxy injects
+ *     the deployment's env credentials. Works with zero user setup on Vercel.
+ *  3. Native APK / no server: null — the user must save their own keys first.
+ */
+export async function getEffectiveD1Credentials(userId: string): Promise<D1Credentials | null> {
+  const own = getD1Credentials(userId);
+  if (own) return own;
+  if (typeof window === 'undefined') return null;
+  if (await isNativeCapacitor()) return null;
+  return SERVER_MANAGED_CREDS;
 }
 
 // ============ LOW-LEVEL QUERY ============
@@ -281,7 +337,7 @@ export async function d1Query(
  * Stable error codes the client UI maps to translated, friendly messages.
  * Keep in sync with /api/cloud/d1 (server proxy) and the i18n keys.
  */
-type CloudErrorCode = 'ids_wrong' | 'token_invalid' | 'ids_malformed' | 'rate_limit';
+type CloudErrorCode = 'ids_wrong' | 'token_invalid' | 'ids_malformed' | 'rate_limit' | 'missing_creds';
 
 /**
  * Maps raw Cloudflare API failures to short, actionable messages a shop owner

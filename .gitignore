@@ -72,6 +72,9 @@ server.log
 # Platform file uploads (user-provided screenshots etc.)
 /upload/
 
+# Tool scratch output
+/tool-results/
+
 # Examples
 /examples/
 

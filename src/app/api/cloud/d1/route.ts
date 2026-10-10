@@ -8,7 +8,15 @@
  *
  * Why a proxy instead of calling Cloudflare directly from the browser?
  *  - No CORS issues (api.cloudflare.com blocks browser calls).
- *  - Credentials are never stored server-side — they are only relayed per request.
+ *  - Credentials are only relayed per request.
+ *
+ * SERVER-MANAGED MODE (env fallback):
+ *  When the request body carries no credentials, the route falls back to the
+ *  deployment's own environment variables (CLOUDFLARE_ACCOUNT_ID,
+ *  CLOUDFLARE_D1_DATABASE_ID, CLOUDFLARE_D1_API_TOKEN). A Vercel deployment
+ *  with those three vars set gets a working cloud backup out of the box — the
+ *  shop owner never has to paste keys on every new device/browser, and the
+ *  token never reaches the browser bundle (it stays server-side).
  *
  * Hardening:
  *  - Same-origin gate: cross-origin browser calls are refused (403).
@@ -89,7 +97,7 @@ function json(payload: D1Response, status = 200, extraHeaders?: Record<string, s
  * Stable error codes the client UI maps to translated, friendly messages.
  * Keep in sync with src/lib/cloud-d1.ts (native path) and the i18n keys.
  */
-type CloudErrorCode = 'ids_wrong' | 'token_invalid' | 'ids_malformed' | 'rate_limit';
+type CloudErrorCode = 'ids_wrong' | 'token_invalid' | 'ids_malformed' | 'rate_limit' | 'missing_creds';
 
 /**
  * Maps raw Cloudflare API failures to short, actionable messages a shop owner
@@ -168,14 +176,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return json({ ok: false, error: 'Invalid request body' });
   }
 
-  const accountId = (body.accountId || '').trim();
-  const databaseId = (body.databaseId || '').trim();
-  const apiToken = (body.apiToken || '').trim();
+  // ---- Credential resolution: request body first, deployment env fallback ----
+  // The client sends empty strings when it has no locally saved keys (the
+  // "server-managed" mode); per-field fallback keeps manual keys working even
+  // alongside env vars (e.g. a personal token overriding the shared one).
+  const envAccountId = (process.env.CLOUDFLARE_ACCOUNT_ID || '').trim();
+  const envDatabaseId = (process.env.CLOUDFLARE_D1_DATABASE_ID || '').trim();
+  const envApiToken = (process.env.CLOUDFLARE_D1_API_TOKEN || '').trim();
+
+  const accountId = ((body.accountId || '').trim() || envAccountId);
+  const databaseId = ((body.databaseId || '').trim() || envDatabaseId);
+  const apiToken = ((body.apiToken || '').trim() || envApiToken);
   const sql = (body.sql || '').trim();
   const params = Array.isArray(body.params) ? body.params : undefined;
 
   if (!accountId || !databaseId || !apiToken) {
-    return json({ ok: false, error: 'Missing accountId, databaseId or apiToken' });
+    return json({
+      ok: false,
+      error: 'Missing accountId, databaseId or apiToken (and no server-managed cloud is configured)',
+      errorCode: 'missing_creds',
+    });
   }
   if (!sql) {
     return json({ ok: false, error: 'Missing sql' });

@@ -27,9 +27,11 @@ import {
   buildInsertStatements,
   d1Query,
   getD1Credentials,
+  getEffectiveD1Credentials,
   readCloudMeta,
   runStatements,
   sanitizeText,
+  serverManagedCloudPossible,
   upsertBillingSettingsRow,
   type CloudCounts,
   type CloudTable,
@@ -90,7 +92,9 @@ let initialized = false;
 export function scheduleCloudSync(userId: string, delayMs: number = DEBOUNCE_MS): void {
   if (!userId || typeof window === 'undefined') return;
   if (!isAutoSyncEnabled(userId)) return;
-  if (!getD1Credentials(userId)) return;
+  // Locally saved keys OR a possible server-managed cloud (the engine re-checks
+  // properly — this is only a cheap pre-filter to avoid pointless timers).
+  if (!getD1Credentials(userId) && !serverManagedCloudPossible()) return;
   if (!hasDirty(userId)) return;
 
   const existing = timers.get(userId);
@@ -167,7 +171,7 @@ export async function runCloudSync(userId: string): Promise<SyncResult> {
   if (typeof window === 'undefined' || !isAutoSyncEnabled(userId)) {
     return { ok: false, error: 'auto sync disabled' };
   }
-  const creds = getD1Credentials(userId);
+  const creds = await getEffectiveD1Credentials(userId);
   if (!creds) return { ok: false, error: 'no credentials' };
   if (!hasDirty(userId)) return { ok: true };
 

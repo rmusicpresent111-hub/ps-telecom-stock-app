@@ -12,6 +12,8 @@ import {
   testD1Connection,
   backupToD1,
   restoreFromD1,
+  SERVER_MANAGED_CREDS,
+  isServerManaged,
   type D1Credentials,
   type CloudMeta,
   type CloudCounts,
@@ -57,6 +59,7 @@ type ConnState = 'idle' | 'testing' | 'connected' | 'error';
 function cloudErrorKey(msg: string): Parameters<typeof t>[0] | null {
   const m = msg || '';
   if (m.includes('API token is invalid')) return 'errTokenInvalid';
+  if (m.includes('Missing accountId')) return 'errMissingCreds';
   if (m.includes('Account ID or Database ID is wrong')) return 'errIdsWrong';
   if (m.includes('looks malformed')) return 'errIdsMalformed';
   if (m.includes('rate limit')) return 'errRateLimit';
@@ -113,6 +116,11 @@ export default function CloudSyncScreen() {
   // In-memory copy of the stored credentials (token included) for API calls.
   const [savedCreds, setSavedCreds] = useState<D1Credentials | null>(null);
 
+  // Server-managed cloud: the deployment (Vercel) carries its own Cloudflare
+  // credentials — the user never has to paste keys in this browser.
+  const [serverManaged, setServerManaged] = useState(false);
+  const [showManualForm, setShowManualForm] = useState(false);
+
   const [conn, setConn] = useState<ConnState>('idle');
   const [connError, setConnError] = useState('');
   const [cloudMeta, setCloudMeta] = useState<CloudMeta | null>(null);
@@ -150,31 +158,54 @@ export default function CloudSyncScreen() {
     return registerBackModal(() => setShowEmailMismatchDialog(false));
   }, [showEmailMismatchDialog]);
 
-  // Load saved credentials on mount + auto-verify connection in background
+  // Load saved credentials on mount + auto-verify connection in background.
+  // Without local keys, probe the server-managed cloud once (Vercel env vars);
+  // if that is not configured either, fall back to the manual creds form.
   useEffect(() => {
     if (!user?.id) return;
     const saved = getD1Credentials(user.id);
-    if (!saved) return;
-    // Account/Database IDs prefill normally (sanitized); the token stays hidden.
-    setAccountId(sanitizeAccountId(saved.accountId));
-    setDatabaseId(sanitizeDatabaseId(saved.databaseId));
-    setApiToken('');
-    setSavedCreds(saved);
+    if (saved) {
+      // Account/Database IDs prefill normally (sanitized); the token stays hidden.
+      setAccountId(sanitizeAccountId(saved.accountId));
+      setDatabaseId(sanitizeDatabaseId(saved.databaseId));
+      setApiToken('');
+      setSavedCreds(saved);
+      let cancelled = false;
+      setConn('testing');
+      testD1Connection(saved)
+        .then(res => {
+          if (cancelled) return;
+          if (res.ok) {
+            setConn('connected');
+            setCloudMeta(res.meta ?? null);
+          } else {
+            setConn('error');
+            setConnError(res.error || '');
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setConn('error');
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
     let cancelled = false;
     setConn('testing');
-    testD1Connection(saved)
+    testD1Connection(SERVER_MANAGED_CREDS)
       .then(res => {
         if (cancelled) return;
         if (res.ok) {
+          setServerManaged(true);
           setConn('connected');
           setCloudMeta(res.meta ?? null);
         } else {
-          setConn('error');
-          setConnError(res.error || '');
+          // No env cloud / offline → the manual credentials form below.
+          setConn('idle');
         }
       })
       .catch(() => {
-        if (!cancelled) setConn('error');
+        if (!cancelled) setConn('idle');
       });
     return () => {
       cancelled = true;
@@ -244,6 +275,26 @@ export default function CloudSyncScreen() {
     apiToken: apiToken.trim() || savedCreds?.apiToken || '',
   });
 
+  /**
+   * Credentials the cloud actions should run with: complete manual keys when
+   * present, otherwise the server-managed sentinel (env-backed proxy).
+   */
+  const effectiveCreds = (): D1Credentials | null => {
+    const c = currentCreds();
+    if (c.accountId && c.databaseId && c.apiToken) return c;
+    if (serverManaged) return SERVER_MANAGED_CREDS;
+    return null;
+  };
+
+  /** Persists keys only when they are real manual credentials. */
+  const persistCredsIfManual = (creds: D1Credentials) => {
+    if (user?.id && !isServerManaged(creds)) {
+      saveD1Credentials(creds, user.id);
+      setSavedCreds(creds);
+      setApiToken(''); // re-mask: the keys are stored now
+    }
+  };
+
   const accountValid = accountId === '' || isValidAccountId(sanitizeAccountId(accountId));
   const databaseValid = databaseId === '' || isValidDatabaseId(sanitizeDatabaseId(databaseId));
 
@@ -266,9 +317,7 @@ export default function CloudSyncScreen() {
       // Nothing is persisted until the connection test actually passes.
       const res = await testD1Connection(creds);
       if (res.ok) {
-        saveD1Credentials(creds, user.id);
-        setSavedCreds(creds);
-        setApiToken(''); // re-mask: the new token is stored now
+        persistCredsIfManual(creds);
         setConn('connected');
         setCloudMeta(res.meta ?? null);
         toast.success(t('connectionOk', language));
@@ -286,8 +335,8 @@ export default function CloudSyncScreen() {
 
   const handleBackup = useCallback(async () => {
     if (!user?.id) return;
-    const creds = currentCreds();
-    if (!creds.accountId || !creds.databaseId || !creds.apiToken) {
+    const creds = effectiveCreds();
+    if (!creds) {
       toast.error(t('fillAllFields', language));
       return;
     }
@@ -301,9 +350,7 @@ export default function CloudSyncScreen() {
       });
       if (res.ok) {
         // Persist only after a successful backup.
-        saveD1Credentials(creds, user.id);
-        setSavedCreds(creds);
-        setApiToken('');
+        persistCredsIfManual(creds);
         const c: CloudCounts | undefined = res.counts;
         const summary = c
           ? ` (${c.categories}+${c.products}+${c.transactions}+${c.expenses}+${c.cashEntries}+${c.serviceTransactions}+${c.bills})`
@@ -325,12 +372,12 @@ export default function CloudSyncScreen() {
       setBusy(null);
       setProgress(null);
     }
-  }, [user, accountId, databaseId, apiToken, savedCreds, language]);
+  }, [user, accountId, databaseId, apiToken, savedCreds, language, serverManaged]);
 
   const doRestore = useCallback(async (confirmDifferentEmail: boolean) => {
     if (!user?.id) return;
-    const creds = currentCreds();
-    if (!creds.accountId || !creds.databaseId || !creds.apiToken) {
+    const creds = effectiveCreds();
+    if (!creds) {
       toast.error(t('fillAllFields', language));
       return;
     }
@@ -343,9 +390,7 @@ export default function CloudSyncScreen() {
         confirmDifferentEmail,
       });
       if (res.ok) {
-        saveD1Credentials(creds, user.id);
-        setSavedCreds(creds);
-        setApiToken('');
+        persistCredsIfManual(creds);
         toast.success(t('cloudRestoreDone', language));
         navTimerRef.current = setTimeout(() => navigateToTab('dashboard'), 900);
       } else if (res.emailMismatch) {
@@ -363,7 +408,7 @@ export default function CloudSyncScreen() {
     } finally {
       setBusy(null);
     }
-  }, [user, accountId, databaseId, apiToken, savedCreds, language, navigateToTab]);
+  }, [user, accountId, databaseId, apiToken, savedCreds, language, navigateToTab, serverManaged]);
 
   const handleDisconnect = () => {
     clearD1Credentials(user?.id);
@@ -499,7 +544,32 @@ export default function CloudSyncScreen() {
           )}
         </motion.div>
 
-        {/* Credentials card */}
+        {/* Credentials card — replaced by the app-managed notice when the
+            deployment carries its own Cloudflare credentials */}
+        {serverManaged && !showManualForm && !savedCreds ? (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.05 }}
+            className="glass-card p-4 mb-4 flex items-start gap-3"
+          >
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center shrink-0">
+              <ShieldCheck size={16} className="text-emerald-300" />
+            </div>
+            <div className="min-w-0">
+              <span className="text-sm font-semibold block">{t('cloudManagedTitle', language)}</span>
+              <p className="text-[11px] text-white/50 leading-relaxed mt-1">
+                {t('cloudManagedDesc', language)}
+              </p>
+              <button
+                onClick={() => setShowManualForm(true)}
+                className="text-[11px] text-emerald-400 hover:text-emerald-300 underline underline-offset-2 mt-2"
+              >
+                {t('cloudUseOwnCreds', language)}
+              </button>
+            </div>
+          </motion.div>
+        ) : (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -594,6 +664,7 @@ export default function CloudSyncScreen() {
             )}
           </button>
         </motion.div>
+        )}
 
         {/* Actions */}
         <motion.div

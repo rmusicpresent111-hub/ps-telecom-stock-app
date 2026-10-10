@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { getProfileOffline, updateProfileOffline, exportBackupOffline, importBackupOffline, resetDataOffline } from '@/lib/offline-service';
+import { markAutoRestoreSkipped } from '@/lib/auto-restore';
 import { registerBackModal } from '@/lib/modal-back';
 import { motion } from 'framer-motion';
 import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, Receipt, ReceiptText, CloudUpload } from 'lucide-react';
@@ -172,6 +173,9 @@ export default function ProfileScreen() {
     setLoading(true);
     try {
       await resetDataOffline(user.id);
+      // A deliberate wipe must NOT be undone by the boot-time auto-restore
+      // (which would resurrect the cloud backup on the next start).
+      markAutoRestoreSkipped(user.id);
       // Clear the UI-side category cache too, so the dashboard/product screens
       // immediately reflect the empty DB instead of stale rows.
       setCategories([]);
