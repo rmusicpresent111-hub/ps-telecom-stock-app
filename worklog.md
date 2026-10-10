@@ -874,3 +874,26 @@ Stage Summary:
 - CONFIRMED: Cloud Backup option exists and works — Profile screen has "Cloud Backup (Cloudflare D1)" entry; CloudSyncScreen shows: Setup Code paste box ("Connect with code"), manual Account ID/Database ID/API Token form, Save & Test Connection, Backup to Cloud, Restore from Cloud (disabled until connected), Cloudflare setup guide; Auto Sync appears after connect
 - Status: "Not connected / Last cloud backup: Never" because the 3 CLOUDFLARE_* env vars in .env are commented out
 - To activate server-managed mode: uncomment and fill the 3 vars in .env (or deploy on Vercel with those vars); in the Android APK the user must instead paste keys or Setup Code per device
+
+---
+Task ID: 23
+Agent: Z.ai Code (main)
+Task: Fix "APK build korleo database variable paste korleo connect hochhena" — cloud backup never connects inside the Android APK
+
+Work Log:
+- Diagnosed root cause with live tests:
+  1. CORS preflight test: OPTIONS https://api.cloudflare.com/client/v4/... → HTTP 405 "OPTIONS not supported", ZERO Access-Control-Allow-Origin headers → Cloudflare API does not answer CORS preflights
+  2. APK WebView origin is https://localhost (androidScheme https) → every direct cloud call is cross-origin with Authorization header → preflight required → ALWAYS blocked → "connect hochhena" even with 100% correct credentials
+  3. Repo has no android/ folder (only prebuilt APKs); capacitor.config.json = appId/appName/webDir/androidScheme only
+  4. dev.log shows [d1-proxy] OK rows=5/1/0 — user's real Cloudflare credentials SUCCEED via the web proxy path → keys are valid, only the APK transport is broken
+- Implemented fix in src/lib/cloud-d1.ts:
+  - New nativeQuery() helper: routes native (APK) queries through CapacitorHttp.post() from @capacitor/core (Android/iOS native HTTP stack — no WebView, no CORS, no preflight), 30s connect/read timeouts, JSON response re-stringified into existing normalizeCloudflareResponse() so friendly error mapping + errorCode stay identical
+  - d1Query(): inserted `if (native) return nativeQuery(url, headers, body);` before the web fetch path — ALL cloud operations (backup, restore, auto-sync, meta counts, Save & Test, Setup Code connect) funnel through d1Query so one fix covers everything
+  - Updated transport docstrings to document the CORS-vs-WebView rationale
+- Verification: bun run lint → zero errors; dev server Fast Refresh compiled; agent-browser reload → page loads clean, console zero errors
+
+Stage Summary:
+- ROOT CAUSE: APK WebView fetch to api.cloudflare.com was always CORS-blocked (Cloudflare ignores preflights) — credentials were never the problem; .env vars also can never work in APK (no server inside bundle)
+- FIX: native path now uses CapacitorHttp (native HTTP stack) — code change in src/lib/cloud-d1.ts only, no config/plugin install needed (@capacitor/core already a dependency)
+- USER ACTION NEEDED: rebuild APK locally — npm run build (build-apk.js: static export → cap sync android → Android Studio) → install new APK → Cloud Backup screen → enter keys / Setup Code → Save & Test Connection now works
+- Web/Vercel path untouched and still working (proxy + optional server-managed env mode)

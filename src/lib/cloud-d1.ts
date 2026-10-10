@@ -309,6 +309,73 @@ const CF_DIRECT_BASE = 'https://api.cloudflare.com/client/v4';
 const QUERY_TIMEOUT_MS = 30_000; // parity with the server-side proxy timeout
 
 /**
+ * One Cloudflare query from the native (APK) shell, sent through the
+ * CapacitorHttp plugin — i.e. the Android/iOS NATIVE HTTP stack.
+ *
+ * Why not plain fetch(): the Capacitor WebView is a browser. Every request it
+ * makes is cross-origin (app origin = https://localhost), and a request with
+ * an Authorization header REQUIRES a successful CORS preflight. The
+ * Cloudflare API does not answer preflights (OPTIONS → HTTP 405, no
+ * Access-Control-Allow-Origin), so WebView fetch() was ALWAYS blocked with a
+ * network error — even when the pasted credentials were 100% correct.
+ * CapacitorHttp skips the WebView entirely: no CORS, no preflight, real
+ * native sockets. Timeouts are handled by the plugin options (no AbortSignal
+ * support there).
+ */
+async function nativeQuery(
+  url: string,
+  headers: Record<string, string>,
+  body: string
+): Promise<D1QueryResult> {
+  try {
+    const mod = (await import('@capacitor/core')) as {
+      CapacitorHttp?: {
+        post: (options: {
+          url: string;
+          method: string;
+          headers: Record<string, string>;
+          data: unknown;
+          connectTimeout: number;
+          readTimeout: number;
+        }) => Promise<{ status: number; data: unknown }>;
+      };
+    };
+    if (!mod.CapacitorHttp) {
+      return { ok: false, error: 'CapacitorHttp plugin unavailable on this platform' };
+    }
+    // CapacitorHttp serializes object `data` as JSON when Content-Type is
+    // application/json (which `headers` already carries).
+    let data: unknown;
+    try {
+      data = JSON.parse(body);
+    } catch {
+      data = body;
+    }
+    const res = await mod.CapacitorHttp.post({
+      url,
+      method: 'POST',
+      headers,
+      data,
+      connectTimeout: QUERY_TIMEOUT_MS,
+      readTimeout: QUERY_TIMEOUT_MS,
+    });
+    // JSON responses arrive already parsed (res.data = object) → re-stringify
+    // for the shared Cloudflare response normalizer.
+    const text = typeof res.data === 'string' ? res.data : JSON.stringify(res.data ?? {});
+    return normalizeCloudflareResponse(text, res.status);
+  } catch (e) {
+    // Only true network-level failures throw here (offline, DNS, timeout).
+    const msg = String((e as Error)?.message || (e as unknown) || 'Network error');
+    const timedOut = /timed?\s?out|timeout/i.test(msg);
+    return {
+      ok: false,
+      error: timedOut ? 'Cloudflare request timed out' : `Cloudflare request failed: ${msg}`,
+      ...(timedOut ? { errorCode: 'timeout' as const } : {}),
+    };
+  }
+}
+
+/**
  * Flipped permanently once the same-origin proxy proves to be missing
  * (HTTP 404/405 — happens on static-export hosting without a Next.js server).
  * After that every web query goes straight to the Cloudflare REST API.
@@ -327,7 +394,12 @@ let webDirectMode = false;
  *    session to direct Cloudflare REST calls (same as native mode).
  *  - Native APK: the Next.js server does not exist inside the app bundle, so
  *    the proxy route is unreachable — the query goes straight to the official
- *    Cloudflare REST API instead (same body shape, Bearer token auth).
+ *    Cloudflare REST API through the NATIVE HTTP stack (CapacitorHttp), NOT
+ *    the WebView fetch. WebView fetch cannot work here: api.cloudflare.com
+ *    does not answer CORS preflights (OPTIONS → 405, no Access-Control-
+ *    Allow-Origin), and every request in the APK is cross-origin from
+ *    https://localhost — so plain fetch() was always blocked with a network
+ *    error, even with perfectly correct credentials.
  */
 export async function d1Query(
   creds: D1Credentials,
@@ -348,6 +420,9 @@ export async function d1Query(
     body = JSON.stringify({ ...creds, sql, params });
     url = '/api/cloud/d1';
   }
+
+  // Native APK → native HTTP stack (bypasses WebView CORS entirely).
+  if (native) return nativeQuery(url, headers, body);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), QUERY_TIMEOUT_MS);
