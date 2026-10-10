@@ -94,7 +94,145 @@ function txnCostBasis(t: Transaction, products: Product[]): number {
   return t.product?.purchasePrice ?? products.find(p => p.id === t.productId)?.purchasePrice ?? 0;
 }
 
+/** A "sale" = SELL *or* STOCK_OUT — both consume stock and earn revenue.
+ *  Shopkeepers record everyday sales through Stock Out, so every profit
+ *  surface must count BOTH types or the Profit tab looks "broken". */
+export function isSaleType(type: string): boolean {
+  return type === 'SELL' || type === 'STOCK_OUT';
+}
+
+/**
+ * FIFO cost engine — "purches price ager gulo theke suruhobe, tarpor last
+ * purches price asbe".
+ *
+ * Replays the product's full transaction history in chronological order and
+ * maintains a queue of purchase lots (every STOCK_IN row = one lot at its
+ * recorded price). Each earlier sale/stock-out consumes the OLDEST lots
+ * first. The NEW sale's cost = whatever the oldest remaining lots supply,
+ * and when every lot is dry the balance is priced at the product's LAST
+ * known purchase price. Returns the blended PER-UNIT cost of this sale —
+ * the caller snapshots it into the transaction, so every profit surface
+ * (Profit tab, dashboard, reports) uses FIFO automatically.
+ */
+function computeFifoUnitCost(
+  product: OfflineDBSchema['products']['value'],
+  history: OfflineDBSchema['transactions']['value'][],
+  sellQty: number
+): number {
+  if (sellQty <= 0) return 0;
+
+  type Lot = { qty: number; price: number };
+  const lots: Lot[] = [];
+
+  const chron = history
+    .filter(t => t.productId === product.id)
+    .sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
+
+  for (const t of chron) {
+    const qty = Math.max(0, Math.floor(Number(t.quantity)) || 0);
+    if (qty <= 0) continue;
+    if (t.type === 'STOCK_IN') {
+      // The price typed at stock-in time; fall back to the row total, then
+      // to the product's current purchase price.
+      const price = t.unitPrice > 0
+        ? t.unitPrice
+        : (t.totalAmount > 0 ? t.totalAmount / qty : 0) || product.purchasePrice;
+      lots.push({ qty, price: price || product.purchasePrice });
+    } else if (t.type === 'STOCK_OUT' || t.type === 'SELL') {
+      // Replay earlier consumption — oldest lots leave the queue first.
+      let need = qty;
+      while (need > 0 && lots.length > 0) {
+        const lot = lots[0];
+        const take = Math.min(lot.qty, need);
+        lot.qty -= take;
+        need -= take;
+        if (lot.qty <= 0) lots.shift();
+      }
+    }
+  }
+
+  // THIS sale: blended cost across the oldest remaining lots…
+  let cost = 0;
+  let need = sellQty;
+  while (need > 0 && lots.length > 0) {
+    const lot = lots[0];
+    const take = Math.min(lot.qty, need);
+    cost += take * lot.price;
+    lot.qty -= take;
+    need -= take;
+    if (lot.qty <= 0) lots.shift();
+  }
+  // …and when lots run dry, the LAST known purchase price applies.
+  if (need > 0) cost += need * (product.purchasePrice || 0);
+
+  return cost / sellQty;
+}
+
 // ============ CATEGORIES (Local) ============
+
+/** The 20 shop-ready starter categories, seeded into a FRESH device once.
+ *  Without this the Add Product form's category dropdown is empty on a new
+ *  install and the owner cannot add a single product. */
+const DEFAULT_CATEGORY_SEED: { name: string; image: string }[] = [
+  { name: 'Mobile', image: '/categories/mobile.png' },
+  { name: 'Display/Combo', image: '/categories/display.png' },
+  { name: 'Tempered Glass', image: '/categories/tempered-glass.png' },
+  { name: 'Flip Cover', image: '/categories/flip-cover.png' },
+  { name: 'Back Cover', image: '/categories/back-cover.png' },
+  { name: 'UV Glass', image: '/categories/uv-glass.png' },
+  { name: 'Smart Watch', image: '/categories/smart-watch.png' },
+  { name: 'Battery', image: '/categories/battery.png' },
+  { name: 'Charger', image: '/categories/charger.png' },
+  { name: 'Neck Band', image: '/categories/neckband.png' },
+  { name: 'Ear Pods', image: '/categories/earpods.png' },
+  { name: 'Selfie Stick', image: '/categories/selfie-stick.png' },
+  { name: 'Ring Light', image: '/categories/ring-light.png' },
+  { name: 'Mobile Stand', image: '/categories/mobile-stand.png' },
+  { name: 'Watch Strap', image: '/categories/watch-strap.png' },
+  { name: 'Earphone', image: '/categories/earphone.png' },
+  { name: 'Memory Card', image: '/categories/memory-card.png' },
+  { name: 'Data Cable', image: '/categories/data-cable.png' },
+  { name: 'Home Theater', image: '/categories/home-theater.png' },
+  { name: 'Refrigerator', image: '/categories/refrigerator.png' },
+];
+
+/**
+ * Creates the starter categories ONCE per device (no-op when the owner
+ * already has any category — never overwrites their own setup).
+ */
+export async function seedDefaultCategoriesOffline(userId: string): Promise<void> {
+  if (!userId) return;
+  try {
+    const existing = await offlineCategories.getAll(userId);
+    if (existing.length > 0) return;
+    const now = new Date().toISOString();
+    const ids: string[] = [];
+    for (const seed of DEFAULT_CATEGORY_SEED) {
+      const id = generateRecordId();
+      ids.push(id);
+      const category = {
+        id,
+        name: seed.name,
+        image: seed.image,
+        userId,
+        createdAt: now,
+        updatedAt: now,
+        _count: { products: 0 },
+      };
+      await offlineCategories.put({
+        ...category,
+        _synced: Date.now(),
+        _dirty: 0,
+      } as OfflineDBSchema['categories']['value']);
+    }
+    markDirty(userId, { table: 'ps_categories', changed: ids });
+  } catch {
+    // Seeding is best-effort; the + Add Category button still works.
+  }
+}
 
 export async function getCategoriesOffline(userId: string): Promise<Category[]> {
   const localCats = await offlineCategories.getAll(userId);
@@ -191,6 +329,35 @@ export async function createProductOffline(productData: {
   } as OfflineDBSchema['products']['value']);
 
   markDirty(productData.userId, { table: 'ps_products', changed: [product.id] });
+
+  // Opening stock becomes FIFO lot #1: an initial STOCK_IN row at the
+  // creation-time purchase price. Without it the FIFO engine would have no
+  // lot for the quantity entered on the Add Product form (it would fall
+  // straight through to "last purchase price" for the very first sales).
+  if (quantity > 0) {
+    const openingTxnId = generateRecordId();
+    const openingTxn: OfflineDBSchema['transactions']['value'] = {
+      id: openingTxnId,
+      productId: product.id,
+      type: 'STOCK_IN',
+      quantity,
+      unitPrice: purchasePrice,
+      totalAmount: purchasePrice * quantity,
+      date: localDateStr(new Date(now)),
+      userId: productData.userId,
+      createdAt: now,
+      product: {
+        id: product.id,
+        name: product.name,
+        purchasePrice,
+        sellingPrice,
+      },
+      _synced: Date.now(),
+      _dirty: 0,
+    };
+    await offlineTransactions.put(openingTxn);
+    markDirty(productData.userId, { table: 'ps_transactions', changed: [openingTxnId] });
+  }
 
   return { product };
 }
@@ -328,7 +495,25 @@ export async function createTransactionOffline(transactionData: {
     throw new Error(`Insufficient stock — only ${product.quantity} left`);
   }
 
+  // ---- FIFO cost basis (oldest purchase lots first, then last price) ----
+  // Read the product's transaction history INSIDE the same atomic tx so the
+  // replay can never race a concurrent sell. Only prior rows exist here —
+  // the new row is put() below.
+  let fifoUnitCost = product.purchasePrice || 0;
+  if (isOut) {
+    const history = await transactionsStore
+      .index('by-userId')
+      .getAll(transactionData.userId);
+    fifoUnitCost = computeFifoUnitCost(product, history, quantity);
+  }
+
   const quantityChange = transactionData.type === 'STOCK_IN' ? quantity : -quantity;
+
+  // Stocking in at a new price moves the product's "last purchase price"
+  // forward — once older lots are consumed, sales cost THIS price.
+  const lastPurchasePrice = transactionData.type === 'STOCK_IN' && unitPrice > 0
+    ? unitPrice
+    : product.purchasePrice;
 
   const row: OfflineDBSchema['transactions']['value'] = {
     id,
@@ -340,12 +525,15 @@ export async function createTransactionOffline(transactionData: {
     date: transactionData.date || localDateStr(),
     userId: transactionData.userId,
     createdAt: now,
-    // Snapshot the product prices at transaction time — historical profit must
+    // Snapshot the prices at transaction time — historical profit must
     // never change when the user later edits the product's prices.
+    // For sales the snapshot IS the FIFO per-unit cost, so every profit
+    // surface (Profit tab / dashboard / reports) computes FIFO profit
+    // without any extra plumbing.
     product: {
       id: product.id,
       name: product.name,
-      purchasePrice: product.purchasePrice,
+      purchasePrice: isOut ? fifoUnitCost : lastPurchasePrice,
       sellingPrice: product.sellingPrice,
     },
     _synced: Date.now(),
@@ -356,6 +544,7 @@ export async function createTransactionOffline(transactionData: {
   await productsStore.put({
     ...product,
     quantity: product.quantity + quantityChange,
+    purchasePrice: lastPurchasePrice,
     updatedAt: now,
   });
 
@@ -420,7 +609,7 @@ export async function getDashboardOffline(userId: string) {
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
   const sevenDaysAgoStr = localDateStr(sevenDaysAgo);
 
-  const saleTxns = transactions.filter(t => t.type === 'SELL' && t.date >= sevenDaysAgoStr);
+  const saleTxns = transactions.filter(t => isSaleType(t.type) && t.date >= sevenDaysAgoStr);
   const saleMap = new Map<string, { sales: number; quantity: number }>();
   for (const t of saleTxns) {
     const existing = saleMap.get(t.date) || { sales: 0, quantity: 0 };
@@ -454,9 +643,10 @@ export async function getDashboardOffline(userId: string) {
 
   // ⚡ Today's profit computed from the ALREADY-LOADED transactions — the
   // dashboard used to re-scan the whole transactions store a second time.
-  // Profit = totalAmount − (quantity × purchase-price SNAPSHOT at sale time).
+  // Profit = totalAmount − (quantity × FIFO cost snapshot at sale time).
+  // Both SELL and STOCK_OUT count — everyday sales are recorded via Stock Out.
   const todayProfit = todayTxns.reduce((sum, tx) => {
-    if (tx.type !== 'SELL') return sum;
+    if (!isSaleType(tx.type)) return sum;
     const cost = (tx.quantity || 0) * (tx.product?.purchasePrice ?? 0);
     return sum + ((tx.totalAmount || 0) - cost);
   }, 0);

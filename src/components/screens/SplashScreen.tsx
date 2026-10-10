@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { useAppStore } from '@/store/appStore';
 import { ensureDefaultUser } from '@/lib/local-auth';
 import { autoRestoreIfEmpty } from '@/lib/auto-restore';
+import { seedDefaultCategoriesOffline } from '@/lib/offline-service';
 import { t } from '@/lib/i18n';
 
 const floatingIcons = ['📱', '🎧', '🔌', '⌚', '📺'];
@@ -90,6 +91,11 @@ export default function SplashScreen() {
           setRestoring(true);
           try {
             await autoRestoreIfEmpty(uid);
+            // AFTER restore (never before — seeding would make the device
+            // look "not empty" and block the cloud restore): top up a still-
+            // empty device with the 20 starter categories so the Add Product
+            // form works right away. No-op when the owner already has any.
+            await seedDefaultCategoriesOffline(uid);
           } finally {
             if (!settled) {
               settled = true;

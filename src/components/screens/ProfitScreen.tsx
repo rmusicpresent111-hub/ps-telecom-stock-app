@@ -6,7 +6,7 @@ import { t } from '@/lib/i18n';
 import { Product, Transaction, ServiceTransaction } from '@/lib/types';
 import { TrendingUp, Calendar, ChevronDown, Package, IndianRupee, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { toast } from 'sonner';
-import { getTransactionsOffline, getProductsOffline, getServiceTransactionsOffline, localDateStr } from '@/lib/offline-service';
+import { getTransactionsOffline, getProductsOffline, getServiceTransactionsOffline, localDateStr, isSaleType } from '@/lib/offline-service';
 import { motion, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
 
@@ -147,14 +147,18 @@ export default function ProfitScreen() {
   // Date range
   const dateRange = useMemo(() => getDateRange(preset, customFrom, customTo), [preset, customFrom, customTo]);
 
-  // Filter SELL transactions within date range
+  // Filter SALES within date range — both SELL and STOCK_OUT are sales
+  // (everyday selling happens through Stock Out; excluding it made the
+  // Profit tab look broken). Date compare uses slice(0,10) so legacy rows
+  // stored with a full ISO timestamp still land inside their own day.
+  const inRange = useCallback((d: string) => {
+    const day = (d || '').slice(0, 10);
+    return day >= dateRange.from && day <= dateRange.to;
+  }, [dateRange]);
+
   const sellTransactions = useMemo(() => {
-    return transactions.filter(t =>
-      t.type === 'SELL' &&
-      t.date >= dateRange.from &&
-      t.date <= dateRange.to
-    );
-  }, [transactions, dateRange]);
+    return transactions.filter(t => isSaleType(t.type) && inRange(t.date));
+  }, [transactions, inRange]);
 
   // Product map for quick lookup
   const productMap = useMemo(() => {
@@ -187,7 +191,7 @@ export default function ProfitScreen() {
     let profit = productProfit;
     // Add service income and subtract service expense
     const filteredServiceTxns = serviceTransactions.filter(
-      s => s.date >= dateRange.from && s.date <= dateRange.to
+      s => inRange(s.date)
     );
     for (const s of filteredServiceTxns) {
       if (s.transactionType === 'income') {
@@ -197,7 +201,7 @@ export default function ProfitScreen() {
       }
     }
     return profit;
-  }, [productProfit, serviceTransactions, dateRange]);
+  }, [productProfit, serviceTransactions, inRange]);
 
   const totalRevenue = useMemo(() => {
     return sellTransactions.reduce((sum, t) => sum + (t.totalAmount || 0), 0);

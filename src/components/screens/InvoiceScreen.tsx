@@ -131,6 +131,10 @@ export default function InvoiceScreen() {
     return () => { cancelled = true; };
   }, [bill, settings]);
 
+  // ---- AUTO-SEND: bill travels to the customer's number by itself ----
+  // (the effect itself lives below, after getPdf is declared)
+  const autoSentRef = useRef<Set<string>>(new Set());
+
   // ---- Live totals for create mode (mirror createBillOffline math) ----
   const totals = useMemo(() => {
     const qty = pendingBillData?.quantity ?? 0;
@@ -228,6 +232,31 @@ export default function InvoiceScreen() {
     const result = await sendBillViaWhatsapp(targetBill, pdf);
     toastWhatsappResult(result, language);
   }, [getPdf, language]);
+
+  // ---- AUTO-SEND: bill travels to the customer's number by itself ----
+  // As soon as the bill is saved (success mode) and the PDF is ready, the
+  // share sheet opens carrying the REAL PDF file + the bill summary. One tap
+  // on WhatsApp (and the customer chat) delivers it. Native APK: the Android
+  // share sheet with the attached PDF. Web fallback: PDF downloads + the
+  // customer's wa.me chat opens. Skipped when no mobile number was given —
+  // the manual buttons below always remain as backup.
+  useEffect(() => {
+    if (!bill || mode !== 'success' || !bill.customerMobile) return;
+    if (autoSentRef.current.has(bill.id)) return;
+    let cancelled = false;
+    (async () => {
+      const pdf = await getPdf(bill);
+      if (cancelled || !pdf) return;
+      autoSentRef.current.add(bill.id);
+      try {
+        const result = await sendBillViaWhatsapp(bill, pdf);
+        toastWhatsappResult(result, language);
+      } catch {
+        // Silent — the manual share buttons remain available on this screen.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [bill, mode, getPdf, language]);
 
   const handleShare = useCallback(async (targetBill: Bill) => {
     const pdf = await getPdf(targetBill);

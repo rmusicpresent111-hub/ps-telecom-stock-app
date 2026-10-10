@@ -897,3 +897,28 @@ Stage Summary:
 - FIX: native path now uses CapacitorHttp (native HTTP stack) — code change in src/lib/cloud-d1.ts only, no config/plugin install needed (@capacitor/core already a dependency)
 - USER ACTION NEEDED: rebuild APK locally — npm run build (build-apk.js: static export → cap sync android → Android Studio) → install new APK → Cloud Backup screen → enter keys / Setup Code → Save & Test Connection now works
 - Web/Vercel path untouched and still working (proxy + optional server-managed env mode)
+
+---
+Task ID: 24
+Agent: Z.ai Code (main)
+Task: Fix Profit tab + FIFO purchase-price on sell + bill PDF auto-send to customer number
+
+Work Log:
+- Explore agent mapped the full profit/sell/bill/PDF surface (ProfitScreen, StockOperationScreen, offline-service createTransactionOffline, bill-pdf.ts, InvoiceScreen, offline-db schema)
+- DIAGNOSIS of "profit kaj korchena": ProfitScreen filtered t.type === 'SELL' only, but everyday selling happens via STOCK_OUT → those sales never appeared in profit. Also dashboard todayProfit had the same SELL-only filter; legacy ISO dates fell outside lexicographic day filters.
+- FIFO: app had NO purchase-lot concept — cost basis was the product's single current purchasePrice; STOCK_IN never updated it.
+- IMPLEMENTED in src/lib/offline-service.ts:
+  1. computeFifoUnitCost() — replays the product's transaction history chronologically as a lot queue (STOCK_IN = lot at its typed price; earlier SELL/STOCK_OUT consume oldest lots first); the new sale's per-unit cost = blended oldest-remaining lots, dry stock priced at the product's LAST purchase price
+  2. createTransactionOffline: sale rows now snapshot the FIFO per-unit cost into product.purchasePrice (existing field — cloud D1 schema untouched); STOCK_IN updates product.purchasePrice to the typed price (last-purchase-price tracking); FIFO history read inside the same atomic IndexedDB tx
+  3. createProductOffline: opening stock now creates an initial STOCK_IN lot at the creation-time purchase price (ledger completeness)
+  4. isSaleType() helper + dashboard saleMap/todayProfit include STOCK_OUT
+- ProfitScreen: SELL + STOCK_OUT both count as sales; date compare uses slice(0,10) (legacy ISO dates); service-txn filter normalized
+- Bill auto-send: InvoiceScreen effect — once bill saved (success mode) + customerMobile present, PDF is fetched/generated and sendBillViaWhatsapp fires automatically (native share sheet with real PDF in APK; Web Share on mobile; download + wa.me chat fallback on desktop), once per bill, manual buttons remain
+- BONUS FIX: fresh device had ZERO categories in IndexedDB → Add Product dropdown empty (user cannot add products). Added seedDefaultCategoriesOffline() (20 starter categories, idempotent) called from SplashScreen boot AFTER autoRestoreIfEmpty (order matters — seeding before restore would block cloud restore because localDataIsEmpty counts categories)
+- E2E VERIFIED in browser (agent-browser): seeded 20 categories → product "Test Phone" 10@400 (opening lot auto-created) → Stock In 5@500 (lot 2, product price → 500) → Stock Out 12@600 → FIFO snapshot 416.67 = 5000/12 exact; Profit tab: Revenue ₹7,200 / Cost ₹5,000 / Profit ₹2,200 / margin 31% / 12 pcs; bill PS-2610-0001 created (Rahim, 9876543210, ₹7,200) and auto-send fired (desktop fallback opened wa.me chat with the customer)
+- bun run lint clean; zero browser console errors
+
+Stage Summary:
+- Profit tab now counts Stock-Out sales; FIFO cost engine live (oldest lots first → last purchase price fallback); bill PDF auto-shares to the customer's WhatsApp number on creation; fresh installs self-seed 20 starter categories
+- All changes client-side IndexedDB only — cloud D1 schema and sync protocol untouched
+- Verified live with exact numeric match (416.67/unit, ₹2,200 profit); screenshots /tmp/PROFIT-VERIFIED.png
