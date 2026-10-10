@@ -289,6 +289,16 @@ type TranslationKeys = {
   cloudManagedDesc: string;
   cloudUseOwnCreds: string;
   errMissingCreds: string;
+  // Setup Code — one-paste credential transfer across the owner's devices
+  setupCodeTitle: string;
+  setupCodeDesc: string;
+  setupCodePasteLabel: string;
+  setupCodeConnect: string;
+  invalidSetupCode: string;
+  setupCodeCopied: string;
+  copy: string;
+  copyFailed: string;
+  cloudAutoRestoreDoneToast: string;
 };
 
 const translations: Record<Language, TranslationKeys> = {
@@ -529,6 +539,15 @@ const translations: Record<Language, TranslationKeys> = {
     cloudManagedDesc: 'ক্লাউড ব্যাকআপ এই অ্যাপের নিজস্ব সুরক্ষিত সংযোগ দিয়ে কাজ করছে — নতুন ডিভাইসে আলাদা কোনো কী (key) দেওয়ার দরকার নেই।',
     cloudUseOwnCreds: 'নিজের Cloudflare অ্যাকাউন্ট ব্যবহার করতে চান?',
     errMissingCreds: 'এই সাইটে ক্লাউড সংযোগ সেট করা নেই — নিজের Cloudflare কী দিন',
+    setupCodeTitle: 'সেটআপ কোড — একবার পেস্টেই সংযোগ',
+    setupCodeDesc: 'নতুন ডিভাইসে আর ৩টি কী (key) দিতে হবে না — এই কোডটি কপি করে ওই ডিভাইসের Cloud Sync স্ক্রিনে একবার পেস্ট করলেই সংযোগ হয়ে আপনার ডেটা চলে আসবে।',
+    setupCodePasteLabel: 'অন্য ডিভাইস থেকে কপি করা সেটআপ কোড এখানে পেস্ট করুন',
+    setupCodeConnect: 'কোড দিয়ে সংযোগ',
+    invalidSetupCode: 'সেটআপ কোডটি সঠিক নয় — অন্য ডিভাইস থেকে আবার কপি করুন',
+    setupCodeCopied: 'সেটআপ কোড কপি হয়েছে — অন্য ডিভাইসে পেস্ট করুন',
+    copy: 'কপি',
+    copyFailed: 'কপি করা যায়নি — কোডটি সিলেক্ট করে হাতে কপি করুন',
+    cloudAutoRestoreDoneToast: 'ক্লাউড ব্যাকআপ থেকে ডেটা এই ডিভাইসে এসেছে',
     fillAllFields: 'তিনটি তথ্যই পূরণ করুন',
     cloudInfo: 'আপনার ডেটা আপনার নিজের Cloudflare অ্যাকাউন্টে থাকে — ফোন হারালেও ডেটা নিরাপদ।',
     reauthTitle: 'পাসওয়ার্ড দিয়ে নিশ্চিত করুন',
@@ -793,6 +812,15 @@ const translations: Record<Language, TranslationKeys> = {
     cloudManagedDesc: 'Cloud backup works through the app\'s own secure connection — no keys needed on a new device.',
     cloudUseOwnCreds: 'Want to use your own Cloudflare account?',
     errMissingCreds: 'No cloud connection configured on this site — enter your own Cloudflare keys',
+    setupCodeTitle: 'Setup code — one paste to connect',
+    setupCodeDesc: 'No need to type the three keys on a new device — copy this code and paste it once on the other device\'s Cloud Sync screen; it connects and pulls your data automatically.',
+    setupCodePasteLabel: 'Paste the setup code copied from your other device',
+    setupCodeConnect: 'Connect with code',
+    invalidSetupCode: 'That setup code doesn\'t look right — copy it again from the other device',
+    setupCodeCopied: 'Setup code copied — paste it on your other device',
+    copy: 'Copy',
+    copyFailed: 'Couldn\'t copy — select the code and copy it manually',
+    cloudAutoRestoreDoneToast: 'Your cloud backup was pulled into this device',
     fillAllFields: 'Please fill in all three fields',
     cloudInfo: 'Your data lives in your own Cloudflare account — safe even if the phone is lost.',
     reauthTitle: 'Confirm with password',
@@ -1057,6 +1085,15 @@ const translations: Record<Language, TranslationKeys> = {
     cloudManagedDesc: 'क्लाउड बैकअप ऐप के अपने सुरक्षित कनेक्शन से काम करता है — नए डिवाइस पर कोई कुंजी देने की ज़रूरत नहीं।',
     cloudUseOwnCreds: 'अपना Cloudflare खाता उपयोग करना चाहते हैं?',
     errMissingCreds: 'इस साइट पर क्लाउड कनेक्शन कॉन्फ़िगर नहीं है — अपनी Cloudflare कुंजी दर्ज करें',
+    setupCodeTitle: 'सेटअप कोड — एक पेस्ट में कनेक्ट',
+    setupCodeDesc: 'नए डिवाइस पर तीन कुंजियाँ टाइप करने की ज़रूरत नहीं — यह कोड कॉपी करके दूसरे डिवाइस के Cloud Sync स्क्रीन में एक बार पेस्ट करें; कनेक्शन और आपका डेटा अपने आप आ जाएगा।',
+    setupCodePasteLabel: 'दूसरे डिवाइस से कॉपी किया सेटअप कोड यहाँ पेस्ट करें',
+    setupCodeConnect: 'कोड से कनेक्ट',
+    invalidSetupCode: 'यह सेटअप कोड सही नहीं लगता — दूसरे डिवाइस से फिर कॉपी करें',
+    setupCodeCopied: 'सेटअप कोड कॉपी हो गया — दूसरे डिवाइस पर पेस्ट करें',
+    copy: 'कॉपी',
+    copyFailed: 'कॉपी नहीं हो सका — कोड चुनकर मैन्युअली कॉपी करें',
+    cloudAutoRestoreDoneToast: 'आपका क्लाउड बैकअप इस डिवाइस में आ गया',
     fillAllFields: 'तीनों जानकारी भरें',
     cloudInfo: 'आपका डेटा आपके ही Cloudflare अकाउंट में रहता है — फोन खोने पर भी डेटा सुरक्षित।',
     reauthTitle: 'पासवर्ड से पुष्टि करें',

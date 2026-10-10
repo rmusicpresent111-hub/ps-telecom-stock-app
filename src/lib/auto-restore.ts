@@ -92,6 +92,31 @@ export function markAutoRestoreSkipped(userId: string): void {
   safeSet(FLAG_PREFIX + userId, 'skipped');
 }
 
+/**
+ * Clears a previous auto-restore settling so the next boot (or an explicit
+ * autoRestoreNow) may run again. Called when the owner saves real credentials
+ * on this device — before that, auto-restore may have settled permanently as
+ * "no keys / no server cloud" and would otherwise never retry.
+ */
+export function clearAutoRestoreSettling(userId: string): void {
+  if (!userId) return;
+  try {
+    localStorage.removeItem(FLAG_PREFIX + userId);
+  } catch {
+    // Ignore.
+  }
+}
+
+/**
+ * On-demand variant used right after a successful manual connect: clears any
+ * previous settling, then pulls the cloud backup whenever the local database
+ * is empty — a brand-new device shows the shop's data with zero extra taps.
+ */
+export async function autoRestoreNow(userId: string): Promise<AutoRestoreOutcome> {
+  clearAutoRestoreSettling(userId);
+  return autoRestoreIfEmpty(userId);
+}
+
 /** True when a previous outcome already settled auto-restore for this origin. */
 export function isAutoRestoreSettled(userId: string): boolean {
   return !!userId && !!safeGet(FLAG_PREFIX + userId);

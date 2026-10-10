@@ -215,6 +215,61 @@ export function isServerManaged(creds: D1Credentials): boolean {
   return !creds.accountId && !creds.databaseId && !creds.apiToken;
 }
 
+// ============ SETUP CODE (one-paste credential transfer) ============
+
+/**
+ * Encodes the credentials into a single paste-able "setup code" so the owner
+ * can connect any of their other devices in seconds (Cloud Sync screen →
+ * paste the code). The code is plain base64 of the credential JSON — it
+ * carries the same secret as the API token itself, so it must only be shared
+ * with the owner's OWN devices.
+ */
+export function encodeSetupCode(creds: D1Credentials): string {
+  try {
+    if (typeof btoa !== 'function') return '';
+    const json = JSON.stringify({
+      accountId: creds.accountId,
+      databaseId: creds.databaseId,
+      apiToken: creds.apiToken,
+    });
+    return btoa(json);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Parses a setup code (or a pasted raw credential JSON) back into complete
+ * credentials. Returns null for anything that is not a full, well-formed set.
+ */
+export function decodeSetupCode(raw: string): D1Credentials | null {
+  const s = (raw || '').trim();
+  if (!s) return null;
+  const parse = (json: string): D1Credentials | null => {
+    try {
+      const c = JSON.parse(json) as Partial<D1Credentials>;
+      if (c.accountId && c.databaseId && c.apiToken) {
+        return {
+          accountId: String(c.accountId).trim(),
+          databaseId: String(c.databaseId).trim(),
+          apiToken: String(c.apiToken).trim(),
+        };
+      }
+    } catch {
+      // Not JSON.
+    }
+    return null;
+  };
+  // Tolerate a directly pasted JSON object as well as the base64 code.
+  if (s.startsWith('{')) return parse(s);
+  try {
+    if (typeof atob !== 'function') return null;
+    return parse(atob(s.replace(/\s+/g, '')));
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Cheap synchronous check used by the sync scheduler: on the web (non-native)
  * the server-managed mode is POSSIBLE (the engine re-verifies properly later);

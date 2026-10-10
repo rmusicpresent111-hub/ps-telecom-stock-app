@@ -14,11 +14,14 @@ import {
   restoreFromD1,
   SERVER_MANAGED_CREDS,
   isServerManaged,
+  encodeSetupCode,
+  decodeSetupCode,
   type D1Credentials,
   type CloudMeta,
   type CloudCounts,
   type BackupProgress,
 } from '@/lib/cloud-d1';
+import { autoRestoreNow, clearAutoRestoreSettling } from '@/lib/auto-restore';
 import { registerBackModal } from '@/lib/modal-back';
 import {
   scheduleCloudSync,
@@ -46,6 +49,8 @@ import {
   AlertTriangle,
   Zap,
   RefreshCw,
+  ClipboardPaste,
+  Copy,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -137,6 +142,9 @@ export default function CloudSyncScreen() {
   const [showRestoreDialog, setShowRestoreDialog] = useState(false);
   const [showEmailMismatchDialog, setShowEmailMismatchDialog] = useState(false);
   const [mismatchEmail, setMismatchEmail] = useState('');
+
+  // Setup Code — one-paste credential transfer to/from the owner's other devices
+  const [setupCode, setSetupCode] = useState('');
 
   // Restore success schedules a delayed navigation — keep the id so an
   // unmount can never leave an orphan timer teleporting the next screen.
@@ -290,6 +298,9 @@ export default function CloudSyncScreen() {
   const persistCredsIfManual = (creds: D1Credentials) => {
     if (user?.id && !isServerManaged(creds)) {
       saveD1Credentials(creds, user.id);
+      // Real keys now exist on this device — a previous boot may have settled
+      // auto-restore as "no keys / no server cloud"; let it run again.
+      clearAutoRestoreSettling(user.id);
       setSavedCreds(creds);
       setApiToken(''); // re-mask: the keys are stored now
     }
@@ -298,40 +309,95 @@ export default function CloudSyncScreen() {
   const accountValid = accountId === '' || isValidAccountId(sanitizeAccountId(accountId));
   const databaseValid = databaseId === '' || isValidDatabaseId(sanitizeDatabaseId(databaseId));
 
-  const handleTest = useCallback(async () => {
-    if (!user?.id) return;
-    const creds = currentCreds();
+  /**
+   * Core connect flow: validate → test → persist → pull the existing cloud
+   * backup when this device is empty. Shared by the manual form (Save & Test)
+   * and the one-paste Setup Code, so every entry path behaves identically.
+   */
+  const connectWithCreds = useCallback(async (creds: D1Credentials): Promise<boolean> => {
+    if (!user?.id) return false;
     if (!creds.accountId || !creds.databaseId || !creds.apiToken) {
       toast.error(t('fillAllFields', language));
-      return;
+      return false;
     }
     if (!isValidAccountId(creds.accountId) || !isValidDatabaseId(creds.databaseId)) {
       toast.error(
         !isValidAccountId(creds.accountId) ? t('invalidAccountIdHint', language) : t('invalidDatabaseIdHint', language)
       );
-      return;
+      return false;
     }
     setConn('testing');
     setConnError('');
     try {
       // Nothing is persisted until the connection test actually passes.
       const res = await testD1Connection(creds);
-      if (res.ok) {
-        persistCredsIfManual(creds);
-        setConn('connected');
-        setCloudMeta(res.meta ?? null);
-        toast.success(t('connectionOk', language));
-      } else {
+      if (!res.ok) {
         setConn('error');
         setConnError(res.error || t('connectionFailed', language));
         toast.error(t('connectionFailed', language) + ': ' + cloudErrorMsg(res.error, language));
+        return false;
       }
+      persistCredsIfManual(creds);
+      setConn('connected');
+      setCloudMeta(res.meta ?? null);
+      toast.success(t('connectionOk', language));
+      // Brand-new device (empty local DB): pull the cloud backup right away —
+      // "the same data everywhere" with zero extra taps.
+      setBusy('restore');
+      try {
+        const out = await autoRestoreNow(user.id);
+        if (out === 'restored') {
+          toast.success(t('cloudAutoRestoreDoneToast', language));
+          // Refresh the meta line (backup time/owner) after the pull.
+          const retest = await testD1Connection(creds).catch(() => null);
+          if (retest?.ok) setCloudMeta(retest.meta ?? null);
+        }
+      } finally {
+        setBusy(null);
+      }
+      return true;
     } catch (e) {
       setConn('error');
       setConnError((e as Error).message);
       toast.error(t('connectionFailed', language));
+      return false;
     }
-  }, [user?.id, accountId, databaseId, apiToken, savedCreds, language]);
+  }, [user?.id, language]);
+
+  const handleTest = useCallback(() => {
+    return connectWithCreds(currentCreds());
+  }, [connectWithCreds, accountId, databaseId, apiToken, savedCreds]);
+
+  /** One-paste connect: decode the setup code, prefill, then the normal flow. */
+  const applySetupCode = useCallback(async () => {
+    const creds = decodeSetupCode(setupCode);
+    if (!creds) {
+      toast.error(t('invalidSetupCode', language));
+      return;
+    }
+    // Show what was applied (the token gets re-masked after saving).
+    setAccountId(sanitizeAccountId(creds.accountId));
+    setDatabaseId(sanitizeDatabaseId(creds.databaseId));
+    setApiToken(creds.apiToken);
+    const ok = await connectWithCreds(creds);
+    if (ok) setSetupCode('');
+  }, [setupCode, connectWithCreds, language]);
+
+  /** Copies this device's saved credentials as a paste-able setup code. */
+  const copySetupCode = useCallback(async () => {
+    if (!savedCreds) return;
+    const code = encodeSetupCode(savedCreds);
+    if (!code) {
+      toast.error(t('copyFailed', language));
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(code);
+      toast.success(t('setupCodeCopied', language));
+    } catch {
+      toast.error(t('copyFailed', language));
+    }
+  }, [savedCreds, language]);
 
   const handleBackup = useCallback(async () => {
     if (!user?.id) return;
@@ -581,6 +647,39 @@ export default function CloudSyncScreen() {
             <span className="text-xs font-semibold text-white/70">Cloudflare Credentials</span>
           </div>
 
+          {/* One-paste setup code — the fastest way to connect another device */}
+          <div className="rounded-xl border border-emerald-400/20 bg-emerald-500/5 p-3 space-y-2">
+            <div className="flex items-center gap-1.5">
+              <ClipboardPaste size={12} className="text-emerald-300 shrink-0" />
+              <label className="text-[10px] text-white/60 leading-snug">{t('setupCodePasteLabel', language)}</label>
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={setupCode}
+                onChange={e => setSetupCode(e.target.value)}
+                placeholder="eyJhY2NvdW50SWQiOi..."
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                className="glass-input flex-1 min-w-0 px-3 py-2 text-[10px] font-mono"
+              />
+              <button
+                type="button"
+                onClick={applySetupCode}
+                disabled={conn === 'testing' || busy !== null || !setupCode.trim()}
+                className="px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 disabled:opacity-40 active:scale-95 transition-all shrink-0 flex items-center gap-1.5"
+              >
+                {conn === 'testing' ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <ClipboardPaste size={13} />
+                )}
+                {t('setupCodeConnect', language)}
+              </button>
+            </div>
+          </div>
+
           <div>
             <label className="text-[10px] text-white/40 mb-1 block">{t('accountId', language)}</label>
             <input
@@ -664,6 +763,40 @@ export default function CloudSyncScreen() {
             )}
           </button>
         </motion.div>
+        )}
+
+        {/* Setup Code card — shown once this device holds real saved keys:
+            copy it once, paste it on any other device to connect there. */}
+        {savedCreds && conn === 'connected' && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.08 }}
+            className="glass-card p-4 mb-4"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <Copy size={14} className="text-emerald-400" />
+              <span className="text-xs font-semibold text-white/70">{t('setupCodeTitle', language)}</span>
+            </div>
+            <p className="text-[11px] text-white/50 leading-relaxed mb-2">{t('setupCodeDesc', language)}</p>
+            <div className="flex gap-2">
+              <input
+                readOnly
+                value={encodeSetupCode(savedCreds)}
+                onFocus={e => e.currentTarget.select()}
+                aria-label={t('setupCodeTitle', language)}
+                className="glass-input flex-1 min-w-0 px-3 py-2 text-[10px] font-mono text-white/60"
+              />
+              <button
+                type="button"
+                onClick={copySetupCode}
+                className="px-3 py-2 rounded-xl text-xs font-semibold bg-white/10 border border-white/15 text-white/90 flex items-center gap-1.5 active:scale-95 transition-all shrink-0"
+              >
+                <Copy size={13} />
+                {t('copy', language)}
+              </button>
+            </div>
+          </motion.div>
         )}
 
         {/* Actions */}
