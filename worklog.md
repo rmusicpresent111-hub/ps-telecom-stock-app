@@ -682,3 +682,22 @@ Stage Summary:
 - Answer: YES — user can build on their own PC: install Android Studio + Node.js, clone repo, npm/bun install, run `node scripts/build-apk.js` (auto web build + android platform + sync + opens Studio), then Build → Build APK(s)
 - Sandbox cannot build APKs (no SDK); old APKs on GitHub are stale but installable
 - Optional future: custom PS TELECOM launcher icons via @capacitor/assets from public/ps-telecom-logo.png; signed release build needs a keystore
+
+---
+Task ID: 16
+Agent: main (Z.ai Code)
+Task: User asked "Icon baniye dao" — create custom PS TELECOM Android launcher icons
+
+Work Log:
+- Source: public/ps-telecom-logo.png (1024x1024, neon phone+tower artwork + PS TELECOM wordmark on dark bg)
+- Built a one-time PIL pipeline (/home/z/tmp-tools/make-icons.py, not committed) that luma-keys the artwork off the dark background (smoothstep alpha 0.14→0.30, noise floor 0.12, Gaussian-blurred alpha + 30/255 floor to melt background-texture speckle inside the glow into a smooth halo)
+- Generated assets/ (committed, ~2.7MB): icon-only.png (full logo, legacy launcher), icon-foreground.png (artwork only, 62% centered, RGBA), icon-background.png (dark navy radial gradient #20283A→#0B0E16), splash.png + splash-dark.png (2732px, gradient + keyed artwork + keyed PS TELECOM wordmark)
+- Added @capacitor/assets@3.0.5 as devDependency; build-apk.js got "Step 4.5" — runs `capacitor-assets generate --android --assetPath assets` (bunx/npx/local fallbacks) whenever assets/icon-only.png exists, so branding lands on every build (not just fresh cap add). --android flag matters: without any platform flag the tool also emits a broken PWA manifest (public/manifest.webmanifest pointing to ../icons/...) — removed that side-effect
+- End-to-end tested in sandbox WITHOUT Android SDK: dummy out/index.html → cap add android → capacitor-assets generate --android → 74 android assets (mipmap ic_launcher/round/foreground/background at all densities + splash drawables incl. night variants). Visually verified xxxhdpi adaptive composite (circular mask): artwork perfectly centered on gradient; legacy ic_launcher shows full logo
+- Cleaned test artifacts (android/, out/, pwa files, debug keyed PNGs); lint clean
+- Committed 223eda4 and pushed to GitHub with the still-valid PAT (b486f90..223eda4)
+
+Stage Summary:
+- App now ships with custom PS TELECOM branding: neon artwork adaptive icon on modern Android launchers, full-logo legacy icon, branded native splash — regenerated automatically on the user's machine by build-apk.js
+- User flow unchanged: clone → npm install → node scripts/build-apk.js → Studio → Build APK(s); icon step is automatic
+- Old PAT still valid (used once more for push); reminded user to revoke it
