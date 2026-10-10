@@ -5,6 +5,11 @@
  * Usage: node scripts/build-apk.js
  * 
  * This script:
+ * 0. VERCEL DEPLOY GUARD — when VERCEL=1 (Vercel runs `npm run build` on every
+ *    deploy), a plain `next build` is executed and the script exits. Server
+ *    hosting needs the normal .next output with API routes intact, NOT the
+ *    APK's static ./out export. next.config.ts already switches `output` to
+ *    server mode whenever VERCEL is set.
  * 1. Temporarily moves the API folder (static export doesn't need server routes)
  * 2. Builds the Next.js static export to ./out
  * 3. Restores the API folder
@@ -53,6 +58,30 @@ function moveDir(src, dest) {
     fs.renameSync(src, dest);
     console.log(`✓ Moved ${path.basename(src)} → ${path.basename(dest)}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// STEP 0 — Vercel deploy guard (must run before ANY APK/static-export logic).
+// Without this, a Vercel deployment fails with "Build output ./out not found"
+// because server mode produces .next, never ./out.
+// ---------------------------------------------------------------------------
+if (process.env.VERCEL) {
+  console.log('\n🌐 Vercel detected → running standard Next.js server build (APK steps skipped)...');
+  const localNext = path.join(ROOT, 'node_modules', 'next', 'dist', 'bin', 'next');
+  let vercelBuildOk;
+  if (exists(localNext)) {
+    // Most reliable: run the locally installed Next.js binary with node directly.
+    vercelBuildOk = tryRun(`node "${localNext}" build`);
+  } else {
+    const vercelRunner = detectRunner() || 'npx';
+    vercelBuildOk = tryRun(`${vercelRunner} next build`);
+  }
+  if (!vercelBuildOk) {
+    console.error('\n❌ Vercel build failed.');
+    process.exit(1);
+  }
+  console.log('\n✅ Vercel server build complete (.next output, API routes included).');
+  process.exit(0);
 }
 
 // Run capacitor command with fallbacks
