@@ -149,6 +149,36 @@ if (!exists(ANDROID_DIR)) {
   console.log('\nStep 4: Android platform already exists, skipping add.');
 }
 
+// Step 5.5: Brand assets — regenerate the PS TELECOM launcher icons and
+// native splash from ./assets (icon-only / icon-foreground /
+// icon-background / splash / splash-dark) into android/app/src/main/res.
+// Idempotent and cheap; run whenever assets/ exists so icon updates land on
+// every build, not only on a fresh `cap add`.
+if (exists(path.join(ROOT, 'assets', 'icon-only.png'))) {
+  console.log('\nStep 4.5: Generating PS TELECOM launcher icons & splash...');
+  let branded = false;
+  const brandRunner = detectRunner();
+  if (brandRunner === 'bunx') {
+    branded = tryRun('bunx @capacitor/assets generate --android --assetPath assets');
+  } else if (brandRunner === 'npx') {
+    branded = tryRun('npx @capacitor/assets generate --android --assetPath assets');
+  }
+  if (!branded) {
+    const localAssets = path.join(ROOT, 'node_modules', '@capacitor', 'assets', 'bin', 'capacitor-assets');
+    if (exists(localAssets)) {
+      branded = tryRun(`node "${localAssets}" generate --android --assetPath assets`);
+    }
+  }
+  if (branded) {
+    console.log('✅ Icons & splash branded!');
+  } else {
+    console.log('\n⚠️  Could not generate brand assets (icons stay default).');
+    console.log('    Try manually: npx @capacitor/assets generate --assetPath assets');
+  }
+} else {
+  console.log('\nStep 4.5: No assets/ folder found, skipping icon branding.');
+}
+
 // Step 6: Capacitor sync
 console.log('\nStep 5: Syncing with Capacitor Android...');
 const syncSuccess = capCmd('sync android');
