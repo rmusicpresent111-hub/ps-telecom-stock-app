@@ -765,3 +765,31 @@ Stage Summary:
 - Data must reach D1 once: run "Backup to Cloud" (or enable Auto Sync) on the device/origin that has the data
 - APK unaffected: native path still uses locally saved keys; without env vars everything degrades to today's manual-creds behaviour
 - Security note passed to user: anyone with the deploy link can view/edit shop data through the app (no login) — keep the link private
+
+---
+Task ID: 20
+Agent: Z.ai Code (main)
+Task: "Vercel deploy link e open korte cloud backup er 3te id abar chaiche, ekbar dile save kore rekhedao ami joto device e open korbo jeno eki deta show joy" — one-time cloud credential entry + same data on every device. Also verified the earlier "remove login" request is fully done.
+
+Work Log:
+- Confirmed login removal was already completed in Task 19-era code: src/lib/local-auth.ts is the device-local profile service (DEFAULT_USER_ID='local-owner', no passwords), SplashScreen boots straight into the app, appStore/TutorialScreen clean
+- Diagnosed the residual friction: on a Vercel deployment WITHOUT env vars the Cloud Sync screen probes the server-managed sentinel, gets missing_creds and falls back to the manual 3-ID form on EVERY new device/origin (per-origin localStorage)
+- cloud-d1.ts: added encodeSetupCode()/decodeSetupCode() — credentials as one paste-able base64 "Setup Code" (accepts raw JSON paste too, validates completeness)
+- auto-restore.ts: added clearAutoRestoreSettling() + autoRestoreNow() — a previously settled 'no keys / no server cloud' origin now retries after real keys are saved (was permanent before)
+- CloudSyncScreen refactor: extracted connectWithCreds() shared by "Save & Test" AND the new one-paste path; after a successful connect on an EMPTY device the cloud backup is pulled IMMEDIATELY (busy='restore' spinner + success toast + meta refresh); persistCredsIfManual() now also clears the auto-restore settling
+- CloudSyncScreen UI: (1) paste-setup-code box at the top of the manual form with "Connect with code" button; (2) "Setup code — one paste to connect" card with read-only code + Copy button, shown when this device holds saved keys and is connected
+- i18n: 9 new keys in bn/en/hi (setupCodeTitle, setupCodeDesc, setupCodePasteLabel, setupCodeConnect, invalidSetupCode, setupCodeCopied, copy, copyFailed, cloudAutoRestoreDoneToast)
+- E2E verification with mini-services/d1-mock + agent-browser (dev restarted with CLOUDFLARE_API_BASE→mock):
+  * Device A: pasted generated code → fields auto-filled → Connected → Setup Code card appeared with Copy button
+  * Device A: added category "Mobile" + product "Samsung Charger 25W" → Backup to Cloud → mock __dump shows ps_categories + ps_products rows
+  * Device B: localStorage+IndexedDB wiped (fresh origin) → same code pasted ONCE → connected → data AUTO-RESTORED (dashboard "Mobile 1 items", product visible) — zero Restore taps
+  * Device C (env-managed): dev restarted with dummy CLOUDFLARE_* env vars → wiped storage → just opened the app → boot auto-restore pulled data with ZERO input; Cloud Sync screen shows "App-managed cloud connection — no keys needed on a new device"
+- Cleanup: dev server + mock stopped/restarted clean (preview now behaves like real deployment pre-config); eslint + tsc clean; no runtime errors in dev.log
+- Committed e2aa741, pushed de80a00..e2aa741 main (Vercel auto-redeploys)
+
+Stage Summary:
+- User-facing answer: two ways to get "enter once, same data everywhere":
+  1) BEST — set 3 env vars on Vercel (CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_D1_DATABASE_ID, CLOUDFLARE_D1_API_TOKEN) → redeploy → NO device ever asks for IDs; every fresh browser auto-restores the backup on open
+  2) WITHOUT Vercel config — on the connected device open Cloud Sync → copy the new "Setup Code" → paste it once on any other device → it connects AND pulls the data immediately
+- Data must exist in D1 once: run Backup (or enable Auto Sync) on the device that has the real shop data (the phone APK) — then every other device mirrors it
+- Setup Code carries the API token (owner's own secret) — share only with own devices; PAT reminder: user should revoke the GitHub token after this push
