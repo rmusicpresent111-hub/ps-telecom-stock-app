@@ -855,3 +855,22 @@ Stage Summary:
 - Cloud D1 "not connected" root cause: no Cloudflare credentials in this sandbox (previous deployment was Vercel with env vars set)
 - Fix requires user's own Cloudflare D1 credentials (Setup Code paste OR 3 env values for server-managed mode)
 - Once provided: set env vars → restart → connection test → boot auto-restore pulls user's existing cloud backup automatically
+
+---
+Task ID: 22
+Agent: Z.ai Code (main)
+Task: Verify whether the app's setup code includes a Cloud Backup option (user asked in Bengali)
+
+Work Log:
+- Grepped src/ for cloud backup related code — found 10 matching files (cloud-d1.ts, cloud-sync.ts, CloudSyncScreen.tsx, ProfileScreen.tsx, api/cloud/d1/route.ts, auto-restore.ts, etc.)
+- Read src/app/api/cloud/d1/route.ts — Cloudflare D1 proxy with server-managed env fallback (CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_D1_DATABASE_ID, CLOUDFLARE_D1_API_TOKEN)
+- Read src/lib/cloud-sync.ts — incremental Auto Sync engine (debounced dirty-row push, full-backup fallback, backoff)
+- Read encodeSetupCode/decodeSetupCode in cloud-d1.ts — base64 credential JSON "Setup Code" for one-paste device transfer
+- Confirmed .env: 3 CLOUDFLARE_* vars present but COMMENTED OUT (server-managed mode inactive → "Not connected")
+- Live E2E via agent-browser (fresh session dbfix): Welcome → Get Started → Skip tutorial → Dashboard → Profile → Cloud Backup screen rendered fully with zero page errors
+- Screenshots: /tmp/CLOUD-BACKUP-SCREEN.png, /tmp/CLOUD-BACKUP-SCROLLED.png
+
+Stage Summary:
+- CONFIRMED: Cloud Backup option exists and works — Profile screen has "Cloud Backup (Cloudflare D1)" entry; CloudSyncScreen shows: Setup Code paste box ("Connect with code"), manual Account ID/Database ID/API Token form, Save & Test Connection, Backup to Cloud, Restore from Cloud (disabled until connected), Cloudflare setup guide; Auto Sync appears after connect
+- Status: "Not connected / Last cloud backup: Never" because the 3 CLOUDFLARE_* env vars in .env are commented out
+- To activate server-managed mode: uncomment and fill the 3 vars in .env (or deploy on Vercel with those vars); in the Android APK the user must instead paste keys or Setup Code per device
