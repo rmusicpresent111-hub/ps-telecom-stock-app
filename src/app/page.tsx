@@ -16,9 +16,6 @@ import { initCloudSync } from '@/lib/cloud-sync';
 // Lazy load ALL screen components - only loads what's needed
 const SplashScreen = lazy(() => import('@/components/screens/SplashScreen'));
 const LanguageScreen = lazy(() => import('@/components/screens/LanguageScreen'));
-const LoginScreen = lazy(() => import('@/components/screens/LoginScreen'));
-const SignupScreen = lazy(() => import('@/components/screens/SignupScreen'));
-const ForgotPasswordScreen = lazy(() => import('@/components/screens/ForgotPasswordScreen'));
 const DashboardScreen = lazy(() => import('@/components/screens/DashboardScreen'));
 const CategoryDetailScreen = lazy(() => import('@/components/screens/CategoryDetailScreen'));
 const AddProductScreen = lazy(() => import('@/components/screens/AddProductScreen'));
@@ -41,9 +38,6 @@ const ServiceCategoryScreen = lazy(() => import('@/components/screens/ServiceCat
 const screenComponents: Record<Screen, React.ComponentType> = {
   splash: SplashScreen,
   language: LanguageScreen,
-  login: LoginScreen,
-  signup: SignupScreen,
-  'forgot-password': ForgotPasswordScreen,
   dashboard: DashboardScreen,
   'category-detail': CategoryDetailScreen,
   'add-product': AddProductScreen,
@@ -90,7 +84,6 @@ const fastTransition = { duration: 0.1 };
 export default function Home() {
   const currentScreen = useAppStore(s => s.currentScreen);
   const theme = useAppStore(s => s.theme);
-  const isAuthenticated = useAppStore(s => s.isAuthenticated);
   const language = useAppStore(s => s.language);
 
   // ✅ Navigation Stack + Back Handler (browser, Capacitor, in-app)
@@ -121,14 +114,6 @@ export default function Home() {
       root.classList.add('dark');
     }
   }, [theme]);
-
-  // Auto-redirect if authenticated but on auth screens
-  useEffect(() => {
-    const authScreens: Screen[] = ['login', 'signup', 'forgot-password'];
-    if (isAuthenticated && authScreens.includes(currentScreen)) {
-      useAppStore.getState().resetNavigation('dashboard');
-    }
-  }, [isAuthenticated, currentScreen]);
 
   const CurrentScreenComponent = screenComponents[currentScreen] || SplashScreen;
   const showBottomNav = showBottomNavSet.has(currentScreen);

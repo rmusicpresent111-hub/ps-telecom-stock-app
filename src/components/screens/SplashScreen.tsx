@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAppStore } from '@/store/appStore';
-import { verifyLocalUserId } from '@/lib/local-auth';
+import { ensureDefaultUser } from '@/lib/local-auth';
 
 const floatingIcons = ['📱', '🎧', '🔌', '⌚', '📺'];
 
@@ -17,7 +17,7 @@ const iconPositions = [
 ];
 
 export default function SplashScreen() {
-  const { resetNavigation, hasSeenTutorial, isAuthenticated, _hasHydrated } = useAppStore();
+  const { resetNavigation, hasSeenTutorial, _hasHydrated } = useAppStore();
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
@@ -48,30 +48,31 @@ export default function SplashScreen() {
           if (state._hasHydrated) {
             if (hydrationWaiter) clearInterval(hydrationWaiter);
             hydrationWaiter = null;
-            navigateToApp(state.hasSeenTutorial, state.isAuthenticated);
+            void boot();
           }
         }, 100);
         return;
       }
-      navigateToApp(hasSeenTutorial, isAuthenticated);
+      void boot();
     }, duration);
 
-    async function navigateToApp(seenTutorial: boolean, authenticated: boolean) {
-      if (!seenTutorial) {
-        // First time user → Welcome + Tutorial + Login flow
+    // No login system: guarantee the device-local profile exists (every
+    // screen keys its data on user.id), then go straight into the app.
+    async function boot() {
+      const state = useAppStore.getState();
+      if (!state.user) {
+        try {
+          const profile = await ensureDefaultUser();
+          useAppStore.getState().setUser(profile);
+        } catch {
+          // IndexedDB unavailable — screens guard on user?.id and stay empty.
+        }
+      }
+      if (!useAppStore.getState().hasSeenTutorial) {
         resetNavigation('welcome');
         return;
       }
-      if (authenticated) {
-        // Defense-in-depth: a hand-edited localStorage session must not
-        // resurrect a deleted local account — verify the user still exists.
-        const id = useAppStore.getState().user?.id;
-        if (id && (await verifyLocalUserId(id).catch(() => false))) {
-          resetNavigation('dashboard');
-          return;
-        }
-      }
-      resetNavigation('login');
+      resetNavigation('dashboard');
     }
 
     return () => {
@@ -79,7 +80,7 @@ export default function SplashScreen() {
       clearTimeout(navTimer);
       if (hydrationWaiter) clearInterval(hydrationWaiter);
     };
-  }, [resetNavigation, hasSeenTutorial, isAuthenticated, _hasHydrated]);
+  }, [resetNavigation, hasSeenTutorial, _hasHydrated]);
 
   return (
     <div className="animated-bg min-h-screen flex flex-col items-center justify-center relative overflow-hidden">

@@ -5,8 +5,8 @@ import { useAppStore } from '@/store/appStore';
 import { Screen } from '@/lib/types';
 import { closeTopBackModal } from '@/lib/modal-back';
 
-// Auth/onboarding flow screens — hardware back does nothing there
-const AUTH_FLOW_SCREENS: Screen[] = ['splash', 'welcome', 'tutorial', 'login', 'signup', 'forgot-password'];
+// Onboarding flow screens — hardware back does nothing there
+const AUTH_FLOW_SCREENS: Screen[] = ['splash', 'welcome', 'tutorial'];
 
 /**
  * NATIVE BACK NAVIGATION (stack-based)
@@ -66,7 +66,7 @@ export function useBackHandler() {
     if (AUTH_FLOW_SCREENS.includes(currentScreen)) return;
 
     // Language screen during first-run onboarding has no history → ignore
-    if (currentScreen === 'language' && !state.isAuthenticated) return;
+    if (currentScreen === 'language' && !state.hasSeenTutorial) return;
 
     // 4. HOME page → exit confirmation dialog (Exit / Continue)
     if (currentScreen === 'dashboard') {

@@ -21,28 +21,22 @@ const languageOptions: LanguageOption[] = [
 ];
 
 export default function LanguageScreen() {
-  const { language, setLanguage, navigateTo, goBack, isAuthenticated } = useAppStore();
+  const { language, setLanguage, goBack } = useAppStore();
   const [selected, setSelected] = useState<Language>(language);
 
   const handleContinue = () => {
     setLanguage(selected);
-    if (isAuthenticated) {
-      // From Profile - go back to previous screen
-      goBack();
-    } else {
-      // From Onboarding - go to login
-      navigateTo('login');
-    }
+    // Always reached from the Profile screen (onboarding no longer passes
+    // through here) → simply return to the previous screen.
+    goBack();
   };
 
   return (
     <div className="animated-bg min-h-screen flex flex-col max-w-md mx-auto px-6 py-8">
-      {/* Back button - only show for authenticated users (accessed from Profile) */}
-      {isAuthenticated && (
-        <button onClick={goBack} className="p-2 rounded-full glass-card mb-4 self-start" aria-label="Back">
-          <ArrowLeft size={20} className="text-emerald-400" />
-        </button>
-      )}
+      {/* Back button (accessed from Profile) */}
+      <button onClick={goBack} className="p-2 rounded-full glass-card mb-4 self-start" aria-label="Back">
+        <ArrowLeft size={20} className="text-emerald-400" />
+      </button>
       {/* Title */}
       <motion.div
         className="text-center mt-12 sm:mt-16 mb-10"

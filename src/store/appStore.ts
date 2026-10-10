@@ -15,11 +15,10 @@ interface AppState {
   resetNavigation: (screen: Screen) => void;
   goBack: () => void;
 
-  // User & Auth
+  // User profile (device-local; created automatically on first boot —
+  // the app has no login system, see src/lib/local-auth.ts)
   user: User | null;
-  isAuthenticated: boolean;
   setUser: (user: User | null) => void;
-  logout: () => void;
 
   // App State
   language: Language;
@@ -131,30 +130,9 @@ export const useAppStore = create<AppState>()(
           };
         }),
 
-      // User & Auth
+      // User profile (no auth — auto-created on boot by SplashScreen)
       user: null,
-      isAuthenticated: false,
-      setUser: (user) => set({ user, isAuthenticated: !!user }),
-      logout: () =>
-        set({
-          user: null,
-          isAuthenticated: false,
-          currentScreen: 'login',
-          // Clear ALL session state so nothing bleeds into the next account:
-          previousScreens: [],
-          selectedCategoryId: null,
-          selectedProductId: null,
-          stockOperationType: null,
-          selectedServiceCategory: null,
-          searchQuery: '',
-          categories: [],
-          products: [],
-          transactions: [],
-          pendingBillData: null,
-          selectedBillId: null,
-          selectedBill: null,
-          historyView: 'transactions',
-        }),
+      setUser: (user) => set({ user }),
 
       // App State
       language: 'en',
@@ -213,7 +191,6 @@ export const useAppStore = create<AppState>()(
         theme: state.theme,
         hasSeenTutorial: state.hasSeenTutorial,
         user: state.user,
-        isAuthenticated: state.isAuthenticated,
         shopName: state.shopName,
       }),
       onRehydrateStorage: () => {
