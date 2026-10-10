@@ -9,6 +9,7 @@
     "build:web": "next build",
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
+    "db:push": "echo '[ps-telecom] Offline-first app (IndexedDB + Cloud D1) - no local DB push needed, skipping'",
     "cap:sync": "npx cap sync android",
     "cap:open": "npx cap open android"
   },
