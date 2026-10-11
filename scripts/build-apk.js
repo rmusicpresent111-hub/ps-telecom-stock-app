@@ -15,7 +15,9 @@
  * 3. Restores the API folder
  * 4. Adds Android platform if missing
  * 5. Syncs with Capacitor Android
- * 6. Opens Android Studio
+ * 6. COMPILES THE APK ITSELF via Gradle (auto-detects Java) and copies it to
+ *    the project root as PS-TELECOM-debug.apk — no Android Studio steps needed
+ * 7. Only if Gradle fails: opens Android Studio with manual instructions
  */
 
 const fs = require('fs');
@@ -217,8 +219,114 @@ if (!syncSuccess) {
   console.log('    bunx @capacitor/cli sync android');
 }
 
-// Step 7: Open Android Studio
-console.log('\nStep 6: Opening Android Studio...');
+// ---------------------------------------------------------------------------
+// STEP 7 — Compile the APK with Gradle directly (no Android Studio needed).
+// Finds a JDK (JAVA_HOME → Android Studio's embedded JBR → java on PATH),
+// runs `gradlew assembleDebug`, then copies the APK to the project root.
+// ---------------------------------------------------------------------------
+function findJavaHome() {
+  const candidates = [];
+
+  if (process.env.JAVA_HOME && exists(process.env.JAVA_HOME)) {
+    candidates.push(process.env.JAVA_HOME);
+  }
+
+  if (process.platform === 'win32') {
+    candidates.push(
+      'C:\\Program Files\\Android\\Android Studio\\jbr',
+      'C:\\Program Files\\Android\\Android Studio Preview\\jbr'
+    );
+    if (process.env.LOCALAPPDATA) {
+      candidates.push(path.join(process.env.LOCALAPPDATA, 'Programs', 'Android Studio', 'jbr'));
+    }
+  } else if (process.platform === 'darwin') {
+    candidates.push(
+      '/Applications/Android Studio.app/Contents/jbr/Contents/Home',
+      '/Applications/Android Studio Preview.app/Contents/jbr/Contents/Home'
+    );
+  } else {
+    candidates.push('/opt/android-studio/jbr', '/usr/local/android-studio/jbr');
+  }
+
+  for (const c of candidates) {
+    if (c && exists(c)) return c;
+  }
+
+  // Last resort: java already on PATH?
+  try {
+    execSync('java -version', { stdio: 'pipe', shell: true });
+    return ''; // gradlew will resolve java from PATH when JAVA_HOME is unset
+  } catch {}
+
+  return null;
+}
+
+function buildApkWithGradle() {
+  const gradlew = process.platform === 'win32'
+    ? path.join(ANDROID_DIR, 'gradlew.bat')
+    : path.join(ANDROID_DIR, 'gradlew');
+
+  if (!exists(gradlew)) {
+    console.log('  gradle wrapper not found — skipping automatic APK build.');
+    return false;
+  }
+
+  const javaHome = findJavaHome();
+  if (javaHome === null) {
+    console.log('  No JDK found (JAVA_HOME / Android Studio / PATH) — skipping automatic APK build.');
+    return false;
+  }
+
+  const gradleEnv = { ...process.env };
+  if (javaHome) gradleEnv.JAVA_HOME = javaHome;
+
+  console.log(`\nStep 6: Compiling APK with Gradle (this can take 5–15 min on the FIRST run —`);
+  console.log('        it downloads Gradle + dependencies once, do not close this window)...');
+
+  try {
+    execSync(
+      process.platform === 'win32' ? 'gradlew.bat assembleDebug --console=plain' : './gradlew assembleDebug --console=plain',
+      { stdio: 'inherit', cwd: ANDROID_DIR, env: gradleEnv, shell: true }
+    );
+    return true;
+  } catch (err) {
+    console.error('\n❌ Gradle build failed (see the error output above).');
+    return false;
+  }
+}
+
+function copyApkToRoot() {
+  const built = path.join(ANDROID_DIR, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
+  if (!exists(built)) return null;
+
+  const dest = path.join(ROOT, 'PS-TELECOM-debug.apk');
+  try {
+    fs.copyFileSync(built, dest);
+    return dest;
+  } catch {
+    return built; // fall back to reporting the original path
+  }
+}
+
+const gradleOk = buildApkWithGradle();
+
+if (gradleOk) {
+  const apkPath = copyApkToRoot();
+  console.log('\n🎉 APK READY! 🎉');
+  if (apkPath) {
+    console.log('   📱 ' + apkPath);
+    if (apkPath.endsWith('PS-TELECOM-debug.apk')) {
+      console.log('   (also kept at android/app/build/outputs/apk/debug/app-debug.apk)');
+    }
+  } else {
+    console.log('   📱 ' + path.join(ANDROID_DIR, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk'));
+  }
+  console.log('\n   Install: copy PS-TELECOM-debug.apk to your phone → tap it → allow "Install unknown apps".');
+  process.exit(0);
+}
+
+// Fallback — Gradle unavailable: hand over to Android Studio.
+console.log('\nStep 7: Falling back to Android Studio...');
 const opened = capCmd('open android');
 
 if (!opened) {
@@ -227,5 +335,10 @@ if (!opened) {
   console.log('    ' + ANDROID_DIR);
 }
 
-console.log('\n🎉 Done! Build your APK in Android Studio:');
-console.log('   Build → Build Bundle(s) / APK(s) → Build APK(s)');
+console.log('\n📱 Build the APK in Android Studio:');
+console.log('   1. Wait for the bottom progress bar / "Gradle sync finished" to stop');
+console.log('   2. Menu: Build → Build Bundle(s) / APK(s) → Build APK(s)');
+console.log('   3. Wait for "BUILD SUCCESSFUL" → click "locate" in the popup');
+console.log('   APK file: android/app/build/outputs/apk/debug/app-debug.apk');
+console.log('\n   If Gradle sync shows errors: File → Sync Project with Gradle Files, and');
+console.log('   set Gradle JDK = Embedded JDK (Settings → Build Tools → Gradle).')
