@@ -984,3 +984,18 @@ Stage Summary:
 - Connecting the cloud now ALWAYS turns Auto Sync on and immediately backs up / pushes pending rows; devices that connected earlier self-heal on the next data write
 - USER WORKAROUND for the CURRENT APK (no rebuild needed): Cloud Backup screen -> toggle "Auto Sync" ON -> pending products upload immediately (engine auto-chooses full backup if cloud is empty)
 - BLOCKER: 2 commits awaiting a new GitHub token
+
+---
+Task ID: 28
+Agent: Z.ai Code (main)
+Task: Push pending commits with the user's new GitHub token
+
+Work Log:
+- User supplied replacement token after revoking the exposed one
+- git remote set-url origin with new token; git push origin main succeeded (bc9ac4f..4e64046)
+- Verified both pending commits are on origin/main: e1dde87 (build-apk.js gradle automation) and 6f19a3c (Auto Sync default-on fix)
+- Dev server still healthy (HTTP 200)
+
+Stage Summary:
+- GitHub main is now fully up to date with every fix: profit/FIFO/bill-PDF, TS build fix, APK gradle automation, cloud auto-sync default-on
+- USER STEPS: git pull -> npm run build -> PS-TELECOM-debug.apk at project root (or Android Studio Build APK(s)); in the CURRENT APK the immediate workaround for products not reaching cloud is Cloud Backup -> Auto Sync toggle ON
