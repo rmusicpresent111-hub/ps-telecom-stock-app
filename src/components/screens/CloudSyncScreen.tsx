@@ -341,6 +341,14 @@ export default function CloudSyncScreen() {
       setConn('connected');
       setCloudMeta(res.meta ?? null);
       toast.success(t('connectionOk', language));
+      // Auto Sync ON from the moment the device is connected — previously it
+      // stayed OFF unless the user hunted for the toggle, so products added
+      // after connecting never reached the cloud database. The engine picks
+      // the right job itself: no cloud backup yet → full backup; otherwise it
+      // pushes the pending changes (including rows added while disconnected).
+      setAutoSyncEnabled(user.id, true);
+      setAutoSync(true);
+      scheduleCloudSync(user.id, 800);
       // Brand-new device (empty local DB): pull the cloud backup right away —
       // "the same data everywhere" with zero extra taps.
       setBusy('restore');

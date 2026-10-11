@@ -43,6 +43,8 @@ import {
   getDirty,
   hasDirty,
   isAutoSyncEnabled,
+  isAutoSyncOptedOut,
+  setAutoSyncEnabled,
   setLastAutoSync,
 } from './sync-dirty';
 
@@ -123,23 +125,52 @@ export function initCloudSync(): void {
   if (initialized || typeof window === 'undefined') return;
   initialized = true;
 
-  // Fired by sync-dirty.markDirty on every offline write.
+  // Fired by sync-dirty.markDirty on every offline write (add product, sell,
+  // stock in...). Default-on first: a device with saved credentials but a
+  // never-touched Auto Sync switch must still push data — this is the exact
+  // path that used to leave new products stuck in the local dirty queue.
   window.addEventListener(EVENT_NAME, e => {
     const uid = (e as CustomEvent<string>).detail;
-    if (typeof uid === 'string') scheduleCloudSync(uid);
+    if (typeof uid === 'string') {
+      ensureAutoSyncDefaultOn(uid);
+      scheduleCloudSync(uid);
+    }
   });
 
   // Connectivity back → flush whatever piled up while offline.
   window.addEventListener('online', () => {
     setTimeout(() => {
-      for (const uid of dirtyUserIds()) scheduleCloudSync(uid, 1_500);
+      for (const uid of dirtyUserIds()) {
+        ensureAutoSyncDefaultOn(uid);
+        scheduleCloudSync(uid, 1_500);
+      }
     }, 1_500);
   });
 
   // Periodic sweep — catches anything missed (timer lost to page kill, etc).
   window.setInterval(() => {
-    for (const uid of dirtyUserIds()) scheduleCloudSync(uid, 2_000);
+    for (const uid of dirtyUserIds()) {
+      ensureAutoSyncDefaultOn(uid);
+      scheduleCloudSync(uid, 2_000);
+    }
   }, 60_000);
+}
+
+/**
+ * Default Auto Sync ON: any device holding real cloud credentials (or able to
+ * reach the server-managed cloud) gets automatic syncing unless the user
+ * EXPLICITLY turned it off (opt-out marker in sync-dirty.ts). Returns true
+ * when it flipped the switch just now.
+ */
+export function ensureAutoSyncDefaultOn(userId: string): boolean {
+  if (!userId || typeof window === 'undefined') return false;
+  if (isAutoSyncEnabled(userId)) return false;
+  if (isAutoSyncOptedOut(userId)) return false;
+  const hasCreds = !!getD1Credentials(userId);
+  if (!hasCreds && !serverManagedCloudPossible()) return false;
+  setAutoSyncEnabled(userId, true);
+  scheduleCloudSync(userId, 1_500);
+  return true;
 }
 
 function dirtyUserIds(): string[] {
@@ -326,6 +357,6 @@ async function writeMetaRow(
 }
 
 // Re-exported so the UI has one import site for everything auto-sync related.
-export { isAutoSyncEnabled, setAutoSyncEnabled, getLastAutoSync, hasDirty } from './sync-dirty';
+export { isAutoSyncEnabled, isAutoSyncOptedOut, setAutoSyncEnabled, getLastAutoSync, hasDirty } from './sync-dirty';
 export type { DirtyState } from './sync-dirty';
 export type { CloudTable } from './cloud-d1';

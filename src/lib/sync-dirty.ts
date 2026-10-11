@@ -13,6 +13,7 @@
 
 const DIRTY_PREFIX = 'ps-d1-dirty:';
 const AUTOSYNC_PREFIX = 'ps-d1-autosync:';
+const AUTOSYNC_USER_OFF_PREFIX = 'ps-d1-autosync-useroff:';
 const LAST_SYNC_PREFIX = 'ps-d1-last-autosync:';
 
 /** Per-table dirty list overflow threshold — beyond this a full backup is cheaper. */
@@ -174,9 +175,24 @@ export function isAutoSyncEnabled(userId: string): boolean {
   return safeGet(AUTOSYNC_PREFIX + userId) === '1';
 }
 
+/** True when the user EXPLICITLY turned Auto Sync off (vs. never configured). */
+export function isAutoSyncOptedOut(userId: string): boolean {
+  return safeGet(AUTOSYNC_USER_OFF_PREFIX + userId) === '1';
+}
+
+/**
+ * Sets Auto Sync on/off. Turning it OFF records an explicit user opt-out so
+ * the default-on helper (ensureAutoSyncDefaultOn) never silently re-enables
+ * it. Turning it ON clears the marker.
+ */
 export function setAutoSyncEnabled(userId: string, enabled: boolean): void {
-  if (enabled) safeSet(AUTOSYNC_PREFIX + userId, '1');
-  else safeRemove(AUTOSYNC_PREFIX + userId);
+  if (enabled) {
+    safeSet(AUTOSYNC_PREFIX + userId, '1');
+    safeRemove(AUTOSYNC_USER_OFF_PREFIX + userId);
+  } else {
+    safeRemove(AUTOSYNC_PREFIX + userId);
+    safeSet(AUTOSYNC_USER_OFF_PREFIX + userId, '1');
+  }
 }
 
 /** Timestamp (ms) of the last successful auto sync (0 = never). */
