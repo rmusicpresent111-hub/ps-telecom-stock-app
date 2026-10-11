@@ -963,3 +963,24 @@ Stage Summary:
 - One command now does EVERYTHING: npm run build → static export → cap sync → gradle assembleDebug → PS-TELECOM-debug.apk at repo root; no Android Studio interaction needed
 - User can ALSO build right now from their open Android Studio: Build → Build Bundle(s)/APK(s) → Build APK(s) → android\app\build\outputs\apk\debug\app-debug.apk (their local code already has all previous fixes incl. profit/FIFO/bill-PDF and the TS build fix)
 - BLOCKER: git push impossible — token revoked (401). Need new token with repo scope to push commit bc9ac4f-successor (local HEAD).
+
+---
+Task ID: 27
+Agent: Z.ai Code (main)
+Task: Fix "product add korle database e add hochhena" — products never reached the cloud database after building the APK
+
+Work Log:
+- Traced the full chain: createProductOffline -> markDirty + ps-d1-dirty event -> initCloudSync listener -> scheduleCloudSync -> runCloudSync -> D1 push. Local IndexedDB save was fine; the break was BEFORE the engine: scheduleCloudSync early-returns when isAutoSyncEnabled=false
+- ROOT CAUSE: connectWithCreds (Save & Test Connection AND Setup Code) tested + persisted creds + auto-restored, but NEVER enabled Auto Sync and never kicked a backup. Fresh APK => Auto Sync off by default => every product added after connecting stayed stuck in the local dirty queue forever. Users would never find the buried toggle.
+- FIX (3 parts):
+  1. sync-dirty.ts: explicit opt-out marker ps-d1-autosync-useroff:<uid> set by setAutoSyncEnabled(false); isAutoSyncOptedOut()
+  2. cloud-sync.ts: ensureAutoSyncDefaultOn(uid) — auto-enables when real creds exist (or server-managed possible) AND user never opted out, then schedules sync; wired into dirty-event listener, back-online handler, periodic sweep => existing connected devices self-heal on their next write, no rebuild navigation needed
+  3. CloudSyncScreen.connectWithCreds: on success setAutoSyncEnabled(true) + setAutoSync(true) + scheduleCloudSync(800ms)
+- LIVE E2E (agent-browser, fake creds injected as a connected-device simulation): add product via UI -> ps-d1-autosync:local-owner flipped to "1" automatically; dirty queue = 20 categories + product + opening FIFO lot; dev.log shows real [d1-proxy] POST attempts (401 token_invalid = fake token rejected exactly as designed; engine + path proven); product visible in Products list; zero page errors; graceful failure preserved dirty rows for retry
+- tsc --noEmit clean, eslint clean; test state cleaned from sandbox browser
+- COMMITTED 6f19a3c — push BLOCKED again: token 401 (revoked). Local-only commits now: e1dde87 (gradle automation) + 6f19a3c (this fix). Still waiting on a new token from the user.
+
+Stage Summary:
+- Connecting the cloud now ALWAYS turns Auto Sync on and immediately backs up / pushes pending rows; devices that connected earlier self-heal on the next data write
+- USER WORKAROUND for the CURRENT APK (no rebuild needed): Cloud Backup screen -> toggle "Auto Sync" ON -> pending products upload immediately (engine auto-chooses full backup if cloud is empty)
+- BLOCKER: 2 commits awaiting a new GitHub token
