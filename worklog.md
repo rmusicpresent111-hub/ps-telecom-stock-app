@@ -1113,3 +1113,22 @@ Stage Summary:
 - MINOR InvoiceScreen.tsx:413+146 — percent discount >100 clamps math to 100% but label shows raw "(150%)"; InvoiceScreen.tsx:254-256 auto-send catch is silent (no toast) on unexpected share throws
 - OBSERVATION (cross-cutting) offline-service.ts:933-951,975-994 — getReportsOffline daily/monthly/category count revenue/profit for SELL only while ProfitScreen/dashboard count SELL+STOCK_OUT (isSaleType) → Reports tab contradicts Profit tab for the same day (ReportsScreen not in this review's file list)
 - CLEAN: StockOperationScreen.tsx (preselect/matching/validation/dialog/bill-prompt logic sound), ProductDetailScreen.tsx screen logic, i18n key usage, date math, money math parity, double-tap/delete guards
+
+---
+Task ID: 30
+Agent: Z.ai Code (main)
+Task: "dead code, bug, fix koro" — full dead-code sweep + bug hunt & fixes
+
+Work Log:
+- DEAD CODE removed: 126 unused i18n keys (504 entries across TranslationKeys type + bn/en/hi; cloud-sync leftovers + old auth/dailybook keys) — verified zero dynamic t() usage could reach them (only paymentMethod values + nav labelKeys are dynamic, both alive); 34 unused shadcn ui components deleted (12 actually used, no internal cross-imports among survivors); src/hooks/useDebounce.ts (0 refs); src/app/api/route.ts ("Hello world" template, dead in static export); CSP api.cloudflare.com leftover in layout.tsx
+- BUG REVIEW: 3 parallel read-only review agents (30-a lib, 30-b key screens, 30-c shell) found 22 real bugs
+- LIB FIXES (offline-service.ts): reports now count STOCK_OUT as sales via isSaleType (daily+monthly+category loops — was contradicting Dashboard/Profit, showed ₹0 revenue); single-point legacy ISO-date normalization in localTxnsToTransactions (today filters/7-day chart/daily grouping never drop ISO-dated rows); dashboard todayProfit cost fallback to current product price; product creation atomic with opening FIFO lot (one IDB tx); quantity edits now write FIFO adjustment rows (increase=STOCK_IN lot, decrease=STOCK_OUT consumption, ₹0 revenue); deleteProductOffline KEEPS historical transactions (snapshot design: "deleted products still count"); imported bill rows shape-defended (items/customerName/customerMobile/billNumber/paymentMethod); deleteBillOffline throws on missing/foreign bill; upsertCashEntryOffline read+write in ONE tx (no duplicate-day race)
+- SCREEN FIXES: InvoiceScreen Due→Cash resets paidAmount to '' (was keeping '0' → fully-paid sale saved with due=total); discount % label clamped; ProfitScreen chart buckets + service breakdown use slice(0,10)/inRange; HistoryScreen day-header salesTotal counts SELL+STOCK_OUT; DashboardScreen loading unstuck when user null; BillingSettingsScreen ImageUploadRow hoisted to module level (detached file-input silently dropped picks); ProfileScreen/ReportsScreen local-date filenames + deferred revokeObjectURL; CategoryDetailScreen stock-op validates selection belongs to current category; DailyBookScreen date-required guards (cash+expense), silent fetch catches now toast, Hindi error text script normalized (ত্রুটি→त्रुटि for hi)
+- SKIPPED (deliberate): invoice auto-send silent catch (cancel-abort would toast wrongly), reset re-seeds categories (fresh-start UX), dark-theme FOUC (dark-only app), billing-settings unsaved-changes dialog (UX decision)
+- VERIFY: tsc --noEmit 0 errors; eslint clean; E2E agent-browser (fresh session): boot→dashboard, add product (Total 1, Stock ₹1,000), edit qty 10→15 → Today's Transactions 2 + adjustment STOCK_IN ×5 ₹500 visible in History + Stock Value ₹1,500; Stock Out 3@150 → Profit tab ₹450/₹300/₹150 FIFO; Reports Daily NOW shows Sale ₹450 / Profit ₹150 (was ₹0 before fix); History header "Today 3 transactions • Sales ₹450.00"; Invoice Due→Cash placeholder resets to full-total, no Due line; Profile has no cloud entries; Reset All Data → clean dashboard; ZERO console errors the whole session
+- COMMITTED: dead-code+bugfix commit on top of ee62742; PUSH FAILED: token revoked again (could not read Password) — awaiting new GitHub token (same workflow: token → push → revoke)
+
+Stage Summary:
+- Codebase slimmed (34 ui files + 126 i18n keys + dead routes gone) and 22 real bugs fixed, including the last "two different truths" money bug (Reports vs Profit tab) and the Due-payment data-corruption bug
+- App remains 100% offline IndexedDB; all money surfaces (Dashboard/Profit/Reports/History) now agree on SELL+STOCK_OUT revenue and FIFO cost
+- BLOCKER: needs a new GitHub token to push (previous one revoked by user)
