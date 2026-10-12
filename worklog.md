@@ -1154,3 +1154,23 @@ Stage Summary:
 - Firebase (Analytics + Firestore backup/sync) fully integrated with offline-first IndexedDB still the source of truth; cloud mirror at psStock/{uid}/...
 - USER ACTION REQUIRED (only blocker): Firebase Console → ps-stock-menagement → Build → Firestore Database → Create database → start in test mode (or set rules allow read/write: if true)
 - Verified: tsc 0 errors, eslint clean, E2E golden path green; dev server restart was needed mid-E2E (had died), recovered cleanly
+
+---
+Task ID: 30-scan
+Agent: Explore
+Task: Dead code & broken reference scan for Task 30
+
+Work Log:
+- Enumerated all 101 files under src/ and parsed every import statement (static, dynamic import(), side-effect) resolving './', '../' and '@/' paths via script
+- Built full internal import graph; computed direct orphans (zero importers) and transitive reachability from src/app entry points
+- Cross-checked every named import against target module exports (incl. `export { type X }` blocks and `as` aliases) to find missing-export references
+- Verified suspicious cases manually: ProfileScreen `User as UserType` (OK, types.ts:67), use-toast ToastProps/ToastActionElement (OK, toast.tsx:119-121), getDashboardOffline→getDashboard re-export (OK, used by DashboardScreen)
+- Enumerated exports of all src/lib/*.ts and counted usage sites per identifier across src/, splitting "never used" vs "used only in-file" vs "used only by D1 cluster"
+- Grep'd src/ case-insensitive for d1/cloudflare outside the 5 known D1 files; grep'd TODO/FIXME/XXX/HACK; checked each package.json dependency against src/ references and node_modules presence
+
+Stage Summary:
+- 55 of 101 src files are unreachable from src/app: 46 shadcn ui components (only chart.tsx + sonner.tsx are alive), hooks use-mobile/use-toast/useDebounce, lib db.ts (orphan Prisma scaffold) + the D1 cluster (cloud-d1, cloud-sync, sync-dirty, CloudSyncScreen) plus auto-restore.ts which also belongs to the D1 cluster
+- 2 genuinely broken imports: src/lib/db.ts:1 → @prisma/client (not in package.json, not installed) and src/components/ui/toast.tsx:4 → @radix-ui/react-toast (not declared, not installed) — both only in dead files; no other broken internal imports/exports
+- Dead exports: firebase-sync hasCloudBackup (fully dead); in-file-only exports in id.ts (generateId), local-auth (DEFAULT_USER_ID), offline-service (DEFAULT_BILLING_SETTINGS), types (BillItem), capacitor-init (initCapacitorBridge), bill-pdf (10 helpers); most firebase-sync exports (RestoreResult, SyncResult, isAutoSyncEnabled, scheduleCloudSync) are used only by D1 files and die with the cluster
+- D1 leakage outside known files: only src/lib/auto-restore.ts (imports d1Query/getD1Credentials/getEffectiveD1Credentials/restoreFromD1 from './cloud-d1', lines 24-28/148/156-157/168; "Cloudflare D1" comment line 6) — must be removed/replaced together with the D1 layer; remaining matches are hex-color false positives
+- No TODO/FIXME/XXX/HACK comments (only BillingSettingsScreen.tsx:178 placeholder="XXX..." false positive); 10 runtime deps fully unused (@dnd-kit/*, @hookform/resolvers, @reactuses/core, @tanstack/react-query, @tanstack/react-table, date-fns, next-intl, zod, z-ai-web-dev-sdk) plus react-hook-form/cmdk/vaul/input-otp/react-day-picker/react-resizable-panels/embla-carousel-react/cva and all @radix-ui/* used only by dead ui components

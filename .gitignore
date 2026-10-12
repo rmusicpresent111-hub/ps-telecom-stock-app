@@ -85,3 +85,8 @@ server.log
 /android/
 .api-routes-temp
 .api-routes-backup
+# Firebase CLI
+out/
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
