@@ -271,7 +271,8 @@ export default function ProfitScreen() {
     }
 
     for (const t of sellTransactions) {
-      const existing = dailyMap.get(t.date);
+      // Legacy rows can carry a full ISO timestamp — bucket by day, not raw string.
+      const existing = dailyMap.get((t.date || '').slice(0, 10));
       if (existing) {
         const cost = (t.quantity || 0) * (t.product?.purchasePrice ?? productMap.get(t.productId)?.purchasePrice ?? 0);
         existing.revenue += t.totalAmount || 0;
@@ -561,7 +562,7 @@ export default function ProfitScreen() {
         {/* Service Income Breakdown */}
         {!loading && serviceTransactions.length > 0 && (() => {
           const filteredSvcTxns = serviceTransactions.filter(
-            s => s.date >= dateRange.from && s.date <= dateRange.to
+            s => inRange(s.date)
           );
           const repairingIncome = filteredSvcTxns
             .filter(s => s.categoryType === 'repairing' && s.transactionType === 'income')

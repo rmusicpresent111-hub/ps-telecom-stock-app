@@ -212,7 +212,8 @@ export default function DashboardScreen() {
   const [loading, setLoading] = useState(true);
   const isFetchingRef = useRef(false);
   const fetchDashboard = useCallback(async (isBackground = false) => {
-    if (!user?.id || isFetchingRef.current) return;
+    if (!user?.id) { setLoading(false); return; }
+    if (isFetchingRef.current) return;
 
     isFetchingRef.current = true;
     try {

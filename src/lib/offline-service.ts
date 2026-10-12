@@ -85,7 +85,14 @@ function sortTxnsDesc(rows: OfflineDBSchema['transactions']['value'][]): Offline
 }
 
 function localTxnsToTransactions(localTxns: OfflineDBSchema['transactions']['value'][]): Transaction[] {
-  return sortTxnsDesc(localTxns).map(t => stripSync<Transaction>(t));
+  return sortTxnsDesc(localTxns).map(t => {
+    const row = stripSync<Transaction>(t);
+    // Legacy rows stored a full ISO timestamp in `date` — normalize to
+    // YYYY-MM-DD so "today" filters, 7-day charts and daily grouping
+    // can never silently drop them.
+    if (row.date && row.date.length > 10) row.date = row.date.slice(0, 10);
+    return row;
+  });
 }
 
 /** Cost basis for a transaction: the SNAPSHOT taken at sale time, falling back to the current product. */
@@ -318,20 +325,22 @@ export async function createProductOffline(productData: {
     updatedAt: now,
   };
 
-  await offlineProducts.put({
-    ...product,
-    _synced: Date.now(),
-    _dirty: 0,
-  } as OfflineDBSchema['products']['value']);
-
   // Opening stock becomes FIFO lot #1: an initial STOCK_IN row at the
   // creation-time purchase price. Without it the FIFO engine would have no
   // lot for the quantity entered on the Add Product form (it would fall
   // straight through to "last purchase price" for the very first sales).
+  // Product + opening lot are written in ONE atomic IndexedDB transaction —
+  // a crash can never leave a product whose quantity has no ledger lot.
+  const productRow = {
+    ...product,
+    _synced: Date.now(),
+    _dirty: 0,
+  } as OfflineDBSchema['products']['value'];
+
+  let openingTxn: OfflineDBSchema['transactions']['value'] | null = null;
   if (quantity > 0) {
-    const openingTxnId = generateRecordId();
-    const openingTxn: OfflineDBSchema['transactions']['value'] = {
-      id: openingTxnId,
+    openingTxn = {
+      id: generateRecordId(),
       productId: product.id,
       type: 'STOCK_IN',
       quantity,
@@ -349,8 +358,13 @@ export async function createProductOffline(productData: {
       _synced: Date.now(),
       _dirty: 0,
     };
-    await offlineTransactions.put(openingTxn);
   }
+
+  const db = await getOfflineDB();
+  const tx = db.transaction(['products', 'transactions'], 'readwrite');
+  tx.objectStore('products').put(productRow);
+  if (openingTxn) tx.objectStore('transactions').put(openingTxn);
+  await tx.done;
 
   return { product };
 }
@@ -383,21 +397,56 @@ function applyProductUpdates(
 }
 
 export async function updateProductOffline(id: string, updates: Partial<Product> & { userId: string }): Promise<{ product: Product }> {
-  const existing = await offlineProducts.getAll(updates.userId);
-  const product = existing.find(p => p.id === id);
-  if (!product) throw new Error('Product not found');
+  const db = await getOfflineDB();
+  const tx = db.transaction(['products', 'transactions'], 'readwrite');
+  const product = await tx.objectStore('products').get(id);
+  if (!product || product.userId !== updates.userId) throw new Error('Product not found');
 
+  const prevQuantity = product.quantity || 0;
   const updatedProduct = {
     ...applyProductUpdates(product, updates),
     updatedAt: new Date().toISOString(),
   };
 
-  await offlineProducts.put({
+  // A quantity edit is a stock correction: mirror it in the FIFO ledger so
+  // the lot replay stays truthful (a direct quantity write used to leave lots
+  // that no longer matched reality — later sales costed from stale lots).
+  //   increase -> STOCK_IN lot at the effective purchase price
+  //   decrease -> STOCK_OUT consumption of the oldest lots (revenue ₹0 —
+  //               a correction is not a sale, but the lots must leave).
+  const delta = (updatedProduct.quantity || 0) - prevQuantity;
+  const now = new Date().toISOString();
+  const effectivePurchasePrice = updatedProduct.purchasePrice || 0;
+  let adjustment: OfflineDBSchema['transactions']['value'] | null = null;
+  if (delta !== 0) {
+    adjustment = {
+      id: generateRecordId(),
+      productId: id,
+      type: delta > 0 ? 'STOCK_IN' : 'STOCK_OUT',
+      quantity: Math.abs(delta),
+      unitPrice: delta > 0 ? effectivePurchasePrice : 0,
+      totalAmount: delta > 0 ? effectivePurchasePrice * delta : 0,
+      date: localDateStr(new Date(now)),
+      userId: updates.userId,
+      createdAt: now,
+      product: {
+        id,
+        name: updatedProduct.name,
+        purchasePrice: effectivePurchasePrice,
+        sellingPrice: updatedProduct.sellingPrice || 0,
+      },
+      _synced: Date.now(),
+      _dirty: 0,
+    };
+  }
+
+  tx.objectStore('products').put({
     ...updatedProduct,
     _synced: Date.now(),
     _dirty: 0,
   } as OfflineDBSchema['products']['value']);
-
+  if (adjustment) tx.objectStore('transactions').put(adjustment);
+  await tx.done;
 
   const { _synced, _dirty, ...prodData } = updatedProduct;
   return { product: prodData as Product };
@@ -405,20 +454,17 @@ export async function updateProductOffline(id: string, updates: Partial<Product>
 
 export async function deleteProductOffline(id: string, userId: string): Promise<{ message: string }> {
   // Ownership check — a product must never be deleted by a different account
-  // on a shared device. The cascade (related transactions + the product) runs
-  // in ONE IndexedDB transaction so a crash can never leave the product deleted
-  // but its transactions orphaned, or the other way around.
+  // on a shared device. The delete itself runs in a single atomic
+  // IndexedDB transaction.
   const db = await getOfflineDB();
-  const tx = db.transaction(['products', 'transactions'], 'readwrite');
+  const tx = db.transaction('products', 'readwrite');
   const product = await tx.objectStore('products').get(id);
   if (!product || (userId && product.userId !== userId)) throw new Error('Not found');
 
-  // Delete related transactions first (cascade)
-  const localTxns = await tx.objectStore('transactions').index('by-userId').getAll(userId);
-  for (const txn of localTxns) {
-    if (txn.productId === id) void tx.objectStore('transactions').delete(txn.id);
-  }
-
+  // Historical transactions are deliberately KEPT: every row carries a
+  // purchase-price snapshot, so past profit/reports must still count sales
+  // of a product that was later deleted ("deleted products still count").
+  // History renders those rows via the snapshot (txn.product?.name).
   void tx.objectStore('products').delete(id);
   await tx.done;
 
@@ -621,7 +667,10 @@ export async function getDashboardOffline(userId: string) {
   // Both SELL and STOCK_OUT count — everyday sales are recorded via Stock Out.
   const todayProfit = todayTxns.reduce((sum, tx) => {
     if (!isSaleType(tx.type)) return sum;
-    const cost = (tx.quantity || 0) * (tx.product?.purchasePrice ?? 0);
+    // Same fallback as txnCostBasis(): legacy/imported rows without a price
+    // snapshot cost the product's CURRENT purchase price — never ₹0-cost.
+    const cost = (tx.quantity || 0)
+      * (tx.product?.purchasePrice ?? products.find(p => p.id === tx.productId)?.purchasePrice ?? 0);
     return sum + ((tx.totalAmount || 0) - cost);
   }, 0);
 
@@ -778,8 +827,12 @@ export async function upsertCashEntryOffline(entryData: {
 
   const now = new Date().toISOString();
 
-  // One balance entry per date — upsert by date
-  const allEntries = await offlineCashEntries.getAll(entryData.userId);
+  // One balance entry per date — upsert by date.
+  // Read + write happen in ONE readwrite transaction so two rapid saves for
+  // the same date can never both miss `existing` and insert duplicates.
+  const db = await getOfflineDB();
+  const tx = db.transaction('cashEntries', 'readwrite');
+  const allEntries = await tx.objectStore('cashEntries').index('by-userId').getAll(entryData.userId);
   const existing = allEntries.find(e => e.date === entryData.date);
 
   if (existing) {
@@ -791,12 +844,11 @@ export async function upsertCashEntryOffline(entryData: {
       updatedAt: now,
     };
 
-    await offlineCashEntries.put({
+    await tx.objectStore('cashEntries').put({
       ...updated,
       _synced: Date.now(),
       _dirty: 0,
     });
-
 
     return { entry: stripSync<CashEntry>(updated) };
   }
@@ -812,12 +864,11 @@ export async function upsertCashEntryOffline(entryData: {
     updatedAt: now,
   };
 
-  await offlineCashEntries.put({
+  await tx.objectStore('cashEntries').put({
     ...newEntry,
     _synced: Date.now(),
     _dirty: 0,
   });
-
 
   return { entry: newEntry };
 }
@@ -937,15 +988,19 @@ export async function getReportsOffline(userId: string, type: string, options?: 
       const entry = dailyMap.get(t.date)!;
       const costBasis = txnCostBasis(t, products);
 
-      if (t.type === 'SELL') {
+      // SELL *and* STOCK_OUT earn revenue — everyday sales are recorded via
+      // Stock Out, so reports must match the Dashboard/Profit surfaces.
+      if (isSaleType(t.type)) {
         entry.revenue += t.totalAmount || 0;
         entry.cost += (t.quantity || 0) * costBasis;
         entry.profit += (t.totalAmount || 0) - (t.quantity || 0) * costBasis;
         entry.sell += t.quantity || 0;
-      } else if (t.type === 'STOCK_IN') {
+      }
+      if (t.type === 'STOCK_IN') {
         entry.cost += (t.quantity || 0) * (t.unitPrice || 0);
         entry.stockIn += t.quantity || 0;
-      } else if (t.type === 'STOCK_OUT') {
+      }
+      if (t.type === 'STOCK_OUT') {
         entry.stockOut += t.quantity || 0;
       }
     }
@@ -980,15 +1035,17 @@ export async function getReportsOffline(userId: string, type: string, options?: 
       const entry = monthlyMap.get(month)!;
       const costBasis = txnCostBasis(t, products);
 
-      if (t.type === 'SELL') {
+      if (isSaleType(t.type)) {
         entry.revenue += t.totalAmount || 0;
         entry.cost += (t.quantity || 0) * costBasis;
         entry.profit += (t.totalAmount || 0) - (t.quantity || 0) * costBasis;
         entry.sell += t.quantity || 0;
-      } else if (t.type === 'STOCK_IN') {
+      }
+      if (t.type === 'STOCK_IN') {
         entry.cost += (t.quantity || 0) * (t.unitPrice || 0);
         entry.stockIn += t.quantity || 0;
-      } else if (t.type === 'STOCK_OUT') {
+      }
+      if (t.type === 'STOCK_OUT') {
         entry.stockOut += t.quantity || 0;
       }
     }
@@ -1028,17 +1085,18 @@ export async function getReportsOffline(userId: string, type: string, options?: 
       const entry = categoryMap.get(catId)!;
       const costBasis = txnCostBasis(t, products);
 
-      if (t.type === 'SELL') {
+      if (isSaleType(t.type)) {
         entry.revenue += t.totalAmount || 0;
         entry.cost += (t.quantity || 0) * costBasis;
         entry.profit += (t.totalAmount || 0) - (t.quantity || 0) * costBasis;
         entry.sell += t.quantity || 0;
-        entry.quantity += t.quantity || 0;
-      } else if (t.type === 'STOCK_IN') {
+      }
+      if (t.type === 'STOCK_IN') {
         entry.cost += (t.quantity || 0) * (t.unitPrice || 0);
         entry.stockIn += t.quantity || 0;
         entry.quantity += t.quantity || 0;
-      } else if (t.type === 'STOCK_OUT') {
+      }
+      if (t.type === 'STOCK_OUT') {
         entry.stockOut += t.quantity || 0;
         entry.quantity += t.quantity || 0;
       }
@@ -1361,9 +1419,10 @@ export async function getBillByIdOffline(id: string, userId: string): Promise<Bi
 export async function deleteBillOffline(id: string, userId: string): Promise<{ success: boolean }> {
   const db = await getOfflineDB();
   const row = await db.get('bills', id);
-  if (row && row.userId === userId) {
-    await db.delete('bills', id);
-  }
+  // Fail loudly — a missing/foreign bill must never report success
+  // (the caller toasts "Bill deleted" only when the row really went).
+  if (!row || row.userId !== userId) throw new Error('Bill not found');
+  await db.delete('bills', id);
   return { success: true };
 }
 
@@ -1511,6 +1570,13 @@ export async function importBackupOffline(userId: string, backupData: {
       userId,
       createdAt: isoStr(bill.createdAt) || nowIso,
       updatedAt: isoStr(bill.updatedAt) || nowIso,
+      // Shape-defend the fields the bills list/search later calls string and
+      // array methods on — a hand-edited backup must never crash that tab.
+      items: Array.isArray(bill.items) ? bill.items : [],
+      customerName: typeof bill.customerName === 'string' ? bill.customerName : '',
+      customerMobile: typeof bill.customerMobile === 'string' ? bill.customerMobile : '',
+      billNumber: typeof bill.billNumber === 'string' ? bill.billNumber : '',
+      paymentMethod: typeof bill.paymentMethod === 'string' ? bill.paymentMethod : 'cash',
     }, {
       subtotal: 'num',
       discountValue: 'num',

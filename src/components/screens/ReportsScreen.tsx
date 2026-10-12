@@ -6,7 +6,7 @@ import { t } from '@/lib/i18n';
 import { motion } from 'framer-motion';
 import { ArrowLeft, FileText, Download, ChevronDown, ChevronUp, Package, IndianRupee, TrendingUp, AlertTriangle, BarChart3 } from 'lucide-react';
 import { toast } from 'sonner';
-import { getReportsOffline } from '@/lib/offline-service';
+import { getReportsOffline, localDateStr } from '@/lib/offline-service';
 import { Bar, BarChart, XAxis, YAxis, CartesianGrid, Cell } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 
@@ -182,9 +182,10 @@ export default function ReportsScreen() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `ps-telecom-${tab}-report-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `ps-telecom-${tab}-report-${localDateStr()}.csv`;
     a.click();
-    URL.revokeObjectURL(url);
+    // Revoking synchronously can abort the download on some browsers — give it time.
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
     toast.success(t('csvDownloaded', language));
   };
 
@@ -203,9 +204,10 @@ export default function ReportsScreen() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `ps-telecom-${tab}-report-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `ps-telecom-${tab}-report-${localDateStr()}.json`;
     a.click();
-    URL.revokeObjectURL(url);
+    // Revoking synchronously can abort the download on some browsers — give it time.
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
     toast.success(t('jsonDownloaded', language));
   };
 

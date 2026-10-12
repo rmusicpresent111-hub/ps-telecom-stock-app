@@ -99,7 +99,10 @@ export default function CategoryDetailScreen() {
       toast.error(t('noData', language));
       return;
     }
-    if (!useAppStore.getState().selectedProductId) {
+    // Only reuse the global selection when it belongs to THIS category —
+    // a product last tapped in another category used to pre-fill here.
+    const current = useAppStore.getState().selectedProductId;
+    if (!current || !products.some(p => p.id === current)) {
       setSelectedProductId(products[0].id);
     }
     setStockOperationType(type);

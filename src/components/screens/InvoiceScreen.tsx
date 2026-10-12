@@ -388,7 +388,7 @@ export default function InvoiceScreen() {
               {(['cash', 'upi', 'card', 'due'] as PaymentMethod[]).map((pm) => (
                 <button
                   key={pm}
-                  onClick={() => { setPaymentMethod(pm); if (pm === 'due') setPaidAmount('0'); }}
+                  onClick={() => { setPaymentMethod(pm); setPaidAmount(pm === 'due' ? '0' : ''); }}
                   className={`py-2.5 text-xs font-semibold rounded-xl transition-all ${paymentMethod === pm ? 'neon-btn-solid' : 'glass-card text-white/60'}`}
                 >
                   {t(pm, language)}
@@ -410,7 +410,7 @@ export default function InvoiceScreen() {
           <div className="glass-card-strong p-5 space-y-2.5">
             <TotalRow label={t('subtotal', language)} value={`₹${formatMoney(totals.subtotal)}`} />
             {totals.discountAmount > 0 && (
-              <TotalRow label={`${t('discount', language)}${discountType === 'percent' ? ` (${discountValue}%)` : ''}`} value={`-₹${formatMoney(totals.discountAmount)}`} accent="text-green-400" />
+              <TotalRow label={`${t('discount', language)}${discountType === 'percent' ? ` (${Math.min(Number(discountValue) || 0, 100)}%)` : ''}`} value={`-₹${formatMoney(totals.discountAmount)}`} accent="text-green-400" />
             )}
             {totals.gstEnabled && totals.gstAmount > 0 && (
               <TotalRow label={`${t('gst', language)} (${settings?.gstRate}%)`} value={`₹${formatMoney(totals.gstAmount)}`} />

@@ -8,6 +8,63 @@ import { fileToResizedDataUrl } from '@/lib/image-utils';
 import { ArrowLeft, Save, Store, UserRound, MapPin, Phone, Hash, Percent, Smartphone, PenLine, QrCode, Tag, HeartHandshake, ScrollText, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { BillingSettings } from '@/lib/types';
+import type { Language } from '@/lib/types';
+
+/** Module-level on purpose: a component defined inside the render body gets a
+ *  new type every keystroke, unmounting its hidden file inputs — an OS file
+ *  picker still open during a re-render then fires "change" on a detached
+ *  input and the picked signature/QR is silently dropped. */
+function ImageUploadRow({ kind, icon: Icon, label, dataUrl, language, inputRef, onPick, onUpdate }: {
+  kind: 'signature' | 'qr';
+  icon: React.ElementType;
+  label: string;
+  dataUrl: string;
+  language: Language;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  onPick: (e: React.ChangeEvent<HTMLInputElement>, kind: 'signature' | 'qr') => void;
+  onUpdate: (field: 'signatureDataUrl' | 'qrCodeDataUrl', value: string) => void;
+}) {
+  return (
+    <div className="glass-card p-4">
+      <div className="flex items-center gap-3 mb-3">
+        <Icon size={18} className="text-emerald-400" />
+        <span className="text-sm font-medium">{label}</span>
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="w-24 h-20 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden">
+          {dataUrl ? (
+            <img src={dataUrl} alt={label} className="max-w-full max-h-full object-contain bg-white/80 rounded" />
+          ) : (
+            <span className="text-[10px] text-white/30 px-2 text-center">{t('uploadImage', language)}</span>
+          )}
+        </div>
+        <div className="flex flex-col gap-2 flex-1">
+          <button
+            onClick={() => inputRef.current?.click()}
+            className="glass-card py-2 text-xs font-medium text-emerald-400"
+          >
+            {dataUrl ? t('edit', language) : t('uploadImage', language)}
+          </button>
+          {dataUrl && (
+            <button
+              onClick={() => onUpdate(kind === 'signature' ? 'signatureDataUrl' : 'qrCodeDataUrl', '')}
+              className="py-2 text-xs text-red-400/80 hover:text-red-400"
+            >
+              {t('removeImage', language)}
+            </button>
+          )}
+        </div>
+      </div>
+      <input
+        type="file"
+        accept="image/*"
+        ref={inputRef}
+        onChange={(e) => onPick(e, kind)}
+        className="hidden"
+      />
+    </div>
+  );
+}
 
 export default function BillingSettingsScreen() {
   const user = useAppStore(s => s.user);
@@ -69,48 +126,6 @@ export default function BillingSettingsScreen() {
     }
     e.target.value = '';
   };
-
-  const ImageUploadRow = ({ kind, icon: Icon, label, dataUrl }: { kind: 'signature' | 'qr'; icon: React.ElementType; label: string; dataUrl: string }) => (
-    <div className="glass-card p-4">
-      <div className="flex items-center gap-3 mb-3">
-        <Icon size={18} className="text-emerald-400" />
-        <span className="text-sm font-medium">{label}</span>
-      </div>
-      <div className="flex items-center gap-3">
-        <div className="w-24 h-20 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden">
-          {dataUrl ? (
-             
-            <img src={dataUrl} alt={label} className="max-w-full max-h-full object-contain bg-white/80 rounded" />
-          ) : (
-            <span className="text-[10px] text-white/30 px-2 text-center">{t('uploadImage', language)}</span>
-          )}
-        </div>
-        <div className="flex flex-col gap-2 flex-1">
-          <button
-            onClick={() => (kind === 'signature' ? sigInputRef : qrInputRef).current?.click()}
-            className="glass-card py-2 text-xs font-medium text-emerald-400"
-          >
-            {dataUrl ? t('edit', language) : t('uploadImage', language)}
-          </button>
-          {dataUrl && (
-            <button
-              onClick={() => update(kind === 'signature' ? 'signatureDataUrl' : 'qrCodeDataUrl', '')}
-              className="py-2 text-xs text-red-400/80 hover:text-red-400"
-            >
-              {t('removeImage', language)}
-            </button>
-          )}
-        </div>
-      </div>
-      <input
-        type="file"
-        accept="image/*"
-        ref={kind === 'signature' ? sigInputRef : qrInputRef}
-        onChange={(e) => handleImagePick(e, kind)}
-        className="hidden"
-      />
-    </div>
-  );
 
   if (loading) {
     return (
@@ -174,8 +189,8 @@ export default function BillingSettingsScreen() {
           </div>
 
           {/* Images */}
-          <ImageUploadRow kind="signature" icon={PenLine} label={t('signature', language)} dataUrl={form.signatureDataUrl} />
-          <ImageUploadRow kind="qr" icon={QrCode} label={t('paymentQr', language)} dataUrl={form.qrCodeDataUrl} />
+          <ImageUploadRow kind="signature" icon={PenLine} label={t('signature', language)} dataUrl={form.signatureDataUrl} language={language} inputRef={sigInputRef} onPick={handleImagePick} onUpdate={update} />
+          <ImageUploadRow kind="qr" icon={QrCode} label={t('paymentQr', language)} dataUrl={form.qrCodeDataUrl} language={language} inputRef={qrInputRef} onPick={handleImagePick} onUpdate={update} />
 
           {/* Bill extras */}
           <div className="glass-card-strong p-5 space-y-4">

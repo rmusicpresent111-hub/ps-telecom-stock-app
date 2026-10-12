@@ -1021,3 +1021,95 @@ Work Log:
 Stage Summary:
 - App is now 100% offline (IndexedDB only) — cloud integration completely gone; user can plug their own backend into the single data layer (src/lib/offline-service.ts) later
 - BLOCKER: commit ee62742 needs a new GitHub token to push
+
+---
+Task ID: 30-a
+Agent: lib-bug-reviewer
+Task: READ-ONLY bug review of src/lib/* core files
+
+Work Log:
+- Read worklog history (Tasks 1-29): offline-first PS-TELECOM, cloud D1 sync fully removed in Task 29, FIFO cost engine + bill PDF/WhatsApp added in Task 24
+- Read the WHOLE of src/lib/offline-service.ts (1568 lines): date helpers, FIFO engine, categories/products CRUD, atomic createTransactionOffline, dashboard, expenses, cash entries, reports, bills, backup import/export, reset
+- Read the WHOLE of src/lib/offline-db.ts (456 lines): schema v7, indexes, putBulk, clearOfflineData atomic wipe
+- Read the WHOLE of src/lib/bill-pdf.ts (726 lines): jsPDF A5 invoice, amount-in-words, Web Share / Capacitor Share / wa.me fallback chain
+- Read local-auth.ts, modal-back.ts, sound-service.ts, share-toasts.ts, image-utils.ts, id.ts, capacitor-init.ts, store/appStore.ts, hooks/useBackHandler.ts in full
+- Cross-checked callers to confirm/refute suspicions: StockOperationScreen (STOCK_OUT passes real unitPrice/totalAmount), ProfitScreen (counts SELL+STOCK_OUT, slice(0,10) date normalize, snapshot cost), AddProductScreen (edit path sends quantity directly), HistoryScreen/InvoiceScreen (bill search crash surface, auto-send guard), ProfileScreen (backup/restore/reset flow), SplashScreen boot, DailyBookScreen (cash balance semantics), i18n keys for share-toasts all present
+- Verified IndexedDB transaction usage patterns (idb v8): all multi-store flows keep only IDB awaits inside tx — no cross-tx await hazard; readwrite txs on products+transactions are serialized so the stock check-then-write is genuinely atomic
+- Ran `npx tsc --noEmit` as sanity: 0 errors
+- Audited for: race conditions, FIFO math, off-by-one (week start, 7-day chart, bill seq, paise carry — all correct), timezone bugs (localDateStr correct), division by zero (all guarded), unhandled rejections, stale closures, event-listener leaks, IndexedDB misuse — none found in the small lib files
+
+Stage Summary:
+- MAJOR offline-service.ts:940-950,983-993,1031-1044 — daily/monthly/category reports count revenue/cost/profit ONLY for SELL; STOCK_OUT (which carries real totalAmount and is the documented everyday sales path) is excluded, so Reports screen + exported CSV contradict the Profit tab and dashboard todayProfit
+- MAJOR (legacy-data devices) offline-service.ts:563,933-937 — dashboard "today" uses t.date === today and the daily report groups by raw t.date; legacy rows stored with full ISO timestamps (acknowledged to exist — ProfitScreen normalizes with slice(0,10) for exactly this reason) are silently missed in today stats and render as bogus day buckets
+- MINOR offline-service.ts:321-353 — createProductOffline writes the product and the opening STOCK_IN FIFO lot in TWO separate IndexedDB txs; a crash/quota failure in between leaves stock with no ledger lot (FIFO falls back to last purchase price silently)
+- MINOR offline-service.ts:370-372 — direct quantity edit in applyProductUpdates bypasses the FIFO lot ledger (no adjustment row), so computeFifoUnitCost replays stale lots until the dry-lot fallback kicks in — profit silently distorted after stock-correction edits
+- MINOR offline-service.ts:1458,1507-1524 — importBackupOffline validates bill rows for id only; a hand-edited backup missing items/customerName/customerMobile crashes getBillsOffline search (1339-1344) and HistoryScreen bill filter (b.items.some TypeError)
+- MINOR offline-service.ts:782-819 — upsertCashEntryOffline is find-then-put (not atomic); double-tap can mint two entries for the same date and the "latest entry holds balance" rule then depends on arbitrary row order
+- MINOR offline-service.ts:622-626 — dashboard todayProfit cost fallback is 0 (snapshot-only) while reports/ProfitScreen fall back to the product's current purchasePrice → legacy rows without snapshot overstate profit on the dashboard only
+- NO real bugs found in: offline-db.ts, bill-pdf.ts, local-auth.ts, modal-back.ts, sound-service.ts, share-toasts.ts, image-utils.ts, id.ts, capacitor-init.ts, appStore.ts, useBackHandler.ts
+- Accepted-by-design (not bugs): DailyBook "latest entry in period holds balance" semantics (documented); popstate history re-push growth in useBackHandler; vestigial _synced/_dirty fields after cloud removal
+- READ-ONLY task: no source files changed; worklog entry only
+
+---
+Task ID: 30-c
+Agent: shell-bug-reviewer
+Task: READ-ONLY bug review of app shell + remaining screens
+
+Work Log:
+- Read worklog history (Tasks 1-29): app is now 100% offline (cloud D1 sync removed in Task 29), i18n trimmed to 145 keys, FIFO/profit fix in Task 24 made STOCK_OUT count as a sale on Dashboard/Profit.
+- Reviewed page.tsx (screen map vs Screen union: all 21 union members mapped, no blank-screen path; back-handler wiring via capacitor-init -> app:back-button -> useBackHandler; exit-dialog + AnimatePresence/Suspense/lazy flow) — clean.
+- Reviewed BottomNav (labelKeys all exist in i18n), useBackHandler + modal-back (stack semantics verified: dialog -> history -> home -> exit), capacitor-init (sync flag guard ok), layout.tsx, use-mobile.ts.
+- Reviewed SplashScreen boot sequence: hydration wait + hoisted hydrationWaiter cleanup ok; seeding (ensureDefaultUser -> seedDefaultCategoriesOffline) completes BEFORE resetNavigation, so Dashboard cannot mount mid-seed; both ops idempotent → no boot race. Found: starter categories re-seed after deliberate "Reset All Data" on next restart.
+- Reviewed DashboardScreen (fetch guard, setCategories([]) on empty, focus refresh, memoization) — ok; noted loading stays '...' forever if user is null (IndexedDB-unavailable edge).
+- Reviewed ProductListScreen (search handoff seeding + global-query clear, in-memory filter) — clean.
+- Reviewed HistoryScreen (cancelled-flag load, registerBackModal delete dialog, bill actions, date grouping with local timezone) — found day-header Sales total filters SELL only, ignoring STOCK_OUT sales.
+- Reviewed ProfileScreen backup/restore/reset: JSON.parse errors surfaced; importBackupOffline validates rows (id+name), coerces numerics/dates, atomic single-tx replace, throws on no-valid-data → restore path solid. Found UTC-date filenames; restore/reset do not refresh store caches beyond categories (OK — screens refetch on remount via keyed AnimatePresence).
+- Reviewed ReportsScreen + traced getReportsOffline: found the Task-24 bug class still alive in reports — revenue/cost/profit accumulated ONLY for type==='SELL' in daily (offline-service.ts:940-950), monthly (:983-993) and category (:1031-1044) aggregations; STOCK_OUT sales show ₹0 in all report tabs and CSV/JSON exports.
+- Reviewed BillingSettingsScreen: getBillingSettingsOffline always returns defaults (form never null after load, `if (!form) return null` safe); found ImageUploadRow component defined inside render (file-input subtree remounts every keystroke → picked image can be silently dropped if a re-render lands while the OS picker is open); unsaved-changes lost on back without warning.
+- Reviewed LanguageScreen/WelcomeScreen/TutorialScreen/ServiceCategoryScreen/AddCategoryScreen — clean (hooks before early returns, form resets, delete-confirm double-tap guard).
+- i18n audit: enumerated every t('...') key used across all reviewed files (BottomNav, Dashboard, ProductList, History, Profile, Reports, BillingSettings, Language, Tutorial, ServiceCategory, AddCategory) and verified each exists in TranslationKeys for bn/en/hi — zero broken keys.
+- Verified all imported helpers/assets exist (bill-pdf, share-toasts, image-utils, ui/chart, modal-back, capacitor-init, tutorial images, category images).
+- No files were modified (read-only review; this worklog entry is the only write).
+
+Stage Summary:
+- MAJOR — Reports show ₹0 revenue/cost/profit for Stock-Out-driven shops: src/lib/offline-service.ts:940-950 (daily), :983-993 (monthly), :1031-1044 (category) accumulate only type==='SELL' into revenue/cost/profit while STOCK_OUT (the everyday sale path per Task 24) only bumps the stockOut counter; symptom surfaces in src/components/screens/ReportsScreen.tsx (all tabs + CSV/JSON exports). Fix: use isSaleType(t.type) for the revenue/cost/profit branch in all three loops.
+- MINOR — HistoryScreen.tsx:192 day-header "Sales ₹X" filters r.type==='SELL' only → everyday Stock-Out sales missing from per-day totals (inconsistent with line 391 canBill which includes STOCK_OUT). Fix: isSaleType(r.type).
+- MINOR — BillingSettingsScreen.tsx:73-113 ImageUploadRow defined inside the component: new component type each render unmounts/remounts its subtree (hidden file inputs + preview) on every keystroke; a re-render while the OS file picker is open makes the change event land on a detached input and the picked signature/QR is silently dropped. Fix: hoist the component out of the render (or call it as a function).
+- MINOR — SplashScreen.tsx:74-84 + seedDefaultCategoriesOffline: after Profile → Reset All Data, the next app restart re-creates the 20 starter categories (boot seeds any empty category store), so "Reset All Data" doesn't fully stick across restarts. Fix: persist a seeded/reset flag (zustand persist or syncMeta) and skip seeding when the device previously had data.
+- MINOR — BillingSettingsScreen.tsx (header back :210 + hardware back): unsaved edits (shop identity, GST, picked signature/QR) are discarded silently when leaving via back without pressing Save. Fix: dirty-check + confirm, or persist picks immediately.
+- MINOR — layout.tsx:39 hardcodes <html class="dark">; page.tsx:98-107 applies light-theme only after hydration → dark flash on every cold start for light-theme users (Toaster theme also hardcoded dark at layout.tsx:55). Fix: tiny inline pre-hydration script or CSS-var default swap.
+- MINOR — UTC-date filenames: ProfileScreen.tsx:103 (ps-telecom-backup-YYYY-MM-DD.json) and ReportsScreen.tsx:185,206 use toISOString().split('T')[0]; a backup/export taken before 05:30 IST is stamped with yesterday's date. Fix: localDateStr() (already exists in offline-service.ts:37).
+- EDGE — DashboardScreen.tsx:212-243: if the boot user-creation fails (IndexedDB unavailable) user stays null, fetchDashboard early-returns and `loading` stays true → stat cards show '...' forever instead of an empty/error state. Fix: set loading false in the early-return path.
+- CLEAN (no real bugs): page.tsx (all 21 Screen union members present in screenComponents — no blank-screen path; back-handler layering correct), BottomNav.tsx, useBackHandler.ts + modal-back.ts, capacitor-init.ts, ProductListScreen.tsx, LanguageScreen.tsx, WelcomeScreen.tsx, TutorialScreen.tsx, ServiceCategoryScreen.tsx, AddCategoryScreen.tsx, ProfileScreen restore/reset data-integrity path (atomic import, corrupt-file rejection), use-mobile.ts (functionally correct; currently unused by any screen — dead code, not reported as bug).
+- i18n: every t('...') key referenced by the reviewed files exists in i18n.ts TranslationKeys (bn/en/hi) — no stale keys after the 145-key cleanup.
+
+---
+Task ID: 30-b
+Agent: screens-bug-reviewer
+Task: READ-ONLY bug review of key screens
+
+Work Log:
+- Read worklog history (Tasks 1-29) for context: offline-first PS TELECOM, cloud sync removed (Task 29), FIFO/profit fix (Task 24), i18n cleaned to 145 keys
+- Read all 7 target screens in full: AddProductScreen, InvoiceScreen, ProfitScreen, DailyBookScreen, ProductDetailScreen, StockOperationScreen, CategoryDetailScreen
+- Cross-checked against data layer (offline-service.ts 1568 lines: createTransactionOffline/FIFO, createBillOffline, upsertCashEntryOffline, deleteProductOffline cascade, getReportsOffline), appStore.ts, page.tsx navigation model, bill-pdf.ts (formatDate/formatMoney/share), modal-back.ts
+- Verified i18n programmatically: extracted every t('...') literal from the 7 screens and matched against the 145 TranslationKeys — 100% resolve; dynamic args are PaymentMethod values only
+- Verified money math parity: InvoiceScreen totals useMemo mirrors createBillOffline (round2 + clamps on discount/GST/paid) — preview always equals saved bill
+- Verified date handling: localDateStr local-time everywhere, DailyBook/Profit week/month ranges correct (Monday start, no off-by-one), formatDate uses slice(0,10)+T00:00:00
+- Confirmed remount-per-navigation (page.tsx key=currentScreen) makes InvoiceScreen's [user?.id]-only effect deps and screen-level refs safe — no stale-closure crash paths
+- Traced race conditions: bill number allocation, duplicate-bill guard, double-tap delete guards, back-modal stack — all guarded
+- No files modified (read-only review); report only
+
+Stage Summary:
+- MAJOR InvoiceScreen.tsx:391,144-155 — selecting payment 'due' writes paidAmount='0'; switching back to cash/upi/card keeps it, so a fully-paid cash sale is saved with paidAmount 0 / dueAmount=total. Fix: reset paidAmount to '' when leaving 'due'
+- MAJOR AddProductScreen.tsx:99-109 (+offline-service updateProductOffline) — editing Quantity writes product.quantity directly with no STOCK_IN/adjustment transaction: FIFO lots understate stock (later sales silently fall back to last-purchase-price for phantom units) and product history shows no ledger entry. Fix: create a delta STOCK_IN row on quantity edit (or route edits through Stock In)
+- MAJOR (cross-file) offline-service.ts:406-426 + ProfitScreen.tsx:227-229 contradiction — deleteProductOffline cascades ALL of a product's transactions, so deleting a product silently rewrites historical profit/reports, while ProfitScreen's own comment (and the t.product snapshot design) claims deleted products still count. Fix: keep transactions (snapshot makes them self-contained) or warn before delete
+- MINOR ProfitScreen.tsx:274 — chart buckets via dailyMap.get(t.date) miss legacy full-ISO transaction dates (the file's own comment admits they exist): those sales show in stat cards (inRange slices to 10 chars) but not the chart. Fix: bucket/get by t.date.slice(0,10)
+- MINOR ProfitScreen.tsx:563-565 — Service Income breakdown filters s.date raw while totalProfit uses inRange(slice(0,10)) → same-day totals can disagree for ISO-dated/imported rows. Fix: use inRange
+- MINOR DailyBookScreen.tsx:837-843,945-951 + handlers 129-142,203-210 — date inputs not validated; a cleared date field saves a row with date '' that no period filter can ever show (orphan data). Fix: require non-empty date
+- MINOR DailyBookScreen.tsx + offline-service.ts:765-823 — same-date cash "New Cash Entry" silently REPLACES the earlier balance (upsert-by-date overwrites hand/liquid/note) with no warning; morning entry 5000 destroyed by evening entry 3000. Fix: warn or merge
+- MINOR DailyBookScreen.tsx:107-109,118-120 — silent catch on cash/expense fetches renders DB failure as "No entries". Fix: toast.error
+- MINOR CategoryDetailScreen.tsx:97-108 — stock-op buttons reuse a stale global selectedProductId from a previous product view: in Category B, Stock In pre-fills a product from another category with its price. Fix: always setSelectedProductId(products[0].id) (or null) before navigating
+- MINOR offline-service.ts:1361-1368 deleteBillOffline returns success for missing/wrong-user rows → "Bill deleted" toast lies (deleteCash/deleteExpense throw correctly)
+- MINOR InvoiceScreen.tsx:413+146 — percent discount >100 clamps math to 100% but label shows raw "(150%)"; InvoiceScreen.tsx:254-256 auto-send catch is silent (no toast) on unexpected share throws
+- OBSERVATION (cross-cutting) offline-service.ts:933-951,975-994 — getReportsOffline daily/monthly/category count revenue/profit for SELL only while ProfitScreen/dashboard count SELL+STOCK_OUT (isSaleType) → Reports tab contradicts Profit tab for the same day (ReportsScreen not in this review's file list)
+- CLEAN: StockOperationScreen.tsx (preselect/matching/validation/dialog/bill-prompt logic sound), ProductDetailScreen.tsx screen logic, i18n key usage, date math, money math parity, double-tap/delete guards

@@ -105,7 +105,7 @@ export default function DailyBookScreen() {
       setCashEntries((data.entries as CashEntry[] || []) as CashEntry[]);
       setSummary((data.summary as { totalHandCash: number; totalLiquidCash: number; totalCash: number }) || { totalHandCash: 0, totalLiquidCash: 0, totalCash: 0 });
     } catch {
-      // silent
+      toast.error(isBn ? 'ত্রুটি' : isHi ? 'त्रुटि' : 'Error');
     }
   }, [user?.id, period]);
 
@@ -116,7 +116,7 @@ export default function DailyBookScreen() {
       setExpenses((data.expenses as Expense[] || []) as Expense[]);
       setExpenseSummary((data.summary as { totalExpense: number; byCategory: Record<string, number>; count: number }) || { totalExpense: 0, byCategory: {}, count: 0 });
     } catch {
-      // silent
+      toast.error(isBn ? 'ত্রুটি' : isHi ? 'त्रुटि' : 'Error');
     }
   }, [user?.id, period]);
 
@@ -128,16 +128,22 @@ export default function DailyBookScreen() {
   // Cash form handlers
   const handleSaveCash = async () => {
     if (!user?.id) return;
+    // A cleared date input would save an orphan row (date: '') that no period
+    // filter can ever display again.
+    if (!cashDate) {
+      toast.error(isBn ? 'ত্রুটি' : isHi ? 'त्रुटि' : 'Error', { description: 'Pick a date first' });
+      return;
+    }
 
     // Validate amounts — NaN/negative values poison the cash summary ("₹NaN")
     const hand = Number(handCashInput || 0);
     const liquid = Number(liquidCashInput || 0);
     if (!Number.isFinite(hand) || hand < 0 || !Number.isFinite(liquid) || liquid < 0) {
-      toast.error(isBn ? 'ত্রুটি' : isHi ? 'ত্রুটি' : 'Error', { description: 'Cash amounts cannot be negative' });
+      toast.error(isBn ? 'ত্রুটি' : isHi ? 'त्रुटि' : 'Error', { description: 'Cash amounts cannot be negative' });
       return;
     }
     if (hand === 0 && liquid === 0) {
-      toast.error(isBn ? 'ত্রুটি' : isHi ? 'ত্রুটি' : 'Error', { description: 'Enter at least one cash amount' });
+      toast.error(isBn ? 'ত্রুটি' : isHi ? 'त्रुटि' : 'Error', { description: 'Enter at least one cash amount' });
       return;
     }
 
@@ -206,6 +212,10 @@ export default function DailyBookScreen() {
     const amount = Number(expenseAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
       toast.error(isBn ? 'ত্রুটি' : isHi ? 'त्रुटि' : 'Error', { description: 'Expense amount must be greater than 0' });
+      return;
+    }
+    if (!expenseDate) {
+      toast.error(isBn ? 'ত্রুটি' : isHi ? 'त्रुटि' : 'Error', { description: 'Pick a date first' });
       return;
     }
 

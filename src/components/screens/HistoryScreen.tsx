@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback, memo } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Transaction, Bill, BillingSettings } from '@/lib/types';
-import { getTransactionsOffline, getBillsOffline, deleteBillOffline, getBillingSettingsOffline } from '@/lib/offline-service';
+import { getTransactionsOffline, getBillsOffline, deleteBillOffline, getBillingSettingsOffline, isSaleType } from '@/lib/offline-service';
 import { registerBackModal } from '@/lib/modal-back';
 import { Clock, Search, FileText, MessageCircle, Share2, Trash2, Download, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -189,7 +189,7 @@ export default function HistoryScreen() {
 
   const txnGroups = useMemo(
     () => groupByDate(filteredTxns, language, (rows) => ({
-      salesTotal: rows.filter(r => r.type === 'SELL').reduce((s, r) => s + r.totalAmount, 0),
+      salesTotal: rows.filter(r => isSaleType(r.type)).reduce((s, r) => s + r.totalAmount, 0),
       secondaryTotal: rows.filter(r => r.type === 'STOCK_IN').reduce((s, r) => s + r.totalAmount, 0),
     })),
     [filteredTxns, language]

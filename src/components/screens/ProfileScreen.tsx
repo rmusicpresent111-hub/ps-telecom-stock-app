@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
-import { getProfileOffline, updateProfileOffline, exportBackupOffline, importBackupOffline, resetDataOffline } from '@/lib/offline-service';
+import { getProfileOffline, updateProfileOffline, exportBackupOffline, importBackupOffline, resetDataOffline, localDateStr } from '@/lib/offline-service';
 import { registerBackModal } from '@/lib/modal-back';
 import { motion } from 'framer-motion';
 import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, Receipt, ReceiptText } from 'lucide-react';
@@ -100,9 +100,11 @@ export default function ProfileScreen() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `ps-telecom-backup-${new Date().toISOString().split('T')[0]}.json`;
+      // localDateStr(): UTC filenames stamp pre-05:30 IST backups with yesterday
+      a.download = `ps-telecom-backup-${localDateStr()}.json`;
       a.click();
-      URL.revokeObjectURL(url);
+      // Revoking synchronously can abort the download on some browsers — give it time.
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
       toast.success(t('backup', language) + ' ✓');
     } catch {
       toast.error(t('error', language));
