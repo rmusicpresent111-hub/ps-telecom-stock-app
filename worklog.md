@@ -1174,3 +1174,23 @@ Stage Summary:
 - Dead exports: firebase-sync hasCloudBackup (fully dead); in-file-only exports in id.ts (generateId), local-auth (DEFAULT_USER_ID), offline-service (DEFAULT_BILLING_SETTINGS), types (BillItem), capacitor-init (initCapacitorBridge), bill-pdf (10 helpers); most firebase-sync exports (RestoreResult, SyncResult, isAutoSyncEnabled, scheduleCloudSync) are used only by D1 files and die with the cluster
 - D1 leakage outside known files: only src/lib/auto-restore.ts (imports d1Query/getD1Credentials/getEffectiveD1Credentials/restoreFromD1 from './cloud-d1', lines 24-28/148/156-157/168; "Cloudflare D1" comment line 6) — must be removed/replaced together with the D1 layer; remaining matches are hex-color false positives
 - No TODO/FIXME/XXX/HACK comments (only BillingSettingsScreen.tsx:178 placeholder="XXX..." false positive); 10 runtime deps fully unused (@dnd-kit/*, @hookform/resolvers, @reactuses/core, @tanstack/react-query, @tanstack/react-table, date-fns, next-intl, zod, z-ai-web-dev-sdk) plus react-hook-form/cmdk/vaul/input-otp/react-day-picker/react-resizable-panels/embla-carousel-react/cva and all @radix-ui/* used only by dead ui components
+
+---
+Task ID: 32
+Agent: Z.ai Code (main)
+Task: "firebase login, firebase init, firebase deploy" — Firebase CLI workflow + finish resurrected D1 dead-file cleanup
+
+Work Log:
+- Found prior session state: Tasks 29/30/31 already committed (ee62742 D1 removal, 758bbee dead-code+22 bug fixes, 62eee64 Firebase integration); old D1 files had been resurrected on disk by auto-checkpoint commits — verified 100% dead (only imported among themselves)
+- Deleted permanently: src/lib/cloud-d1.ts, cloud-sync.ts, sync-dirty.ts, auto-restore.ts, CloudSyncScreen.tsx, src/app/api/ (d1 proxy + hello route), prisma/, src/lib/db.ts, src/hooks/{use-toast,use-mobile,useDebounce}.ts, 46 unused shadcn ui components (kept only chart.tsx + sonner.tsx — the two referenced by app code); git core.fileMode=false to silence mode-only diffs
+- Verify: tsc --noEmit 0 errors, eslint clean, next build (static export) OK → out/index.html
+- Dev server was in Turbopack panic loop (stale .next collision): killed port-3000 holder, rm -rf .next, restarted → GET / 200
+- Firebase init (non-interactive equivalent of `firebase init`): firebase.json (hosting public out/ + SPA rewrite + cache/security headers, firestore rules+indexes), .firebaserc (default project ps-stock-menagement), firestore.rules (psStock/{userId}/** open read/write — no Auth yet; tighten when Auth added), firestore.indexes.json; .gitignore += out/, .firebase/, firebase-debug logs
+- Installed firebase-tools@15.33.0 (devDependency)
+- firebase login --no-localhost: sandbox has no browser → built /home/z/fb_login.py pty runner (auto-declines consent prompts with echo-loop protection + kill switch before the code prompt; feeds the auth code from /tmp/fb-code.txt; 25-min window); session EA592 started, WAITING for user authorization code
+- Committed cleanup + Firebase CLI config
+
+Stage Summary:
+- Repo now truly clean: D1 layer gone from disk AND git index; Firebase sync (firebase.ts / firebase-sync.ts / sync-events.ts) is the only cloud layer; tsc/lint/build all green
+- Firebase Hosting + Firestore deploy fully prepared (out/ built, rules written); BLOCKED on firebase login — user must open the auth URL, sign in with the Google account owning ps-stock-menagement, and share the authorization code
+- After code: complete login → ensure Firestore DB exists → firebase deploy (hosting + firestore) → verify live site + in-app sync
