@@ -6,7 +6,7 @@ import { t } from '@/lib/i18n';
 import { getProfileOffline, updateProfileOffline, exportBackupOffline, importBackupOffline, resetDataOffline, localDateStr } from '@/lib/offline-service';
 import { registerBackModal } from '@/lib/modal-back';
 import { motion } from 'framer-motion';
-import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, Receipt, ReceiptText } from 'lucide-react';
+import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, Receipt, ReceiptText, CloudUpload } from 'lucide-react';
 import { toast } from 'sonner';
 import type { User as UserType, Category } from '@/lib/types';
 
@@ -288,6 +288,21 @@ export default function ProfileScreen() {
               </span>
             </div>
             <span className="text-xs text-white/40">₹</span>
+          </button>
+
+          {/* Cloud Backup (Firebase) */}
+          <button
+            onClick={() => navigateTo('cloud-backup')}
+            className="glass-card w-full p-4 flex items-center justify-between"
+          >
+            <div className="flex items-center gap-3">
+              <CloudUpload size={18} className="text-sky-300" />
+              <div className="text-left">
+                <span className="text-sm block">{t('cloudBackup', language)}</span>
+                <span className="text-[10px] text-white/40">{t('cloudBackupDesc', language)}</span>
+              </div>
+            </div>
+            <span className="text-xs text-white/40">Firebase</span>
           </button>
 
           {/* Report Download */}

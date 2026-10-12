@@ -25,6 +25,7 @@ import {
 } from './offline-db';
 import { getLocalUser, updateLocalUser } from './local-auth';
 import { generateRecordId } from './id';
+import { notifyLocalDataChanged } from './sync-events';
 import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillingSettings, PaymentMethod } from './types';
 
 // ============ DATE HELPERS (local timezone — never use UTC for business days) ============
@@ -264,6 +265,7 @@ export async function createCategoryOffline(name: string, image: string, userId:
     _dirty: 0,
   } as OfflineDBSchema['categories']['value']);
 
+  notifyLocalDataChanged(userId);
   return { category };
 }
 
@@ -366,6 +368,7 @@ export async function createProductOffline(productData: {
   if (openingTxn) tx.objectStore('transactions').put(openingTxn);
   await tx.done;
 
+  notifyLocalDataChanged(productData.userId);
   return { product };
 }
 
@@ -449,6 +452,7 @@ export async function updateProductOffline(id: string, updates: Partial<Product>
   await tx.done;
 
   const { _synced, _dirty, ...prodData } = updatedProduct;
+  notifyLocalDataChanged(updates.userId);
   return { product: prodData as Product };
 }
 
@@ -468,6 +472,7 @@ export async function deleteProductOffline(id: string, userId: string): Promise<
   void tx.objectStore('products').delete(id);
   await tx.done;
 
+  notifyLocalDataChanged(userId);
   return { message: 'Product deleted successfully' };
 }
 
@@ -578,6 +583,7 @@ export async function createTransactionOffline(transactionData: {
   // Commit — rejects (and rolls back both stores) if anything failed.
   await tx.done;
 
+  notifyLocalDataChanged(transactionData.userId);
   return { transaction: stripSync<Transaction>(row) };
 }
 
@@ -747,7 +753,7 @@ export async function createExpenseOffline(expenseData: {
     _dirty: 0,
   });
 
-
+  notifyLocalDataChanged(expenseData.userId);
   return { expense };
 }
 
@@ -775,7 +781,7 @@ export async function updateExpenseOffline(id: string, updates: { amount?: numbe
     _dirty: 0,
   });
 
-
+  notifyLocalDataChanged(userId);
   return { expense: stripSync<Expense>(updatedExpense) };
 }
 
@@ -785,6 +791,7 @@ export async function deleteExpenseOffline(id: string, userId: string): Promise<
   const row = await db.get('expenses', id);
   if (!row || (userId && row.userId !== userId)) throw new Error('Not found');
   await offlineExpenses.delete(id);
+  notifyLocalDataChanged(userId);
   return { success: true };
 }
 
@@ -850,6 +857,7 @@ export async function upsertCashEntryOffline(entryData: {
       _dirty: 0,
     });
 
+    notifyLocalDataChanged(entryData.userId);
     return { entry: stripSync<CashEntry>(updated) };
   }
 
@@ -870,6 +878,7 @@ export async function upsertCashEntryOffline(entryData: {
     _dirty: 0,
   });
 
+  notifyLocalDataChanged(entryData.userId);
   return { entry: newEntry };
 }
 
@@ -899,7 +908,7 @@ export async function updateCashEntryOffline(id: string, updates: { handCash?: n
     _dirty: 0,
   });
 
-
+  notifyLocalDataChanged(userId);
   return { entry: stripSync<CashEntry>(updatedEntry) };
 }
 
@@ -909,6 +918,7 @@ export async function deleteCashEntryOffline(id: string, userId: string): Promis
   const row = await db.get('cashEntries', id);
   if (!row || (userId && row.userId !== userId)) throw new Error('Not found');
   await offlineCashEntries.delete(id);
+  notifyLocalDataChanged(userId);
   return { success: true };
 }
 
@@ -1177,7 +1187,7 @@ export async function createServiceTransactionOffline(data: {
     _dirty: 0,
   });
 
-
+  notifyLocalDataChanged(data.userId);
   return { serviceTransaction };
 }
 
@@ -1187,6 +1197,7 @@ export async function deleteServiceTransactionOffline(id: string, userId: string
   const row = await db.get('serviceTransactions', id);
   if (!row || (userId && row.userId !== userId)) throw new Error('Not found');
   await offlineServiceTransactions.delete(id);
+  notifyLocalDataChanged(userId);
   return { success: true };
 }
 
@@ -1234,6 +1245,7 @@ export async function saveBillingSettingsOffline(userId: string, updates: Partia
   };
   const db = await getOfflineDB();
   await db.put('billingSettings', next);
+  notifyLocalDataChanged(userId);
   return next;
 }
 
@@ -1380,7 +1392,7 @@ export async function createBillOffline(data: {
   void billsOs.put(bill);
   await tx.done;
 
-
+  notifyLocalDataChanged(data.userId);
   return { bill: bill as unknown as Bill };
 }
 
@@ -1423,6 +1435,7 @@ export async function deleteBillOffline(id: string, userId: string): Promise<{ s
   // (the caller toasts "Bill deleted" only when the row really went).
   if (!row || row.userId !== userId) throw new Error('Bill not found');
   await db.delete('bills', id);
+  notifyLocalDataChanged(userId);
   return { success: true };
 }
 
@@ -1623,6 +1636,7 @@ export async function importBackupOffline(userId: string, backupData: {
   // Commits everything or nothing — any failed request rejects and rolls back.
   await tx.done;
 
+  notifyLocalDataChanged(userId);
   return { message: 'Backup imported successfully' };
 }
 
@@ -1630,5 +1644,6 @@ export async function importBackupOffline(userId: string, backupData: {
 
 export async function resetDataOffline(userId: string) {
   await clearOfflineData(userId);
+  notifyLocalDataChanged(userId);
   return { message: 'All data reset successfully' };
 }

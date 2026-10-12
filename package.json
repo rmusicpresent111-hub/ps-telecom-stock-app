@@ -9,7 +9,7 @@
     "build:web": "next build",
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
-    "db:push": "echo '[ps-telecom] Offline-first app (IndexedDB + Cloud D1) - no local DB push needed, skipping'",
+    "db:push": "echo '[ps-telecom] Offline-first app (IndexedDB + Firebase cloud backup) - no local DB push needed, skipping'",
     "cap:sync": "npx cap sync android",
     "cap:open": "npx cap open android"
   },
@@ -58,6 +58,7 @@
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
     "embla-carousel-react": "^8.6.0",
+    "firebase": "^13.0.0",
     "framer-motion": "^12.23.2",
     "idb": "^8.0.3",
     "input-otp": "^1.4.2",

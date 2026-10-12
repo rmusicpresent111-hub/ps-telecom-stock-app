@@ -1132,3 +1132,25 @@ Stage Summary:
 - Codebase slimmed (34 ui files + 126 i18n keys + dead routes gone) and 22 real bugs fixed, including the last "two different truths" money bug (Reports vs Profit tab) and the Due-payment data-corruption bug
 - App remains 100% offline IndexedDB; all money surfaces (Dashboard/Profit/Reports/History) now agree on SELL+STOCK_OUT revenue and FIFO cost
 - BLOCKER: needs a new GitHub token to push (previous one revoked by user)
+
+---
+Task ID: 31
+Agent: Z.ai Code (main)
+Task: "firebase intrigate koro npm install firebase" — integrate Firebase (user's own project ps-stock-menagement) as the new cloud database after Task 29 removed the D1 layer
+
+Work Log:
+- Installed firebase@13.0.0 (bun add firebase); verified @firebase/firestore 4.18.0 modular API
+- Created src/lib/firebase.ts — user's exact config (projectId ps-stock-menagement), singleton initializeApp, guarded initFirebaseAnalytics() via isSupported() (never throws in WebView/SSR)
+- Created src/lib/sync-events.ts — dependency-free event bus (notifyLocalDataChanged) to avoid offline-service ↔ firebase-sync circular imports
+- Created src/lib/firebase-sync.ts — Firestore cloud backup engine: full-mirror push (psStock/{uid}/{store}/{recordId}, batched 400/chunk, upsert + delete cloud docs missing locally), restore via importBackupOffline (replace semantics, atomic), auto-sync ON by default (ps-fb-autosync:<uid>, toggle respected), 3s debounce, in-flight coalescing, 30s timeouts (withTimeout) so dead connections never hang the UI, syncMeta firebase-last-sync marker, ps-fb-sync window events, getFirebaseSyncInfo() for the UI
+- Hooked 17 write fns in offline-service.ts with notifyLocalDataChanged (categories, products CRUD, transactions, expenses CRUD, cash upsert/update/delete, service txns, billingSettings, bills, import, reset) — fixed self-introduced regression where upsertCashEntryOffline existing-branch put() was accidentally dropped in a MultiEdit (restored + verified)
+- New screen CloudBackupScreen.tsx ('cloud-backup'): status card (project id, last sync, error), Auto Sync toggle, Backup Now, Restore from Cloud (confirm dialog + back-modal), record counts grid, setup hint on failure; registered in types.ts Screen union, page.tsx lazy map, Profile entry (CloudUpload icon); boot: page.tsx calls initFirebaseAnalytics() + initFirebaseSync() once
+- i18n: 15 new keys (cloudBackup, backupNow, restoreFromCloud, lastSynced, neverSynced, autoSync(+Desc), syncing, syncDone, syncFailed, transactions, expenses, rulesHint(+Desc)) in bn/en/hi + TranslationKeys type; package.json db:push message updated D1→Firebase
+- E2E (agent-browser, fresh session): boot→dashboard→add product (Mobile 1 item) ✓; auto-sync Write streams fired 3s after add ✓; Cloud Backup screen renders ✓; Backup Now → graceful "Sync failed" + 30s timeout message + setup hint ✓ (no hang, no crash); Auto Sync toggle persists ✓; Back nav ✓
+- ROOT CAUSE of sync failure found via Firestore REST probe: user's project has Cloud Firestore API DISABLED — "Cloud Firestore API has not been used in project ps-stock-menagement" (only Analytics exists; no Firestore database created yet). Network/egress is fine (firestore.googleapis.com reachable). Code needs NO changes once the user creates the Firestore DB (+ allows read/write in rules)
+- Note: user's Firebase config exposed in chat = public web config by design; security comes from Firestore rules, recommend rules with auth later
+
+Stage Summary:
+- Firebase (Analytics + Firestore backup/sync) fully integrated with offline-first IndexedDB still the source of truth; cloud mirror at psStock/{uid}/...
+- USER ACTION REQUIRED (only blocker): Firebase Console → ps-stock-menagement → Build → Firestore Database → Create database → start in test mode (or set rules allow read/write: if true)
+- Verified: tsc 0 errors, eslint clean, E2E golden path green; dev server restart was needed mid-E2E (had died), recovered cleanly
