@@ -999,3 +999,25 @@ Work Log:
 Stage Summary:
 - GitHub main is now fully up to date with every fix: profit/FIFO/bill-PDF, TS build fix, APK gradle automation, cloud auto-sync default-on
 - USER STEPS: git pull -> npm run build -> PS-TELECOM-debug.apk at project root (or Android Studio Build APK(s)); in the CURRENT APK the immediate workaround for products not reaching cloud is Cloud Backup -> Auto Sync toggle ON
+
+---
+Task ID: 29
+Agent: Z.ai Code (main)
+Task: Remove the cloud database structure entirely — user will integrate their own separate database
+
+Work Log:
+- Confirmed scope: remove the Cloudflare D1 cloud sync/backup integration; KEEP the local IndexedDB core (app's primary storage), file backup/restore, bill PDF WhatsApp send, profit/FIFO, category seeding
+- DELETED: src/lib/cloud-d1.ts, src/lib/cloud-sync.ts, src/lib/sync-dirty.ts, src/lib/auto-restore.ts, src/components/screens/CloudSyncScreen.tsx, src/app/api/cloud/d1/ (proxy route)
+- CLEANED references (153 occurrences across 12 files -> zero functional):
+  - offline-service.ts: removed sync-dirty import + 19 markDirty calls + 2 clearDirty calls (data layer now purely local)
+  - SplashScreen boot: removed autoRestoreIfEmpty + restoring state/UI; kept seedDefaultCategoriesOffline (simplified, no 15s cap needed)
+  - ProfileScreen: removed Cloud Backup (D1) menu entry + markAutoRestoreSkipped; local Export/Import/Reset buttons intact
+  - page.tsx: removed initCloudSync import/effect, CloudSyncScreen lazy import + screen map entry
+  - types.ts: removed 'cloud-sync' from Screen union
+  - i18n: unused cloud strings left (harmless)
+- VERIFIED: tsc --noEmit 0 errors; eslint clean; browser E2E (fresh session rmcloud): boot -> dashboard -> Profile (no cloud entry, backup/restore present) -> added product "No-Cloud Test Item" -> visible in Products; zero console errors; localStorage has NO ps-d1-* keys on new writes
+- COMMITTED ee62742; PUSH FAILED: user revoked the second token too (401) right after the earlier push — awaiting a new token again (workflow established: token -> push -> confirm -> user revokes immediately)
+
+Stage Summary:
+- App is now 100% offline (IndexedDB only) — cloud integration completely gone; user can plug their own backend into the single data layer (src/lib/offline-service.ts) later
+- BLOCKER: commit ee62742 needs a new GitHub token to push
