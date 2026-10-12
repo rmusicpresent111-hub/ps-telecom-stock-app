@@ -4,10 +4,9 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { getProfileOffline, updateProfileOffline, exportBackupOffline, importBackupOffline, resetDataOffline } from '@/lib/offline-service';
-import { markAutoRestoreSkipped } from '@/lib/auto-restore';
 import { registerBackModal } from '@/lib/modal-back';
 import { motion } from 'framer-motion';
-import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, Receipt, ReceiptText, CloudUpload } from 'lucide-react';
+import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, Receipt, ReceiptText } from 'lucide-react';
 import { toast } from 'sonner';
 import type { User as UserType, Category } from '@/lib/types';
 
@@ -173,9 +172,6 @@ export default function ProfileScreen() {
     setLoading(true);
     try {
       await resetDataOffline(user.id);
-      // A deliberate wipe must NOT be undone by the boot-time auto-restore
-      // (which would resurrect the cloud backup on the next start).
-      markAutoRestoreSkipped(user.id);
       // Clear the UI-side category cache too, so the dashboard/product screens
       // immediately reflect the empty DB instead of stale rows.
       setCategories([]);
@@ -307,21 +303,6 @@ export default function ProfileScreen() {
           <div className="pt-2">
             <p className="text-xs text-white/40 mb-2">{t('backupRestore', language)}</p>
           </div>
-
-          {/* Cloud Backup (Cloudflare D1) */}
-          <button
-            onClick={() => navigateTo('cloud-sync')}
-            className="glass-card w-full p-4 flex items-center justify-between"
-          >
-            <div className="flex items-center gap-3">
-              <CloudUpload size={18} className="text-emerald-300" />
-              <div className="text-left">
-                <span className="text-sm block">{t('cloudSync', language)}</span>
-                <span className="text-[10px] text-white/40">{t('cloudSyncDesc', language)}</span>
-              </div>
-            </div>
-            <span className="text-xs text-white/40">D1</span>
-          </button>
 
           {/* Backup */}
           <button

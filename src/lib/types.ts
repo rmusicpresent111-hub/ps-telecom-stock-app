@@ -18,7 +18,6 @@ export type Screen =
   | 'add-category'
   | 'invoice'
   | 'billing-settings'
-  | 'cloud-sync'
   | 'daily-book'
   | 'service-category';
 

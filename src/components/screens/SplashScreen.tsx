@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAppStore } from '@/store/appStore';
 import { ensureDefaultUser } from '@/lib/local-auth';
-import { autoRestoreIfEmpty } from '@/lib/auto-restore';
 import { seedDefaultCategoriesOffline } from '@/lib/offline-service';
 import { t } from '@/lib/i18n';
 
@@ -23,7 +22,6 @@ export default function SplashScreen() {
   const { resetNavigation, hasSeenTutorial, _hasHydrated } = useAppStore();
   const language = useAppStore(s => s.language);
   const [progress, setProgress] = useState(0);
-  const [restoring, setRestoring] = useState(false);
 
   useEffect(() => {
     const duration = 3000;
@@ -73,40 +71,16 @@ export default function SplashScreen() {
           // IndexedDB unavailable — screens guard on user?.id and stay empty.
         }
       }
-      // Fresh browser/device: pull the cloud backup into the empty local DB
-      // (no-op when this device already has data). Capped so a slow network
-      // can never trap the user on the splash — the restore keeps running in
-      // the background and finishes on its own.
+      // Top up a still-empty device with the 20 starter categories so the
+      // Add Product form works right away. No-op when the owner already has
+      // any categories.
       const uid = useAppStore.getState().user?.id;
       if (uid) {
-        let settled = false;
-        const cap = setTimeout(() => {
-          if (!settled) {
-            settled = true;
-            setRestoring(false);
-            navigate();
-          }
-        }, 15_000);
-        const awaitRestore = async () => {
-          setRestoring(true);
-          try {
-            await autoRestoreIfEmpty(uid);
-            // AFTER restore (never before — seeding would make the device
-            // look "not empty" and block the cloud restore): top up a still-
-            // empty device with the 20 starter categories so the Add Product
-            // form works right away. No-op when the owner already has any.
-            await seedDefaultCategoriesOffline(uid);
-          } finally {
-            if (!settled) {
-              settled = true;
-              clearTimeout(cap);
-              setRestoring(false);
-              navigate();
-            }
-          }
-        };
-        void awaitRestore();
-        return;
+        try {
+          await seedDefaultCategoriesOffline(uid);
+        } catch {
+          // Seeding is best-effort; the + Add Category button still works.
+        }
       }
       navigate();
     }
@@ -203,15 +177,6 @@ export default function SplashScreen() {
               transition={{ duration: 0.1 }}
             />
           </div>
-          {restoring && (
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="text-[11px] text-amber-200/70 text-center mt-3 tracking-wide"
-            >
-              {t('cloudAutoRestore', language)}
-            </motion.p>
-          )}
         </motion.div>
       </motion.div>
 
