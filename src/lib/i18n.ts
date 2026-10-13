@@ -157,6 +157,7 @@ export type TranslationKeys = {
   shopPhone: string;
   proprietorName: string;
   billSharedWithPdf: string;
+  directChatOpened: string;
   gstNumberLabel: string;
   enableGst: string;
   gstRate: string;
@@ -346,6 +347,7 @@ const translations: Record<Language, TranslationKeys> = {
     shopPhone: 'দোকানের ফোন',
     proprietorName: 'প্রোপ্রাইটরের নাম',
     billSharedWithPdf: 'বিল শেয়ার হয়েছে — WhatsApp-এ PDF সহ যাবে ✓',
+    directChatOpened: 'কাস্টমারের WhatsApp-এ PDF সহ চ্যাট খুলেছে — সেন্ড ✓ চাপুন',
     gstNumberLabel: 'GST নম্বর',
     enableGst: 'GST চালু করুন',
     gstRate: 'GST হার (%)',
@@ -530,6 +532,7 @@ const translations: Record<Language, TranslationKeys> = {
     shopPhone: 'Shop Phone',
     proprietorName: 'Proprietor Name',
     billSharedWithPdf: 'Bill shared — PDF goes with it on WhatsApp ✓',
+    directChatOpened: "Customer's WhatsApp chat opened with the PDF — tap Send ✓",
     gstNumberLabel: 'GST Number',
     enableGst: 'Enable GST',
     gstRate: 'GST Rate (%)',
@@ -714,6 +717,7 @@ const translations: Record<Language, TranslationKeys> = {
     shopPhone: 'दुकान का फोन',
     proprietorName: 'स्वामी का नाम',
     billSharedWithPdf: 'बिल शेयर हो गया — WhatsApp पर PDF के साथ जाएगा ✓',
+    directChatOpened: 'ग्राहक के WhatsApp पर PDF के साथ चैट खुल गई — भेजें ✓ दबाएं',
     gstNumberLabel: 'GST नंबर',
     enableGst: 'GST सक्षम करें',
     gstRate: 'GST दर (%)',

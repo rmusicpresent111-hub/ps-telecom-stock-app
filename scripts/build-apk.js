@@ -238,6 +238,57 @@ if (!syncSuccess) {
 }
 
 // ---------------------------------------------------------------------------
+// STEP 5.7 — Native "WhatsappSender" plugin install (bill PDF → the bill's
+// customer WhatsApp chat directly, no contact picking).
+// Copies native/android/WhatsappSender.java into the android project under
+// the app's package and registers it in MainActivity. Idempotent + fail-soft:
+// any problem only means the app keeps using the share-sheet flow.
+// ---------------------------------------------------------------------------
+function installWhatsappPlugin() {
+  console.log('\nStep 5.7: Installing native WhatsappSender plugin...');
+  try {
+    const src = path.join(ROOT, 'native', 'android', 'WhatsappSender.java');
+    const cfgPath = path.join(ROOT, 'capacitor.config.json');
+    if (!exists(src) || !exists(cfgPath) || !exists(ANDROID_DIR)) {
+      console.log('  ⚠️  Skipping (native/android/WhatsappSender.java or android/ missing).');
+      return;
+    }
+    const appId = JSON.parse(fs.readFileSync(cfgPath, 'utf8')).appId;
+    const javaDir = path.join(ANDROID_DIR, 'app', 'src', 'main', 'java', ...appId.split('.'));
+    const mainActivity = path.join(javaDir, 'MainActivity.java');
+    if (!exists(mainActivity)) {
+      console.log('  ⚠️  MainActivity.java not found — skipping plugin install.');
+      return;
+    }
+
+    // 1) copy the plugin class with the real package name
+    fs.mkdirSync(javaDir, { recursive: true });
+    const java = fs.readFileSync(src, 'utf8').replace(/__PACKAGE_NAME__/g, appId);
+    fs.writeFileSync(path.join(javaDir, 'WhatsappSender.java'), java);
+
+    // 2) register it in MainActivity (same package → no import needed)
+    let ma = fs.readFileSync(mainActivity, 'utf8');
+    if (!ma.includes('WhatsappSender')) {
+      const marker = 'super.onCreate(savedInstanceState);';
+      if (!ma.includes(marker)) {
+        console.log('  ⚠️  Could not patch MainActivity (unexpected content) — plugin NOT registered.');
+        return;
+      }
+      ma = ma.replace(
+        marker,
+        `${marker}\n        // Local plugin: bill PDF → customer's WhatsApp chat directly\n        registerPlugin(WhatsappSender.class);`
+      );
+      fs.writeFileSync(mainActivity, ma);
+    }
+    console.log(`  ✅ WhatsappSender installed for ${appId} (direct PDF → customer chat)`);
+  } catch (err) {
+    console.log(`  ⚠️  Plugin install failed (${(err && err.message) || err}) — continuing; share-sheet flow stays active.`);
+  }
+}
+installWhatsappPlugin();
+
+
+// ---------------------------------------------------------------------------
 // STEP 7 — Compile the APK with Gradle directly (no Android Studio needed).
 // Finds a JDK (JAVA_HOME → Android Studio's embedded JBR → java on PATH),
 // runs `gradlew assembleDebug`, then copies the APK to the project root.

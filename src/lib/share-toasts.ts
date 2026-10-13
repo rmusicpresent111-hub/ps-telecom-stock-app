@@ -11,6 +11,11 @@ import { WhatsappSendResult } from './bill-pdf';
 
 export function toastWhatsappResult(result: WhatsappSendResult, language: Language): void {
   switch (result) {
+    case 'direct':
+      // APK: the customer's OWN WhatsApp chat opened with the real PDF
+      // attached — the user only presses Send.
+      toast.success(t('directChatOpened', language), { duration: 8000 });
+      break;
     case 'shared':
       // The OS share sheet opened carrying the real PDF — WhatsApp will attach it.
       toast.success(t('billSharedWithPdf', language));
