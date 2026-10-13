@@ -1219,3 +1219,23 @@ Stage Summary:
 - Full Firebase workflow user asked for is DONE: login ✔ init ✔ deploy ✔
 - App remains offline-first (IndexedDB); Firestore = cloud backup/sync layer on user's own project ps-stock-menagement
 - Sandbox-only limitation documented: in-sandbox browser cannot reach googleapis.com, so live-site→Firestore sync was verified per-link (rules/REST/SDK), not end-to-end in sandbox browser
+
+---
+Task ID: 33
+Agent: Z.ai Code (main)
+Task: Push Firebase version to GitHub with user's new token; verify APK build readiness for user's Android Studio flow ("app e jeno kno changes na hoy")
+
+Work Log:
+- User supplied fresh GitHub token; push SUCCEEDED: 4e64046..90d40fb main -> main (9 commits: dead-code cleanup+22 fixes, D1 removal, Firebase SDK integration, Firebase CLI config, worklog). Remote HEAD verified = 90d40fb
+- Sandbox APK build (bun run build:apk) failed 2x, both ENVIRONMENTAL, zero code issues:
+  1) /usr/lib/jvm/java-21 is JRE-only (no javac) → downloaded Temurin JDK 21.0.12.1 to ~/jdk (outside repo), javac OK, no repo changes
+  2) then "SDK location not found": current sandbox has NO Android SDK anywhere (Oct 10 APKs predate sandbox image rebuild); skipped 1-2GB SDK install — user's Android Studio ships its own SDK+JBR, so sandbox gradle proof adds nothing
+- cap sync verified clean: capacitor.config.json + web assets copied, 3 plugins detected (@capacitor/app/filesystem/share)
+- KEY DISCOVERY: android/ is GITIGNORED (line 85) → never on GitHub → user's PC must run `npx cap add android` if no android/ folder exists (then `npx cap sync android` after every pull+build:web)
+- Confirmed committed+pushed: firebase@13, @capacitor/cli@8.3.1, @capacitor/android@8.3.1 → user-side npm install gets everything
+- Delivered Bangla Android Studio guide with strict no-change rules (cancel all Gradle/Kotlin/AGP upgrade prompts) + debug-signature warning (same PC = data preserved; different PC = uninstall wipes local, no Firebase backup of pre-Firebase data yet)
+
+Stage Summary:
+- GitHub main = 90d40fb = production Firebase version; user's PC can now git pull and build
+- Verification chain for user build: tsc 0 errors ✅, eslint clean ✅, static export OK ✅, cap sync OK ✅, prod deploy live ✅; gradle compile is stock Capacitor boilerplate on user's own SDK
+- android/ gitignore documented — critical step for fresh clones: npx cap add android
