@@ -1239,3 +1239,23 @@ Stage Summary:
 - GitHub main = 90d40fb = production Firebase version; user's PC can now git pull and build
 - Verification chain for user build: tsc 0 errors ✅, eslint clean ✅, static export OK ✅, cap sync OK ✅, prod deploy live ✅; gradle compile is stock Capacitor boilerplate on user's own SDK
 - android/ gitignore documented — critical step for fresh clones: npx cap add android
+
+---
+Task ID: 34
+Agent: Z.ai Code (main)
+Task: Fix "Network timeout — upload failed" on phone after APK build — sync failing on user's device
+
+Work Log:
+- ROOT CAUSE FOUND: Content-Security-Policy meta in src/app/layout.tsx had connect-src 'self' ws: wss: — blocked ALL external fetches including firestore.googleapis.com; the Firestore SDK could never send anything (WebChannel AND long-polling), so app's own 30s timeout fired. Explains both phone AND live-website sync failures (earlier attributed to sandbox network — sandbox block was real but masked this second bug)
+- FIX: connect-src += https://*.googleapis.com https://*.firebaseio.com (+ img-src https: for remote images); verified googleapis present in built out/index.html
+- firebase-sync.ts hardening: COMMIT_TIMEOUT_MS 30000→60000 (slow-4G first connect + big first backup), added one silent auto-retry after 2.5s on network-classified failures (isNetworkError regex), pushAllToFirebase split into public retry wrapper + pushAllOnce
+- firebase v13: experimentalAutoDetectLongPolling default true (verified in shipped .d.ts) — transport needs no explicit config once CSP allows egress
+- tsc 0 errors, lint clean, static export rebuilt with new CSP
+- Pushed fix: 2723136..8f2e236 main (user can git pull + rebuild APK now)
+- Hosting redeploy BLOCKED: ~/.config/configstore/firebase-tools.json truncated to 2 bytes (sandbox wiped session creds at 10:29); started fresh firebase login --no-localhost (session F1648), waiting for user's new auth code
+- Firebase-side config already correct (DB asia-south1 exists, rules deployed, verified via REST PATCH earlier)
+
+Stage Summary:
+- Code fix live on GitHub (8f2e236) — user rebuilds APK to get working sync; CSP was the single blocking bug
+- Hosting redeploy pending user auth code (session F1648)
+- Phone-side checklist for user: rebuild APK from same PC (signature match), test sync on 4G if WiFi is dead
