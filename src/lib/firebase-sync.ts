@@ -33,7 +33,8 @@ import { importBackupOffline } from './offline-service';
 const ROOT = 'psStock';
 const SYNC_DEBOUNCE_MS = 3000;
 const BATCH_LIMIT = 400; // Firestore batch cap is 500 mutations
-const COMMIT_TIMEOUT_MS = 30000; // fail fast instead of hanging on retry loops
+const COMMIT_TIMEOUT_MS = 60000; // generous headroom: first connect on slow 4G + big first backup
+const RETRY_DELAY_MS = 2500;
 
 /** Reject after `ms` so the UI never hangs on a dead connection. */
 function withTimeout<T>(p: Promise<T>, label: string): Promise<T> {
@@ -43,6 +44,15 @@ function withTimeout<T>(p: Promise<T>, label: string): Promise<T> {
       setTimeout(() => rej(new Error(`Network timeout — ${label} (check internet / Firebase setup)`)), COMMIT_TIMEOUT_MS)
     ),
   ]);
+}
+
+function isNetworkError(msg?: string): boolean {
+  if (!msg) return false;
+  return /timeout|failed to fetch|network|offline|unavailable/i.test(msg);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 type SyncStore = keyof Omit<OfflineDBSchema, 'syncMeta' | 'pendingDeletes' | 'users'>;
@@ -126,8 +136,18 @@ function emit(userId: string, status: 'busy' | 'ok' | 'error', message?: string)
   }
 }
 
-/** Mirror ALL local stores of this user to Firestore. */
+/** Mirror ALL local stores of this user to Firestore. Auto-retries once on network failures. */
 export async function pushAllToFirebase(userId: string): Promise<SyncResult> {
+  const first = await pushAllOnce(userId);
+  if (first.ok) return first;
+  if (first.error !== 'busy' && isNetworkError(first.error)) {
+    await sleep(RETRY_DELAY_MS);
+    return pushAllOnce(userId); // one silent retry — fixes transient 4G blips
+  }
+  return first;
+}
+
+async function pushAllOnce(userId: string): Promise<SyncResult> {
   if (busy) {
     rerun = userId; // coalesce concurrent requests
     return { ok: false, pushed: 0, deleted: 0, error: 'busy' };
