@@ -39,11 +39,12 @@ export default function RootLayout({
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
         {/* Fonts are self-hosted via next/font (no external hosts needed).
-            connect-src allows: same-origin + dev/HMR + socket.io websockets.
-            Add external API hosts here when a new cloud backend is integrated. */}
+            connect-src allows: same-origin + dev/HMR + socket.io websockets +
+            api.cloudflare.com (D1 cloud sync). On Android, CapacitorHttp
+            bypasses CORS natively; the CSP entry covers browser/dev builds. */}
         <meta
           httpEquiv="Content-Security-Policy"
-          content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; form-action 'self'"
+          content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' ws: wss: https://api.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'"
         />
       </head>
       <body

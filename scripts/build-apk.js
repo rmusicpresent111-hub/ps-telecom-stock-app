@@ -110,6 +110,24 @@ function capCmd(args) {
   return success;
 }
 
+// Step 0: Cloud sync secrets preflight (git-ignored file must exist)
+const SECRETS_FILE = path.join(ROOT, 'src', 'lib', 'd1-secrets.ts');
+if (!exists(SECRETS_FILE)) {
+  console.error('\n❌ Missing src/lib/d1-secrets.ts (cloud sync credentials).');
+  console.error('   Fix: copy the template and paste your real values:\n');
+  console.error('     cp src/lib/d1-secrets.example.ts src/lib/d1-secrets.ts');
+  console.error('     # then open src/lib/d1-secrets.ts and paste Account ID / Database ID / API Token\n');
+  console.error('   (This file is git-ignored — the token never enters git.)');
+  process.exit(1);
+}
+const secretsProbe = fs.readFileSync(SECRETS_FILE, 'utf8');
+if (secretsProbe.includes('PASTE_YOUR_')) {
+  console.error('\n❌ src/lib/d1-secrets.ts still contains placeholders (PASTE_YOUR_...).');
+  console.error('   Open it and paste your real Cloudflare Account ID / Database ID / API Token.');
+  process.exit(1);
+}
+console.log('✓ Cloud sync secrets found (src/lib/d1-secrets.ts)');
+
 // Step 1: Move API folder out of the way
 console.log('\n📦 PS TELECOM - APK Build Script');
 console.log('================================\n');

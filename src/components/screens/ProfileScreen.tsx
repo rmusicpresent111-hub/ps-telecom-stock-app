@@ -2,11 +2,13 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
-import { t } from '@/lib/i18n';
+import { t, type TranslationKeys } from '@/lib/i18n';
 import { getProfileOffline, updateProfileOffline, exportBackupOffline, importBackupOffline, resetDataOffline, localDateStr } from '@/lib/offline-service';
 import { registerBackModal } from '@/lib/modal-back';
+import { subscribeD1Status, getD1SyncStatus, syncNowD1, connectSync, disconnectSync, type D1SyncStatus } from '@/lib/d1-sync';
+import { getSyncAccount, generateSyncId, type SyncAccount } from '@/lib/d1-config';
 import { motion } from 'framer-motion';
-import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, Receipt, ReceiptText } from 'lucide-react';
+import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, Receipt, ReceiptText, RefreshCw, CloudUpload, Lock, Repeat2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { User as UserType, Category } from '@/lib/types';
 
@@ -26,6 +28,81 @@ export default function ProfileScreen() {
   const [pendingRestore, setPendingRestore] = useState<Record<string, unknown> | null>(null);
   const [showRestoreDialog, setShowRestoreDialog] = useState(false);
 
+  // Cloud sync (D1) live status
+  const [syncStatus, setSyncStatus] = useState<D1SyncStatus>(getD1SyncStatus());
+  const [syncingNow, setSyncingNow] = useState(false);
+  useEffect(() => subscribeD1Status(setSyncStatus), []);
+
+  // Cloud sync setup (create / join account)
+  const [syncAccount, setSyncAccountState] = useState<SyncAccount | null>(() =>
+    typeof window !== 'undefined' ? getSyncAccount() : null
+  );
+  const [showSyncDialog, setShowSyncDialog] = useState(false);
+  const [syncTab, setSyncTab] = useState<'create' | 'join'>('create');
+  const [syncIdInput, setSyncIdInput] = useState('');
+  const [pinInput, setPinInput] = useState('');
+  const [pinConfirm, setPinConfirm] = useState('');
+  const [connecting, setConnecting] = useState(false);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+
+  const openSyncDialog = () => {
+    setSyncTab('create');
+    setSyncIdInput((prev) => prev || generateSyncId());
+    setPinInput('');
+    setPinConfirm('');
+    setShowSyncDialog(true);
+  };
+
+  const handleConnect = async () => {
+    if (connecting) return;
+    if (syncTab === 'create' && pinInput !== pinConfirm) {
+      toast.error(t('d1ErrMismatch', language));
+      return;
+    }
+    setConnecting(true);
+    const res = await connectSync(syncIdInput.trim(), pinInput, syncTab);
+    setConnecting(false);
+    if (res.ok) {
+      setSyncAccountState(getSyncAccount());
+      setShowSyncDialog(false);
+      setPinInput('');
+      setPinConfirm('');
+      toast.success(t('d1ConnectedToast', language));
+    } else {
+      const keyMap: Record<string, string> = {
+        taken: 'd1ErrTaken',
+        'not-found': 'd1ErrNotFound',
+        'wrong-pin': 'd1ErrWrongPin',
+        'bad-id': 'd1ErrBadId',
+        'bad-pin': 'd1ErrBadPin',
+        offline: 'd1ErrOffline',
+        fail: 'd1ErrFail',
+      };
+      toast.error(t((keyMap[res.error ?? 'fail'] ?? 'd1ErrFail') as keyof TranslationKeys, language));
+    }
+  };
+
+  const handleDisconnect = () => {
+    if (!confirmDisconnect) {
+      setConfirmDisconnect(true);
+      window.setTimeout(() => setConfirmDisconnect(false), 4000);
+      return;
+    }
+    setConfirmDisconnect(false);
+    disconnectSync();
+    setSyncAccountState(null);
+    toast.success(t('d1DisconnectedToast', language));
+  };
+
+  const handleSyncNow = async () => {
+    if (!user?.id || syncingNow) return;
+    setSyncingNow(true);
+    const res = await syncNowD1(user.id);
+    setSyncingNow(false);
+    if (res.ok) toast.success(t('d1StateSynced', language));
+    else toast.error(t('d1StateError', language));
+  };
+
   // Hardware/browser back closes the topmost open dialog first
   useEffect(() => {
     if (!showEditDialog) return;
@@ -41,6 +118,11 @@ export default function ProfileScreen() {
     if (!showRestoreDialog) return;
     return registerBackModal(() => setShowRestoreDialog(false));
   }, [showRestoreDialog]);
+
+  useEffect(() => {
+    if (!showSyncDialog) return;
+    return registerBackModal(() => setShowSyncDialog(false));
+  }, [showSyncDialog]);
 
   const fetchProfile = useCallback(async () => {
     if (!user?.id) return;
@@ -290,6 +372,77 @@ export default function ProfileScreen() {
             <span className="text-xs text-white/40">₹</span>
           </button>
 
+          {/* Cloud Sync (D1) — setup / status + manual sync */}
+          <button
+            onClick={syncAccount ? handleSyncNow : openSyncDialog}
+            className="glass-card w-full p-4 flex items-center justify-between"
+          >
+            <div className="flex items-center gap-3">
+              <CloudUpload size={18} className="text-sky-300" />
+              <div className="text-left">
+                <span className="text-sm block">{t('d1SyncTitle', language)}</span>
+                <span className="text-[10px] text-white/40">
+                  {syncAccount
+                    ? `${syncAccount.syncId} · ${
+                        syncStatus.lastSyncAt > 0
+                          ? `${t('d1LastSync', language)}: ${new Date(syncStatus.lastSyncAt).toLocaleTimeString()}`
+                          : t('d1Never', language)
+                      }`
+                    : t('d1NotConnected', language)}
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded-full ${
+                  !syncAccount
+                    ? 'bg-sky-500/15 text-sky-300'
+                    : syncingNow || syncStatus.state === 'syncing'
+                      ? 'bg-amber-500/15 text-amber-300'
+                      : syncStatus.state === 'error'
+                        ? 'bg-red-500/15 text-red-300'
+                        : syncStatus.state === 'offline'
+                          ? 'bg-white/10 text-white/50'
+                          : 'bg-emerald-500/15 text-emerald-300'
+                }`}
+              >
+                {!syncAccount
+                  ? t('d1SetupShort', language)
+                  : syncingNow || syncStatus.state === 'syncing'
+                    ? t('d1StateSyncing', language)
+                    : syncStatus.state === 'error'
+                      ? t('d1StateError', language)
+                      : syncStatus.state === 'offline'
+                        ? t('d1StateOffline', language)
+                        : t('d1StateSynced', language)}
+              </span>
+              <RefreshCw
+                size={14}
+                className={`text-white/40 ${syncingNow || syncStatus.state === 'syncing' ? 'animate-spin' : ''}`}
+              />
+            </div>
+          </button>
+
+          {/* Connected: encryption note + disconnect (two-tap confirm) */}
+          {syncAccount && (
+            <div className="glass-card w-full px-4 py-2 flex items-center justify-between">
+              <span className="text-[11px] text-white/40 flex items-center gap-1.5 min-w-0">
+                <Lock size={11} className="text-emerald-400 shrink-0" />
+                <span className="truncate">{t('d1EncNote', language)}</span>
+              </span>
+              <button
+                onClick={handleDisconnect}
+                className={`text-[11px] font-semibold px-2 py-1 shrink-0 transition-colors ${
+                  confirmDisconnect
+                    ? 'text-red-300 bg-red-500/15 rounded-lg'
+                    : 'text-red-400/80 hover:text-red-300'
+                }`}
+              >
+                {confirmDisconnect ? t('d1DisconnectConfirm', language) : t('d1Disconnect', language)}
+              </button>
+            </div>
+          )}
+
           {/* Report Download */}
           <button
             onClick={() => navigateTo('reports')}
@@ -439,6 +592,119 @@ export default function ProfileScreen() {
                 className="flex-1 py-2 text-sm font-semibold rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30 transition-colors disabled:opacity-50"
               >
                 {t('restore', language)}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Cloud Sync setup dialog (create new sync / join another device) */}
+      {showSyncDialog && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="glass-card-strong p-6 max-w-sm w-full max-h-[88vh] overflow-y-auto"
+          >
+            <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+              <CloudUpload size={18} className="text-sky-300" />
+              {t('d1SetupTitle', language)}
+            </h3>
+
+            {/* Tabs */}
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => {
+                  setSyncTab('create');
+                  setSyncIdInput((prev) => prev || generateSyncId());
+                }}
+                className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-colors ${
+                  syncTab === 'create'
+                    ? 'bg-sky-500/20 border border-sky-400/40 text-sky-300'
+                    : 'bg-white/5 border border-white/10 text-white/50'
+                }`}
+              >
+                {t('d1CreateTab', language)}
+              </button>
+              <button
+                onClick={() => setSyncTab('join')}
+                className={`flex-1 py-2 text-xs font-semibold rounded-xl transition-colors ${
+                  syncTab === 'join'
+                    ? 'bg-emerald-500/20 border border-emerald-400/40 text-emerald-300'
+                    : 'bg-white/5 border border-white/10 text-white/50'
+                }`}
+              >
+                {t('d1JoinTab', language)}
+              </button>
+            </div>
+
+            {/* Sync ID */}
+            <label className="text-[11px] text-white/50 block mb-1.5">{t('d1IdLabel', language)}</label>
+            <div className="flex gap-2 mb-3">
+              <input
+                type="text"
+                value={syncIdInput}
+                onChange={(e) => setSyncIdInput(e.target.value)}
+                placeholder="PS-XXXX-XXXX"
+                autoCapitalize="characters"
+                autoComplete="off"
+                spellCheck={false}
+                className="glass-input flex-1 px-3 py-2.5 text-sm font-mono tracking-wider uppercase"
+              />
+              {syncTab === 'create' && (
+                <button
+                  onClick={() => setSyncIdInput(generateSyncId())}
+                  title={t('d1Generate', language)}
+                  className="glass-card px-3 flex items-center justify-center text-white/60 hover:text-white"
+                >
+                  <Repeat2 size={16} />
+                </button>
+              )}
+            </div>
+
+            {/* PIN */}
+            <label className="text-[11px] text-white/50 block mb-1.5">{t('d1PinLabel', language)}</label>
+            <input
+              type="password"
+              value={pinInput}
+              onChange={(e) => setPinInput(e.target.value)}
+              autoComplete="new-password"
+              className="glass-input w-full px-3 py-2.5 text-sm mb-2"
+            />
+            {syncTab === 'create' && (
+              <>
+                <label className="text-[11px] text-white/50 block mb-1.5">{t('d1PinConfirm', language)}</label>
+                <input
+                  type="password"
+                  value={pinConfirm}
+                  onChange={(e) => setPinConfirm(e.target.value)}
+                  autoComplete="new-password"
+                  className="glass-input w-full px-3 py-2.5 text-sm mb-2"
+                />
+              </>
+            )}
+            <p className="text-[10px] text-white/35 flex items-start gap-1.5 mt-2 mb-4">
+              <Lock size={11} className="mt-0.5 shrink-0 text-emerald-400/70" />
+              {syncTab === 'create' ? t('d1PinHint', language) : t('d1JoinHint', language)}
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowSyncDialog(false)}
+                className="flex-1 neon-btn py-2 text-sm font-semibold"
+              >
+                {t('cancel', language)}
+              </button>
+              <button
+                onClick={handleConnect}
+                disabled={connecting || !syncIdInput.trim() || pinInput.length < 6 || (syncTab === 'create' && pinConfirm.length < 6)}
+                className="flex-1 neon-btn-solid py-2 text-sm font-semibold disabled:opacity-50"
+              >
+                {connecting
+                  ? '…'
+                  : syncTab === 'create'
+                    ? t('d1CreateBtn', language)
+                    : t('d1JoinBtn', language)}
               </button>
             </div>
           </motion.div>

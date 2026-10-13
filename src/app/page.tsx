@@ -7,6 +7,7 @@ import { Screen } from '@/lib/types';
 import { LogOut, X } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
 import { useBackHandler } from '@/hooks/useBackHandler';
+import { startD1Sync } from '@/lib/d1-sync';
 
 // Initialize Capacitor bridge early (registers native back button at system level)
 import '@/lib/capacitor-init';
@@ -89,6 +90,8 @@ export default function Home() {
   // This is the ONLY path for native Android back button → handleBack()
   // useBackHandler.ts does NOT register its own Capacitor listener to avoid double-firing
   useEffect(() => {
+    // Cloud sync: Cloudflare D1 engine (auto push/pull, multi-device realtime)
+    startD1Sync();
     const handleNativeBack = () => handleBack();
     window.addEventListener('app:back-button', handleNativeBack);
     return () => window.removeEventListener('app:back-button', handleNativeBack);

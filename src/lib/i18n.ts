@@ -1,6 +1,6 @@
 import { Language } from './types';
 
-type TranslationKeys = {
+export type TranslationKeys = {
   // App
   appName: string;
   // Splash
@@ -115,6 +115,42 @@ type TranslationKeys = {
   // Billing (e-Bill)
   billingSettings: string;
   billingSettingsDesc: string;
+  // Cloud Sync (D1)
+  d1SyncTitle: string;
+  d1SyncDesc: string;
+  d1SyncNow: string;
+  d1LastSync: string;
+  d1Never: string;
+  d1StateSynced: string;
+  d1StateSyncing: string;
+  d1StateError: string;
+  d1StateOffline: string;
+  d1SetupTitle: string;
+  d1SetupShort: string;
+  d1CreateTab: string;
+  d1JoinTab: string;
+  d1IdLabel: string;
+  d1PinLabel: string;
+  d1PinConfirm: string;
+  d1Generate: string;
+  d1CreateBtn: string;
+  d1JoinBtn: string;
+  d1PinHint: string;
+  d1JoinHint: string;
+  d1ErrTaken: string;
+  d1ErrNotFound: string;
+  d1ErrWrongPin: string;
+  d1ErrBadId: string;
+  d1ErrBadPin: string;
+  d1ErrMismatch: string;
+  d1ErrOffline: string;
+  d1ErrFail: string;
+  d1ConnectedToast: string;
+  d1DisconnectedToast: string;
+  d1NotConnected: string;
+  d1Disconnect: string;
+  d1DisconnectConfirm: string;
+  d1EncNote: string;
   transactions: string;
   expenses: string;
   shopAddress: string;
@@ -269,6 +305,41 @@ const translations: Record<Language, TranslationKeys> = {
     duplicateProduct: 'এই নামের প্রোডাক্ট এই ক্যাটেগরিতে আগেই আছে!',
     billingSettings: 'বিলিং সেটিংস',
     billingSettingsDesc: 'দোকান, GST, সিগনেচার, QR',
+    d1SyncTitle: 'ক্লাউড সিঙ্ক (D1)',
+    d1SyncDesc: 'ডেটা সব ডিভাইসে অটো সিঙ্ক হয়',
+    d1SyncNow: 'এখনই সিঙ্ক করুন',
+    d1LastSync: 'সর্বশেষ সিঙ্ক',
+    d1Never: 'এখনও হয়নি',
+    d1StateSynced: 'আপ টু ডেট ✓',
+    d1StateSyncing: 'সিঙ্ক হচ্ছে…',
+    d1StateError: 'সিঙ্ক সমস্যা — আবার চাপুন',
+    d1StateOffline: 'অফলাইন — নিজে থেকেই চেষ্টা হবে',
+    d1SetupTitle: 'ক্লাউড সিঙ্ক সেটআপ',
+    d1SetupShort: 'সেটআপ',
+    d1CreateTab: 'নতুন সিঙ্ক',
+    d1JoinTab: 'ডিভাইস জয়েন',
+    d1IdLabel: 'সিঙ্ক আইডি',
+    d1PinLabel: 'সিক্রেট পিন',
+    d1PinConfirm: 'পিন আবার লিখুন',
+    d1Generate: 'নতুন আইডি',
+    d1CreateBtn: 'সিঙ্ক শুরু করুন',
+    d1JoinBtn: 'যুক্ত হন',
+    d1PinHint: 'কমপক্ষে ৬ অক্ষর — এই পিন দিয়েই ডেটা এনক্রিপ্ট হয় ও অন্য ডিভাইস যুক্ত হয়। ভুলে গেলে আর ডেটা মেলানো যাবে না।',
+    d1JoinHint: 'প্রথম ডিভাইসে তৈরি করা সিঙ্ক আইডি ও পিন দিন — সব ডেটা এই ডিভাইসেও দেখা যাবে।',
+    d1ErrTaken: 'এই সিঙ্ক আইডি আগে থেকেই আছে — অন্যটা দিন',
+    d1ErrNotFound: 'এই সিঙ্ক আইডি পাওয়া যায়নি',
+    d1ErrWrongPin: 'পিন ভুল',
+    d1ErrBadId: 'আইডি কমপক্ষে ৪ অক্ষরের হতে হবে (a-z, 0-9, -)',
+    d1ErrBadPin: 'পিন কমপক্ষে ৬ অক্ষরের হতে হবে',
+    d1ErrMismatch: 'দুটো পিন মিলছে না',
+    d1ErrOffline: 'ইন্টারনেট নেই — পরে আবার চাপুন',
+    d1ErrFail: 'সংযোগ ব্যর্থ — আবার চাপুন',
+    d1ConnectedToast: 'সিঙ্ক চালু হয়েছে ✓',
+    d1DisconnectedToast: 'সিঙ্ক বন্ধ হয়েছে',
+    d1NotConnected: 'সিঙ্ক চালু নেই — সেটআপ করতে চাপুন',
+    d1Disconnect: 'বন্ধ করুন',
+    d1DisconnectConfirm: 'নিশ্চিত?',
+    d1EncNote: 'ডেটা পিন দিয়ে এনক্রিপ্টেড — কেউ পড়তে পারবে না',
     transactions: 'লেনদেন',
     expenses: 'খরচ',
     shopAddress: 'দোকানের ঠিকানা',
@@ -418,6 +489,41 @@ const translations: Record<Language, TranslationKeys> = {
     duplicateProduct: 'A product with this name already exists in this category!',
     billingSettings: 'Billing Settings',
     billingSettingsDesc: 'Shop, GST, signature, QR',
+    d1SyncTitle: 'Cloud Sync (D1)',
+    d1SyncDesc: 'Data syncs across all your devices',
+    d1SyncNow: 'Sync now',
+    d1LastSync: 'Last sync',
+    d1Never: 'Never',
+    d1StateSynced: 'Up to date ✓',
+    d1StateSyncing: 'Syncing…',
+    d1StateError: 'Sync error — tap to retry',
+    d1StateOffline: 'Offline — will retry automatically',
+    d1SetupTitle: 'Cloud Sync Setup',
+    d1SetupShort: 'Set up',
+    d1CreateTab: 'New sync',
+    d1JoinTab: 'Join device',
+    d1IdLabel: 'Sync ID',
+    d1PinLabel: 'Secret PIN',
+    d1PinConfirm: 'Confirm PIN',
+    d1Generate: 'New ID',
+    d1CreateBtn: 'Start sync',
+    d1JoinBtn: 'Join',
+    d1PinHint: 'At least 6 characters — this PIN encrypts your data and links other devices. If forgotten, data cannot be re-linked.',
+    d1JoinHint: 'Enter the Sync ID & PIN created on the first device — all its data will appear here too.',
+    d1ErrTaken: 'This Sync ID already exists — pick another',
+    d1ErrNotFound: 'Sync ID not found',
+    d1ErrWrongPin: 'Wrong PIN',
+    d1ErrBadId: 'ID must be at least 4 characters (a-z, 0-9, -)',
+    d1ErrBadPin: 'PIN must be at least 6 characters',
+    d1ErrMismatch: 'PINs do not match',
+    d1ErrOffline: 'No internet — try again later',
+    d1ErrFail: 'Connection failed — try again',
+    d1ConnectedToast: 'Sync connected ✓',
+    d1DisconnectedToast: 'Sync disconnected',
+    d1NotConnected: 'Sync off — tap to set up',
+    d1Disconnect: 'Disconnect',
+    d1DisconnectConfirm: 'Sure?',
+    d1EncNote: 'Data is PIN-encrypted — nobody can read it',
     transactions: 'Transactions',
     expenses: 'Expenses',
     shopAddress: 'Shop Address',
@@ -567,6 +673,41 @@ const translations: Record<Language, TranslationKeys> = {
     duplicateProduct: 'इस नाम का प्रोडक्ट इस कैटेगरी में पहले से मौजूद है!',
     billingSettings: 'बिलिंग सेटिंग्स',
     billingSettingsDesc: 'दुकान, GST, हस्ताक्षर, QR',
+    d1SyncTitle: 'क्लाउड सिंक (D1)',
+    d1SyncDesc: 'डेटा सभी डिवाइस पर ऑटो सिंक होता है',
+    d1SyncNow: 'अभी सिंक करें',
+    d1LastSync: 'अंतिम सिंक',
+    d1Never: 'अभी तक नहीं',
+    d1StateSynced: 'अप टु डेट ✓',
+    d1StateSyncing: 'सिंक हो रहा है…',
+    d1StateError: 'सिंक समस्या — दोबारा दबाएं',
+    d1StateOffline: 'ऑफलाइन — खुद कोशिश करेगा',
+    d1SetupTitle: 'क्लाउड सिंक सेटअप',
+    d1SetupShort: 'सेटअप',
+    d1CreateTab: 'नया सिंक',
+    d1JoinTab: 'डिवाइस जोड़ें',
+    d1IdLabel: 'सिंक आईडी',
+    d1PinLabel: 'सीक्रेट पिन',
+    d1PinConfirm: 'पिन फिर लिखें',
+    d1Generate: 'नई आईडी',
+    d1CreateBtn: 'सिंक शुरू करें',
+    d1JoinBtn: 'जुड़ें',
+    d1PinHint: 'कम से कम 6 अक्षर — इसी पिन से डेटा एन्क्रिप्ट होता है और दूसरे डिवाइस जुड़ते हैं। भूल गए तो डेटा दोबारा नहीं जुड़ेगा।',
+    d1JoinHint: 'पहले डिवाइस पर बनाई सिंक आईडी और पिन दें — सारा डेटा यहाँ भी दिखेगा।',
+    d1ErrTaken: 'यह सिंक आईडी पहले से मौजूद है — दूसरी चुनें',
+    d1ErrNotFound: 'सिंक आईडी नहीं मिली',
+    d1ErrWrongPin: 'पिन गलत है',
+    d1ErrBadId: 'आईडी कम से कम 4 अक्षर की हो (a-z, 0-9, -)',
+    d1ErrBadPin: 'पिन कम से कम 6 अक्षर का हो',
+    d1ErrMismatch: 'दोनों पिन मेल नहीं खा रहे',
+    d1ErrOffline: 'इंटरनेट नहीं — बाद में कोशिश करें',
+    d1ErrFail: 'कनेक्शन विफल — फिर कोशिश करें',
+    d1ConnectedToast: 'सिंक चालू हो गया ✓',
+    d1DisconnectedToast: 'सिंक बंद हो गया',
+    d1NotConnected: 'सिंक बंद — सेटअप के लिए दबाएं',
+    d1Disconnect: 'बंद करें',
+    d1DisconnectConfirm: 'पक्का?',
+    d1EncNote: 'डेटा पिन-एन्क्रिप्टेड — कोई नहीं पढ़ सकता',
     transactions: 'लेनदेन',
     expenses: 'खर्च',
     shopAddress: 'दुकान का पता',

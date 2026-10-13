@@ -1313,3 +1313,79 @@ Stage Summary:
 - App is now 100% Firebase-free and pure offline-first (IndexedDB), builds smaller (firebase SDK removed from bundle), CSP tightened back
 - Integration points ready for the user's separate database: sync-events.ts hooks (onLocalDataChanged/onLocalWipe), layout.tsx CSP comment noting where to add external API hosts
 - Android Studio APK build needs no changes; app behavior identical minus the cloud features
+
+---
+Task ID: 37
+Agent: Z.ai Code (main)
+Task: "ami cloudflare detabase configure korate chai... multiple device theke deta access/pull/push, sob device e realtime deta show kore" — integrate Cloudflare D1 as the new cloud sync backend (user supplied account id, db id, API token)
+
+Work Log:
+- CREDENTIALS VERIFIED via API: token active (user/tokens/verify OK), D1 DB `ps_telecom` (01d53b1b-...) exists @ APAC, account 45dc693e...
+- API behavior probed live before coding: single statement per request ({sql, params}); statement-ARRAY bodies REJECTED; multi-statement string works; multi-row INSERT with params works; 100 SQL-variable limit (→ 16-row chunks of 5 params); UPSERT with ON CONFLICT ... MAX(existing+1, excluded) guard works; server clock via strftime('%s','now') works (sandbox offset ~165ms)
+- SCHEMA created in D1: sync_data(user_id, store, id, payload JSON, updated_at; PK user+store+id; idx user+ver) + sync_tombstones(same shape, deleted_at) — flat JSON-payload rows, one namespace per user (DEFAULT_USER_ID 'local-owner' is constant on every device → convergence guaranteed)
+- NEW src/lib/d1-config.ts: account/db/token constants + query URL
+- NEW src/lib/d1-sync.ts (~640 lines) full sync engine:
+  * PUSH: debounced 3s after any notifyLocalDataChanged; watermark-based candidate selection (device clock) + echo guard (_sv) + resurrection guard (tombstone cache); multi-row chunked upserts, concurrency 3; pendingDeletes rows → cloud tombstones + cloud row delete
+  * PULL: every 12s + on boot + online event + visibilitychange; paged (400/loop) data + tombstone pulls; LWW apply via cloud version _sv; never clobbers rows with un-pushed local edits; category name-collision adoption (older createdAt wins; loser remapped + tombstoned) — prevents duplicate seed categories
+  * CLOCK SKEW: server time fetched each cycle → clockOffsetMs; pushes server-normalized; MAX guard keeps versions monotonic even with skew
+  * wipeCloudData on Reset All Data (onLocalWipe) — cloud mirror wiped so reset sticks
+  * status machine (idle/syncing/error/offline) + subscribeD1Status for UI; one silent retry on network-class errors; Promise.race timeout (CapacitorHttp ignores AbortSignal)
+- WIRED: page.tsx startD1Sync() at boot; capacitor.config.json now enables CapacitorHttp (native HTTP in APK = no CORS — api.cloudflare.com sends no CORS headers, verified 405 on OPTIONS); CSP connect-src += https://api.cloudflare.com
+- UI: Profile screen "Cloud Sync (D1)" status card (state badge, last-sync time, tap = Sync Now via syncNowD1); 9 new i18n keys × bn/en/hi
+- VERIFICATION:
+  * scripts/test-d1-sync.mjs — dual-device simulation against REAL D1: 7/7 PASSED (push→pull, edit LWW, tombstone delete, resurrection blocked, MAX monotonicity, last-push-wins, 40-row bulk chunk)
+  * tsc 0 errors, eslint clean, build:web OK, api.cloudflare.com present in out/index.html CSP
+  * Agent Browser E2E: boot OK, Profile card renders with correct state machine, category create works, zero page errors; sandbox blocks ALL external fetch (confirmed via eval fetch → "Failed to fetch") so live sync shows 'offline' state in sandbox — environment limitation, not a bug (curl + node reach D1 fine)
+  * D1 test data cleaned after tests (both tables emptied)
+  * dev.log clean, no crash loops after failed pushes (graceful offline state)
+
+Stage Summary:
+- Multi-device sync restored on Cloudflare D1: add/edit/delete on any device appears on all devices within ~12s (or instantly on focus/online); deletes propagate via tombstones; clock-skew safe; offline queueing via watermarks + pendingDeletes
+- User path: git pull → npm run build:web → npx cap sync android → Android Studio build → install on all devices → data converges automatically
+- Note: token ships in the APK client (D1-scoped token by user's choice); recommend keeping the token scoped to D1 edit-only in Cloudflare dashboard
+
+---
+Task ID: 37
+Agent: Z.ai Code (main thread)
+Task: App security hardening — nobody may extract/harm via the API key; secure the D1 credentials; then produce APK build guide; verify everything thoroughly.
+
+Work Log:
+- Threat review of existing D1 sync (commit 03feb6d): D1 token shipped base64-"obfuscated" (not encryption) in client bundle + payloads were PLAINTEXT → token extraction = full read/wipe access. User asked for real security.
+- Attempted ideal fix first: Cloudflare Worker proxy with D1 binding (worker written + syntax-checked at /home/z/ps-stock-sync/worker.js; PBKDF2-PIN auth, per-account row scoping, rate limits, atomic batch push, /register /verify /pull /push /wipe /health). Deploy BLOCKED: user's token lacks Workers Scripts:Edit scope ("No access to the specified resource"); subdomain endpoints also denied; Pages denied; no zones. Token = D1-only.
+- Shipped achievable-equivalent security (v2 "E2E encrypted direct mode"):
+  * NEW src/lib/sync-crypto.ts — PBKDF2-SHA256 (100k) account hash + AES-256-GCM-256 payload encryption; key derived from shop Sync PIN (NOT in the app); row format v1.<iv>.<ct>; decrypt fails closed (null) on tamper/garbage
+  * REWROTE src/lib/d1-config.ts — honest security-model docs; token kept (required for direct REST; now defanged), removed base64 pretense; sync-account persistence (localStorage, app-private on Android) + onSyncAccountChanged event; generateSyncId()
+  * REWROTE src/lib/d1-sync.ts (~950 lines) — account gating (engine dormant 'off' until connectSync), create/join flows (register/verify against D1 sync_accounts), every payload AES-GCM encrypted, deletes now propagate as ENCRYPTED `_tomb` rows in sync_data (outsiders cannot forge deletions), unified single pull watermark, tombstone hydration, echo/dirty/LWW guards kept, category adoption kept, clock-offset kept
+  * SELF-HEAL: poisoned rows (decrypt fail) collected and force-overwritten; missing cloud rows re-asserted from local copies (cap 1000/sweep); runs at boot + every 6h — attacker cloud vandalism cannot destroy device data
+  * SCHEMA REPAIR: ensureSchema() auto-recreates sync_data/sync_accounts/sync_tombstones on "no such table" (survives DROP attacks)
+  * UI: ProfileScreen sync card = setup entry when off ("Sync off — tap to set up") → dialog with New-sync / Join-device tabs, auto-generated PS-XXXX-XXXX ID + regenerate, PIN + confirm (min 6), error toasts (taken/not-found/wrong-pin/bad-id/bad-pin/offline/fail); connected state shows Sync ID · last sync · badge states + encryption note row + two-tap Disconnect; 26 new i18n keys × bn/en/hi; TranslationKeys type exported
+  * CSP: unchanged (api.cloudflare.com allowed); CapacitorHttp enabled=true confirmed → APK uses native HTTP, CORS N/A
+- Removed stale scripts/test-d1-sync.mjs (tested obsolete plaintext protocol)
+- CLOUD E2E (bun "device B" vs REAL D1): 14/14 PASSED — account create, wrong-PIN rejected, raw DB shows ciphertext only (no plaintext leak through token), pull+decrypt correct, LWW monotonic guard, encrypted tombstone flow, forged plaintext row rejected by decrypt, cleanup
+- BROWSER E2E (agent-browser + fetch-shim fake-D1 to bypass sandbox CORS): connect flow via UI ✓ (auto-ID PS-JJYE-FFET, account row + 21 encrypted rows pushed), product add → auto-push ciphertext ✓, injected encrypted "device B" row → pulled, decrypted, applied, visible on Products screen ✓, self-heal restored 21 seed rows when cloud appeared empty ✓, Disconnect row + states ✓
+- Browser limitation documented: api.cloudflare.com sends no CORS headers (OPTIONS 405) → web/PWA builds show 'offline'; Android APK unaffected (CapacitorHttp). Fix = deploy staged Worker (needs token with Workers:Edit).
+- D1 left CLEAN: sync_data=0, sync_accounts=0, tombstones purged; no test accounts remain
+- Verification: tsc 0 errors, eslint clean, build:web export OK; dev.log clean
+
+Stage Summary:
+- SECURITY POSTURE: APK contains D1 token but ZERO readable data risk — all payloads AES-256-GCM (PIN-derived key, PIN never ships in app); forged rows fail auth; deletes unfakeable; vandalised cloud self-heals from devices; schema auto-repairs. Residual risk: token holder can DELETE/waste cloud rows (DoS), healed automatically, no data loss (devices hold full copies)
+- Worker proxy is fully staged at /home/z/ps-stock-sync/worker.js — 1 deploy away once token gains Workers Scripts:Edit (+ Subdomain) scope; after that the token can be removed from the app entirely and revoked
+- User flow: Profile → Cloud Sync → create (ID+PIN on device 1) → install on device 2 → join with same ID+PIN → data converges both ways within ~12s
+
+---
+Task ID: 37b
+Agent: Z.ai Code (main thread)
+Task: GitHub push-protection fix — remove token from git entirely (secrets-file architecture).
+
+Work Log:
+- git push rejected by GitHub PUSH PROTECTION: "Cloudflare User API Token" found in src/lib/d1-config.ts:40 of new commit — GitHub refused the push (correct behaviour)
+- Architecture change: token moved OUT of git:
+  * NEW src/lib/d1-secrets.ts (GIT-IGNORED, real values, sandbox-local)
+  * NEW src/lib/d1-secrets.example.ts (committed template with instructions)
+  * d1-config.ts now imports from './d1-secrets' and re-exports
+  * build-apk.js Step 0 preflight: friendly error + fix command when the secrets file is missing or still has PASTE_YOUR_ placeholders
+- Squashed the two token-bearing local commits (03feb6d base64 variant + 0fc7e23 raw) out of upcoming push history; re-committed clean
+- Verified: tsc 0, eslint clean, build:web OK, git history contains no token / no base64 token
+
+Stage Summary:
+- Git/GitHub now contains ZERO credential material; token lives only in gitignored src/lib/d1-secrets.ts on build machines (user creates it via the 1-line copy command in the build guide)
