@@ -1289,3 +1289,27 @@ Work Log:
 Stage Summary:
 - Multi-device sync now real: add/edit/delete on any device propagates to all devices live; data-loss bug eliminated; reset works across devices
 - User path: git pull → npm run build:web → npx cap sync android → Android Studio build → install on BOTH devices → data converges automatically
+
+---
+Task ID: 36
+Agent: Z.ai Code (main)
+Task: "app er code base theke firebase er puro structure, code remove koro alada detabase add korbo" — strip Firebase entirely; app returns to pure offline-first; user will integrate their own separate database later
+
+Work Log:
+- DELETED lib code: src/lib/firebase.ts (config/init/analytics), src/lib/firebase-sync.ts (648-line cloud sync engine: push/pull/listeners/tombstones), src/components/screens/CloudBackupScreen.tsx (292-line UI)
+- DELETED Firebase project config: firebase.json, .firebaserc, firestore.rules, firestore.indexes.json
+- page.tsx: removed initFirebaseAnalytics/initFirebaseSync boot calls, CloudBackupScreen lazy import + 'cloud-backup' route entry
+- types.ts: removed 'cloud-backup' from Screen union (TS now enforces no dangling route)
+- ProfileScreen.tsx: removed Cloud Backup (Firebase) menu card + CloudUpload icon import; menu now flows Daily Book → Report Download → Backup/Restore (local file) → Reset All Data
+- layout.tsx CSP: reverted connect-src to 'self' ws: wss: (googleapis/firebaseio no longer needed); img-src https: kept; comment updated to guide future backend integration
+- i18n.ts: removed 14 cloud-only keys (cloudBackup, cloudBackupDesc, backupNow, restoreFromCloud, lastSynced, neverSynced, autoSync, autoSyncDesc, syncing, syncDone, syncFailed, liveSync, connecting, rulesHint) from interface + all 3 languages (bn/en/hi); kept generic keys (cancel/restore/thisActionCannot) still used elsewhere
+- sync-events.ts KEPT but rewritten database-agnostic: it's the local event bus wiring offline-service's 20+ write hooks — future database module can subscribe without touching the data layer; currently zero subscribers (harmless no-ops)
+- package.json: removed "firebase" + "firebase-tools" deps; bun.lock regenerated; db:push echo text de-Firebase'd
+- VERIFICATION: repo-wide rg = zero firebase/googleapis references (excl. worklog/bun.lock history); tsc --noEmit 0 errors; eslint clean; npm run build:web OK; built out/ contains no firebase strings
+- Agent Browser E2E on dev server: splash → welcome → tutorial skip → dashboard renders; Profile shows no cloud card; created category "Test Sync" → "Added successfully" toast → visible in grid (0 items); detail screen opens; back nav works; zero console/page errors
+- User's data: 100% local (IndexedDB), untouched. Firestore cloud copy still exists in the user's Firebase project (harmless orphan; can be deleted in console if desired). User devices: data stays as-is after APK rebuild; local Backup/Restore (JSON file) remains the transfer mechanism until the new database arrives
+
+Stage Summary:
+- App is now 100% Firebase-free and pure offline-first (IndexedDB), builds smaller (firebase SDK removed from bundle), CSP tightened back
+- Integration points ready for the user's separate database: sync-events.ts hooks (onLocalDataChanged/onLocalWipe), layout.tsx CSP comment noting where to add external API hosts
+- Android Studio APK build needs no changes; app behavior identical minus the cloud features

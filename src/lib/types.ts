@@ -19,8 +19,7 @@ export type Screen =
   | 'invoice'
   | 'billing-settings'
   | 'daily-book'
-  | 'service-category'
-  | 'cloud-backup';
+  | 'service-category';
 
 export type Language = 'bn' | 'en' | 'hi';
 

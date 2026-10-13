@@ -7,8 +7,6 @@ import { Screen } from '@/lib/types';
 import { LogOut, X } from 'lucide-react';
 import BottomNav from '@/components/BottomNav';
 import { useBackHandler } from '@/hooks/useBackHandler';
-import { initFirebaseAnalytics } from '@/lib/firebase';
-import { initFirebaseSync } from '@/lib/firebase-sync';
 
 // Initialize Capacitor bridge early (registers native back button at system level)
 import '@/lib/capacitor-init';
@@ -30,7 +28,6 @@ const ReportsScreen = lazy(() => import('@/components/screens/ReportsScreen'));
 const DailyBookScreen = lazy(() => import('@/components/screens/DailyBookScreen'));
 const InvoiceScreen = lazy(() => import('@/components/screens/InvoiceScreen'));
 const BillingSettingsScreen = lazy(() => import('@/components/screens/BillingSettingsScreen'));
-const CloudBackupScreen = lazy(() => import('@/components/screens/CloudBackupScreen'));
 const WelcomeScreen = lazy(() => import('@/components/screens/WelcomeScreen'));
 const TutorialScreen = lazy(() => import('@/components/screens/TutorialScreen'));
 const ServiceCategoryScreen = lazy(() => import('@/components/screens/ServiceCategoryScreen'));
@@ -55,7 +52,6 @@ const screenComponents: Record<Screen, React.ComponentType> = {
   'service-category': ServiceCategoryScreen,
   invoice: InvoiceScreen,
   'billing-settings': BillingSettingsScreen,
-  'cloud-backup': CloudBackupScreen,
   welcome: WelcomeScreen,
   tutorial: TutorialScreen,
 };
@@ -93,9 +89,6 @@ export default function Home() {
   // This is the ONLY path for native Android back button → handleBack()
   // useBackHandler.ts does NOT register its own Capacitor listener to avoid double-firing
   useEffect(() => {
-    // Firebase: analytics (optional, guarded) + cloud sync engine (auto-sync listener)
-    initFirebaseAnalytics();
-    initFirebaseSync();
     const handleNativeBack = () => handleBack();
     window.addEventListener('app:back-button', handleNativeBack);
     return () => window.removeEventListener('app:back-button', handleNativeBack);

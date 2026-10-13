@@ -39,13 +39,11 @@ export default function RootLayout({
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
         {/* Fonts are self-hosted via next/font (no external hosts needed).
-            connect-src allows: same-origin + dev/HMR + socket.io websockets +
-            Firebase backends (*.googleapis.com = Firestore/analytics/installations,
-            *.firebaseio.com = Firestore legacy fallback). Without these the
-            Firebase sync cannot leave the page and times out. */}
+            connect-src allows: same-origin + dev/HMR + socket.io websockets.
+            Add external API hosts here when a new cloud backend is integrated. */}
         <meta
           httpEquiv="Content-Security-Policy"
-          content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' ws: wss: https://*.googleapis.com https://*.firebaseio.com; object-src 'none'; base-uri 'self'; form-action 'self'"
+          content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; form-action 'self'"
         />
       </head>
       <body

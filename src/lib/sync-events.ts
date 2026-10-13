@@ -1,9 +1,12 @@
 /**
- * Tiny in-process event bus that decouples the data layer from the sync layer.
+ * Tiny in-process event bus that decouples the data layer from any
+ * future cloud/backup layer.
  *
  * offline-service.ts (IndexedDB writes) fires `notifyLocalDataChanged(userId)`
- * after every successful write; firebase-sync.ts subscribes and schedules a
- * debounced cloud push. Kept dependency-free to avoid circular imports.
+ * after every successful write. Any future database/sync module can subscribe
+ * to these hooks without touching the data layer (no circular imports).
+ *
+ * Currently there are no subscribers — the app runs fully offline on IndexedDB.
  */
 
 type Listener = (userId: string) => void;
@@ -32,8 +35,8 @@ export function notifyLocalDataChanged(userId: string): void {
 }
 
 /**
- * Subscribe to "Reset All Data" events. firebase-sync.ts wipes the user's
- * cloud mirror too — otherwise the cloud copy would flow straight back into
+ * Subscribe to "Reset All Data" events — a future cloud layer must wipe the
+ * cloud mirror too, otherwise the cloud copy would flow straight back into
  * the device on the next sync and the reset would look broken.
  */
 export function onLocalWipe(fn: Listener): () => void {

@@ -115,23 +115,8 @@ type TranslationKeys = {
   // Billing (e-Bill)
   billingSettings: string;
   billingSettingsDesc: string;
-  // Cloud Backup (Firebase)
-  cloudBackup: string;
-  cloudBackupDesc: string;
-  backupNow: string;
-  restoreFromCloud: string;
-  lastSynced: string;
-  neverSynced: string;
-  autoSync: string;
-  autoSyncDesc: string;
-  syncing: string;
-  syncDone: string;
-  syncFailed: string;
-  liveSync: string;
-  connecting: string;
   transactions: string;
   expenses: string;
-  rulesHint: string;
   shopAddress: string;
   shopPhone: string;
   proprietorName: string;
@@ -284,22 +269,8 @@ const translations: Record<Language, TranslationKeys> = {
     duplicateProduct: 'এই নামের প্রোডাক্ট এই ক্যাটেগরিতে আগেই আছে!',
     billingSettings: 'বিলিং সেটিংস',
     billingSettingsDesc: 'দোকান, GST, সিগনেচার, QR',
-    cloudBackup: 'ক্লাউড ব্যাকআপ (Firebase)',
-    cloudBackupDesc: 'Firebase-এ অটো সেভ হয়',
-    backupNow: 'এখনই ব্যাকআপ করুন',
-    restoreFromCloud: 'ক্লাউড থেকে রিস্টোর',
-    lastSynced: 'সর্বশেষ সিঙ্ক',
-    neverSynced: 'এখনও হয়নি',
-    autoSync: 'অটো সিঙ্ক',
-    autoSyncDesc: 'পরিবর্তন হলে স্বয়ংক্রিয়ভাবে Firebase-এ সেভ হয়',
-    syncing: 'সিঙ্ক হচ্ছে…',
-    syncDone: 'ব্যাকআপ সম্পন্ন ✓',
-    syncFailed: 'সিঙ্ক ব্যর্থ হয়েছে',
-    liveSync: 'লাইভ সিঙ্ক চালু',
-    connecting: 'সংযোগ হচ্ছে...',
     transactions: 'লেনদেন',
     expenses: 'খরচ',
-    rulesHint: 'ইন্টারনেট সংযোগ দেখুন — ডেটা সব ডিভাইসে অটো সিঙ্ক হয়। সমস্যা থাকলে একবার Backup Now চাপুন',
     shopAddress: 'দোকানের ঠিকানা',
     shopPhone: 'দোকানের ফোন',
     proprietorName: 'প্রোপ্রাইটরের নাম',
@@ -447,22 +418,8 @@ const translations: Record<Language, TranslationKeys> = {
     duplicateProduct: 'A product with this name already exists in this category!',
     billingSettings: 'Billing Settings',
     billingSettingsDesc: 'Shop, GST, signature, QR',
-    cloudBackup: 'Cloud Backup (Firebase)',
-    cloudBackupDesc: 'Auto-saves to your Firebase',
-    backupNow: 'Backup Now',
-    restoreFromCloud: 'Restore from Cloud',
-    lastSynced: 'Last sync',
-    neverSynced: 'Never',
-    autoSync: 'Auto Sync',
-    autoSyncDesc: 'Saves to Firebase automatically after every change',
-    syncing: 'Syncing…',
-    syncDone: 'Backup complete ✓',
-    syncFailed: 'Sync failed',
-    liveSync: 'Live sync on',
-    connecting: 'Connecting...',
     transactions: 'Transactions',
     expenses: 'Expenses',
-    rulesHint: 'Check your internet connection — data auto-syncs across all your devices. Tap Backup Now to retry',
     shopAddress: 'Shop Address',
     shopPhone: 'Shop Phone',
     proprietorName: 'Proprietor Name',
@@ -610,22 +567,8 @@ const translations: Record<Language, TranslationKeys> = {
     duplicateProduct: 'इस नाम का प्रोडक्ट इस कैटेगरी में पहले से मौजूद है!',
     billingSettings: 'बिलिंग सेटिंग्स',
     billingSettingsDesc: 'दुकान, GST, हस्ताक्षर, QR',
-    cloudBackup: 'क्लाउड बैकअप (Firebase)',
-    cloudBackupDesc: 'Firebase में ऑटो सेव होता है',
-    backupNow: 'अभी बैकअप करें',
-    restoreFromCloud: 'क्लाउड से रिस्टोर',
-    lastSynced: 'अंतिम सिंक',
-    neverSynced: 'अभी तक नहीं',
-    autoSync: 'ऑटो सिंक',
-    autoSyncDesc: 'हर बदलाव के बाद Firebase में अपने आप सेव होता है',
-    syncing: 'सिंक हो रहा है…',
-    syncDone: 'बैकअप पूर्ण ✓',
-    syncFailed: 'सिंक विफल',
-    liveSync: 'लाइव सिंक चालू',
-    connecting: 'कनेक्ट हो रहा है...',
     transactions: 'लेनदेन',
     expenses: 'खर्च',
-    rulesHint: 'इंटरनेट कनेक्शन जांचें — डेटा सभी डिवाइस पर ऑटो सिंक होता है। फिर से कोशिश करने के लिए Backup Now दबाएं',
     shopAddress: 'दुकान का पता',
     shopPhone: 'दुकान का फोन',
     proprietorName: 'स्वामी का नाम',
