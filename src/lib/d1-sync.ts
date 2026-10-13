@@ -8,8 +8,10 @@
  *  - E2E ENCRYPTION: every payload is AES-256-GCM encrypted with a key
  *    derived from the PIN (sync-crypto.ts). The D1 token inside the APK
  *    therefore exposes nothing readable. Forged rows fail auth → skipped.
- *  - PUSH: local writes fire notifyLocalDataChanged → debounced push of
- *    records newer than the push watermark. Deletes go through the local
+ *  - PUSH: local writes fire notifyLocalDataChanged → near-instant push
+ *    (1s micro-batch; ≤5s max wait during continuous writes) of records
+ *    newer than the push watermark, then an immediate pull-back. Deletes
+ *    go through the local
  *    `pendingDeletes` queue and become ENCRYPTED tombstone rows in the
  *    `_tomb` store (outsiders cannot forge deletions).
  *  - PULL: every 12s (+ boot / network-online / app focus), rows newer than
@@ -55,7 +57,8 @@ import {
 // ============ tunables ============
 
 const POLL_INTERVAL_MS = 12_000; // "realtime" cadence for other devices' changes
-const PUSH_DEBOUNCE_MS = 3_000;
+const PUSH_DEBOUNCE_MS = 1_000; // near-instant push right after add/edit/delete
+const PUSH_MAX_WAIT_MS = 5_000; // continuous writes can't postpone a push beyond this
 const REQUEST_TIMEOUT_MS = 25_000;
 const RETRY_DELAY_MS = 2_500;
 const PULL_PAGE_LIMIT = 400;
@@ -570,13 +573,33 @@ export async function pushToD1(userId: string): Promise<{ ok: boolean; error?: s
   return first;
 }
 
+let pushBurstStart = 0; // when the current pending push burst began
+
+/** Push immediately; on success pull right back so the device converges fast. */
+function firePushNow(userId: string): void {
+  pushTimer = null;
+  pushBurstStart = 0;
+  void pushToD1(userId).then((res) => {
+    if (!res.ok) return;
+    // our own change just landed in the cloud — grab other devices' updates now
+    const syncId = currentSyncId || getSyncAccount()?.syncId;
+    if (syncId && encKey) void pullOnce(syncId);
+  });
+}
+
 function schedulePush(userId: string): void {
   if (!getSyncAccount()) return;
-  if (pushTimer) clearTimeout(pushTimer);
-  pushTimer = setTimeout(() => {
-    pushTimer = null;
-    void pushToD1(userId);
-  }, PUSH_DEBOUNCE_MS);
+  const now = Date.now();
+  if (pushTimer) {
+    // writes keep arriving — reschedule, but never beyond PUSH_MAX_WAIT_MS
+    if (now - pushBurstStart < PUSH_MAX_WAIT_MS) {
+      clearTimeout(pushTimer);
+      pushTimer = setTimeout(() => firePushNow(userId), PUSH_DEBOUNCE_MS);
+    }
+    return;
+  }
+  pushBurstStart = now;
+  pushTimer = setTimeout(() => firePushNow(userId), PUSH_DEBOUNCE_MS);
 }
 
 // ============ PULL ============
@@ -962,13 +985,14 @@ function stopEngineTimers(): void {
   if (pushTimer) clearTimeout(pushTimer);
   pollTimer = null;
   pushTimer = null;
+  pushBurstStart = 0;
 }
 
 export function startD1Sync(): void {
   if (started || typeof window === 'undefined') return;
   started = true;
 
-  // local writes → debounced push
+  // local writes → near-instant push (1s micro-batch) + pull right after
   onLocalDataChanged((userId) => schedulePush(userId || DEFAULT_USER_ID));
   // Reset All Data → wipe the cloud mirror so it can't flow back
   onLocalWipe((userId) => {
