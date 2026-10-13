@@ -1389,3 +1389,21 @@ Work Log:
 
 Stage Summary:
 - Git/GitHub now contains ZERO credential material; token lives only in gitignored src/lib/d1-secrets.ts on build machines (user creates it via the 1-line copy command in the build guide)
+
+---
+Task ID: 38b
+Agent: Z.ai Code (main thread)
+Task: "transaction korar sathe sathe data add/remove korar sathe sathe app jeno database call kore sync kore" — make sync fire immediately on every add/edit/delete
+
+Work Log:
+- Timing review of d1-sync.ts: push was debounced 3s after local writes; pull polled every 12s
+- PUSH_DEBOUNCE_MS 3000 → 1000 (near-instant; one user action's multiple IndexedDB writes batch into ONE D1 call)
+- NEW PUSH_MAX_WAIT_MS = 5000 guard: continuous writes (e.g. bulk import) reschedule but can never postpone a push beyond 5s (pushBurstStart tracking)
+- NEW firePushNow(): after every successful scheduled push → immediate pullOnce, so each transaction = full two-way sync cycle and "Last sync" updates visibly right away
+- stopEngineTimers resets pushBurstStart; header docs updated; busy-path (pushAgainAfterCycle) unchanged and still covers in-flight collisions
+- VERIFIED: tsc 0 errors, eslint clean, npm run build:web OK
+- Committed d5f3956, pushed to GitHub main (no secrets touched; d1-secrets.ts still git-ignored)
+
+Stage Summary:
+- User actions (add/edit/delete transaction, product, expense, bill, etc.) now reach Cloudflare D1 within ~1 second; other devices receive them within ≤12s poll or instantly on app focus
+- User must rebuild the APK (git pull → npm run build:web → npx cap sync android → Android Studio build) to get this timing update on devices
