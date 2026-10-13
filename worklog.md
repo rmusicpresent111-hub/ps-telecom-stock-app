@@ -1259,3 +1259,33 @@ Stage Summary:
 - Code fix live on GitHub (8f2e236) — user rebuilds APK to get working sync; CSP was the single blocking bug
 - Hosting redeploy pending user auth code (session F1648)
 - Phone-side checklist for user: rebuild APK from same PC (signature match), test sync on 4G if WiFi is dead
+
+---
+Task ID: 35
+Agent: Z.ai Code (main)
+Task: "ekta device e data load korle 2nd device e data aschena" — full codebase sync audit + fix; make multi-device sync actually work before APK rebuild
+
+Work Log:
+- ROOT CAUSE (architecture): sync engine was backup-only. Push flowed device→cloud but NOTHING ever pulled cloud→device (Restore button only). Since DEFAULT_USER_ID='local-owner' is the same constant on every device both devices shared one cloud tree — yet device 2 never fetched it. WORSE: push did "delete cloud docs missing locally", so device 2's first push ERASED device 1's cloud records (silent data loss)
+- REWRITE src/lib/firebase-sync.ts as true two-way sync:
+  * REAL-TIME LISTENERS (onSnapshot) on all 8 stores — initial cloud snapshot + every future change applies into IndexedDB automatically (device 2 fills itself the moment it comes online)
+  * last-writer-wins via updatedAt/createdAt (records immutable where no updatedAt)
+  * REMOVED the delete-missing-locals step; deletes now travel explicitly: local delete → pendingDeletes row (new hook in 5 delete functions in offline-service) → cloud tombstone doc (_tombstones/{store}__{id}) + cloud doc delete → 'removed' events delete the row on all other devices
+  * tombstone resurrection guard: push skips records whose tombstone.deletedAt >= record updatedAt; apply path skips too; tombstones reloaded from cloud on every boot
+  * echo guards: own writes (hasPendingWrites=true) skipped; listener-applied rows write IndexedDB directly (no re-push loop)
+  * category adoption: cloud category colliding with a same-name local seed → deterministic winner (older createdAt, tie=smaller id); winner's id adopted + products' categoryId remapped in one atomic tx — kills duplicate seed categories across devices
+  * Reset All Data now also wipes the cloud mirror (notifyLocalWipe → wipeCloudData) — reset can no longer be undone by the cloud flowing back in
+  * clean() now recurses arrays (bills.items undefined-safe for Firestore)
+  * sync hardening retained: 60s timeout, one silent auto-retry, busy coalescing
+- UI: CloudBackupScreen got a Live-sync status badge (liveSync/connecting i18n keys bn/en/hi); rulesHint text updated (DB+rules are provisioned; hint now says check internet)
+- Cloud state found: 2 REAL product docs (Realme 6, Oppo 1) the user's device pushed after the CSP fix — PRESERVED (only my synctest residue deleted)
+- VERIFICATION:
+  * tsc 0 errors, eslint clean, static export OK
+  * Node dual-device test vs REAL Firestore (same SDK/config/rules as APK): 4/4 PASSED — added→listener on B, modified→A, removed→B, tombstone guard holds
+  * Sandbox browser E2E: fresh session attached listeners and PULLED the user's real data ("Mobile 2 items" → Realme 6 Qty1, Oppo 1 Qty2) with category adoption working — full end-to-end proof
+- Pushed: cbb58ca..baf58c1 main
+- Hosting redeploy still pending user's new firebase login auth code (session F1648 started earlier; creds file was wiped by sandbox)
+
+Stage Summary:
+- Multi-device sync now real: add/edit/delete on any device propagates to all devices live; data-loss bug eliminated; reset works across devices
+- User path: git pull → npm run build:web → npx cap sync android → Android Studio build → install on BOTH devices → data converges automatically
