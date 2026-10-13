@@ -127,6 +127,8 @@ type TranslationKeys = {
   syncing: string;
   syncDone: string;
   syncFailed: string;
+  liveSync: string;
+  connecting: string;
   transactions: string;
   expenses: string;
   rulesHint: string;
@@ -293,9 +295,11 @@ const translations: Record<Language, TranslationKeys> = {
     syncing: 'সিঙ্ক হচ্ছে…',
     syncDone: 'ব্যাকআপ সম্পন্ন ✓',
     syncFailed: 'সিঙ্ক ব্যর্থ হয়েছে',
+    liveSync: 'লাইভ সিঙ্ক চালু',
+    connecting: 'সংযোগ হচ্ছে...',
     transactions: 'লেনদেন',
     expenses: 'খরচ',
-    rulesHint: 'Firebase Console → Firestore Database তৈরি করুন (না থাকলে) এবং Rules-এ read/write allow করুন',
+    rulesHint: 'ইন্টারনেট সংযোগ দেখুন — ডেটা সব ডিভাইসে অটো সিঙ্ক হয়। সমস্যা থাকলে একবার Backup Now চাপুন',
     shopAddress: 'দোকানের ঠিকানা',
     shopPhone: 'দোকানের ফোন',
     proprietorName: 'প্রোপ্রাইটরের নাম',
@@ -454,9 +458,11 @@ const translations: Record<Language, TranslationKeys> = {
     syncing: 'Syncing…',
     syncDone: 'Backup complete ✓',
     syncFailed: 'Sync failed',
+    liveSync: 'Live sync on',
+    connecting: 'Connecting...',
     transactions: 'Transactions',
     expenses: 'Expenses',
-    rulesHint: 'In Firebase Console: create a Firestore Database (if missing) and allow read/write in Rules',
+    rulesHint: 'Check your internet connection — data auto-syncs across all your devices. Tap Backup Now to retry',
     shopAddress: 'Shop Address',
     shopPhone: 'Shop Phone',
     proprietorName: 'Proprietor Name',
@@ -615,9 +621,11 @@ const translations: Record<Language, TranslationKeys> = {
     syncing: 'सिंक हो रहा है…',
     syncDone: 'बैकअप पूर्ण ✓',
     syncFailed: 'सिंक विफल',
+    liveSync: 'लाइव सिंक चालू',
+    connecting: 'कनेक्ट हो रहा है...',
     transactions: 'लेनदेन',
     expenses: 'खर्च',
-    rulesHint: 'Firebase Console में Firestore Database बनाएं (न हो तो) और Rules में read/write allow करें',
+    rulesHint: 'इंटरनेट कनेक्शन जांचें — डेटा सभी डिवाइस पर ऑटो सिंक होता है। फिर से कोशिश करने के लिए Backup Now दबाएं',
     shopAddress: 'दुकान का पता',
     shopPhone: 'दुकान का फोन',
     proprietorName: 'स्वामी का नाम',

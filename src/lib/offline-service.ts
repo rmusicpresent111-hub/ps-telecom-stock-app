@@ -25,7 +25,7 @@ import {
 } from './offline-db';
 import { getLocalUser, updateLocalUser } from './local-auth';
 import { generateRecordId } from './id';
-import { notifyLocalDataChanged } from './sync-events';
+import { notifyLocalDataChanged, notifyLocalWipe } from './sync-events';
 import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillingSettings, PaymentMethod } from './types';
 
 // ============ DATE HELPERS (local timezone — never use UTC for business days) ============
@@ -76,6 +76,31 @@ function resolvePeriodRange(options?: { period?: string; date?: string; from?: s
 function stripSync<T>(row: Record<string, unknown>): T {
   const { _synced: _s, _dirty: _d, ...rest } = row;
   return rest as T;
+}
+
+/**
+ * Record an explicit local delete so the cloud sync engine can propagate it
+ * to Firestore (tombstone + cloud doc delete) and thereby to every other
+ * device. Without this, a delete on device A would silently reappear from
+ * the cloud on device B.
+ */
+async function recordPendingDelete(
+  storeName: 'products' | 'expenses' | 'cashEntries' | 'serviceTransactions' | 'bills',
+  itemId: string,
+  userId: string
+): Promise<void> {
+  try {
+    const db = await getOfflineDB();
+    await db.put('pendingDeletes', {
+      id: `${storeName}:${itemId}`,
+      storeName,
+      itemId,
+      userId,
+      deletedAt: Date.now(),
+    });
+  } catch {
+    // non-fatal — worst case the record resurfaces from the cloud mirror
+  }
 }
 
 function sortTxnsDesc(rows: OfflineDBSchema['transactions']['value'][]): OfflineDBSchema['transactions']['value'][] {
@@ -472,6 +497,7 @@ export async function deleteProductOffline(id: string, userId: string): Promise<
   void tx.objectStore('products').delete(id);
   await tx.done;
 
+  await recordPendingDelete('products', id, userId);
   notifyLocalDataChanged(userId);
   return { message: 'Product deleted successfully' };
 }
@@ -791,6 +817,7 @@ export async function deleteExpenseOffline(id: string, userId: string): Promise<
   const row = await db.get('expenses', id);
   if (!row || (userId && row.userId !== userId)) throw new Error('Not found');
   await offlineExpenses.delete(id);
+  await recordPendingDelete('expenses', id, userId);
   notifyLocalDataChanged(userId);
   return { success: true };
 }
@@ -918,6 +945,7 @@ export async function deleteCashEntryOffline(id: string, userId: string): Promis
   const row = await db.get('cashEntries', id);
   if (!row || (userId && row.userId !== userId)) throw new Error('Not found');
   await offlineCashEntries.delete(id);
+  await recordPendingDelete('cashEntries', id, userId);
   notifyLocalDataChanged(userId);
   return { success: true };
 }
@@ -1197,6 +1225,7 @@ export async function deleteServiceTransactionOffline(id: string, userId: string
   const row = await db.get('serviceTransactions', id);
   if (!row || (userId && row.userId !== userId)) throw new Error('Not found');
   await offlineServiceTransactions.delete(id);
+  await recordPendingDelete('serviceTransactions', id, userId);
   notifyLocalDataChanged(userId);
   return { success: true };
 }
@@ -1435,6 +1464,7 @@ export async function deleteBillOffline(id: string, userId: string): Promise<{ s
   // (the caller toasts "Bill deleted" only when the row really went).
   if (!row || row.userId !== userId) throw new Error('Bill not found');
   await db.delete('bills', id);
+  await recordPendingDelete('bills', id, userId);
   notifyLocalDataChanged(userId);
   return { success: true };
 }
@@ -1645,5 +1675,9 @@ export async function importBackupOffline(userId: string, backupData: {
 export async function resetDataOffline(userId: string) {
   await clearOfflineData(userId);
   notifyLocalDataChanged(userId);
+  // Wipe the cloud mirror too — otherwise the cloud copy flows straight back
+  // in on the next sync and "Reset All Data" looks broken (and wipes the
+  // user's data on their OTHER devices as soon as it re-arrives).
+  notifyLocalWipe(userId);
   return { message: 'All data reset successfully' };
 }

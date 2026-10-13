@@ -151,9 +151,17 @@ export default function CloudBackupScreen() {
                 ? 'text-red-300 border-red-400/30 bg-red-400/10'
                 : info?.busy
                   ? 'text-amber-300 border-amber-400/30 bg-amber-400/10'
-                  : 'text-emerald-300 border-emerald-400/30 bg-emerald-400/10'
+                  : info?.live
+                    ? 'text-emerald-300 border-emerald-400/30 bg-emerald-400/10'
+                    : 'text-white/50 border-white/20 bg-white/5'
             }`}>
-              {info?.busy ? t('syncing', language) : info?.lastError ? t('syncFailed', language) : 'Firestore'}
+              {info?.busy
+                ? t('syncing', language)
+                : info?.lastError
+                  ? t('syncFailed', language)
+                  : info?.live
+                    ? t('liveSync', language)
+                    : t('connecting', language)}
             </span>
           </div>
 
