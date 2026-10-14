@@ -1407,3 +1407,25 @@ Work Log:
 Stage Summary:
 - User actions (add/edit/delete transaction, product, expense, bill, etc.) now reach Cloudflare D1 within ~1 second; other devices receive them within ≤12s poll or instantly on app focus
 - User must rebuild the APK (git pull → npm run build:web → npx cap sync android → Android Studio build) to get this timing update on devices
+
+---
+Task ID: 39
+Agent: Z.ai Code (main thread)
+Task: "T&C format PDF-e aschhena + genuine bill style dao + bill-er number e PDF automatic jachhena" — 3 fixes: preserve T&C formatting in PDF, redesign PDF as genuine bill, auto-send PDF to the bill's customer WhatsApp number
+
+Work Log:
+- T&C ROOT CAUSE: terms were squashed into the 6.6pt footer line joined with ' | ' — user's uploaded multi-line format destroyed
+- PDF REDESIGN (generateBillPdf rewritten, A5): classic genuine-invoice look — white letterhead (centered serif shop name, proprietor, address, Ph|GSTIN, double rule), centered TAX INVOICE title, bordered two-cell Bill-To/Bill-No box, FULL-GRID items table (#/ITEM/QTY/RATE/AMOUNT), In-Words line, right-aligned totals, solid-black GRAND TOTAL plate with white text, Paid/Balance Due/Payment rows, Note, QR (52pt) with UPI caption BESIDE it, signature stack (For shop / line / proprietor), pinned thank-you line, thin footer rule. Removed gold-on-midnight certificate styling
+- T&C FIX: dedicated TERMS & CONDITIONS block after Note; split on \r?\n, every line rendered in order (blank lines = gaps), auto-shrink 7.2→5.2pt then graceful '…' own-line ellipsis only if page truly runs out; band freed by pinning QR/signature row at H-104 and trimming header/box/words/totals/note spacing (~15pt reclaimed)
+- VISUAL VERIFICATION: scripts/preview-bill-pdf.ts (bun, imports real generateBillPdf) rendered 2 samples (full GST bill + minimal cash bill); PDFs inspected page-image: all 5 T&C lines at full size, no overlaps, genuine look confirmed (tool-results/bill-preview-*.pdf)
+- WHATSAPP DIRECT-SEND: NEW native/android/WhatsappSender.java (Capacitor local plugin): ACTION_SEND + application/pdf + EXTRA_STREAM(content URI from Capacitor Filesystem cache) + 'jid' = <phone>@s.whatsapp.net + setPackage com.whatsapp|com.whatsapp.w4b → opens THE CUSTOMER's chat with PDF attached (user taps Send — WhatsApp security); returns no-whatsapp/no-phone/error
+- JS: registerPlugin('WhatsappSender'); directWhatsappSend() first in sendBillViaWhatsapp (APK + customerMobile only); new result 'direct' → toast t('directChatOpened') (26 bn/en/hi added); fallback chain (share sheet → download+wa.me) fully intact
+- build-apk.js STEP 5.7: auto-installs plugin after cap sync — copies Java with real package name (com.pstelecom.stockapp), registers registerPlugin(WhatsappSender.class) in MainActivity (idempotent, fail-soft)
+- InvoiceScreen auto-send effect unchanged — now lands directly on the customer's chat in the APK
+- VERIFIED: tsc 0, eslint clean, build:web OK, browser E2E (boot→dashboard→Billing Settings, multiline T&C input works, zero console/page errors)
+- Commit 946b143 pushed to main
+
+Stage Summary:
+- Bill PDF now looks like a real printed invoice; T&C keeps the exact format typed in Settings
+- APK: after rebuild via build-apk.js, generated bills open the customer's own WhatsApp chat with the PDF attached — one Send tap delivers it (no contact picking); WhatsApp/web builds keep share-sheet + wa.me fallbacks
+- User must rebuild the APK (git pull → node scripts/build-apk.js) to get all three fixes + the new native plugin
