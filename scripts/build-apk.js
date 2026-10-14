@@ -287,6 +287,88 @@ function installWhatsappPlugin() {
 }
 installWhatsappPlugin();
 
+// ---------------------------------------------------------------------------
+// STEP 5.7b — Android 11+ PACKAGE VISIBILITY (the "chat list e khujte hochhe"
+// bug). On Android 11+ an app cannot even SEE com.whatsapp unless its manifest
+// declares <queries> for it. Without this, WhatsappSender.java reports
+// "no-whatsapp" on every modern phone and the bill falls back to the generic
+// share sheet → WhatsApp's contact picker → the user has to SEARCH for the
+// customer. Injecting the queries fixes the direct-send path.
+// Idempotent + fail-soft.
+// ---------------------------------------------------------------------------
+function ensureWhatsappQueries() {
+  console.log('\nStep 5.7b: Ensuring Android <queries> for WhatsApp package visibility...');
+  try {
+    const manifestPath = path.join(ANDROID_DIR, 'app', 'src', 'main', 'AndroidManifest.xml');
+    if (!exists(manifestPath)) {
+      console.log('  ⚠️  AndroidManifest.xml not found — skipping (direct-send may show the picker).');
+      return;
+    }
+    let mf = fs.readFileSync(manifestPath, 'utf8');
+    if (mf.includes('com.whatsapp"')) {
+      console.log('  ✓ <queries> already present.');
+      return;
+    }
+    const packages =
+      '<package android:name="com.whatsapp" />\n' +
+      '        <package android:name="com.whatsapp.w4b" />';
+    const firstQueries = mf.indexOf('<queries');
+    if (firstQueries !== -1) {
+      // a <queries> block already exists → inject our packages inside it
+      const openEnd = mf.indexOf('>', firstQueries) + 1;
+      mf = mf.slice(0, openEnd) + '\n        ' + packages + mf.slice(openEnd);
+    } else {
+      // no <queries> block → add one as a sibling right before <application
+      const appIdx = mf.indexOf('<application');
+      if (appIdx === -1) {
+        console.log('  ⚠️  Could not find <application> in the manifest — skipping.');
+        return;
+      }
+      mf = mf.slice(0, appIdx) + '<queries>\n        ' + packages + '\n    </queries>\n    ' + mf.slice(appIdx);
+    }
+    fs.writeFileSync(manifestPath, mf);
+    console.log('  ✅ <queries> injected — the app can now target WhatsApp directly (Android 11+).');
+  } catch (err) {
+    console.log(`  ⚠️  Manifest patch failed (${(err && err.message) || err}) — continuing; share-sheet flow stays active.`);
+  }
+}
+ensureWhatsappQueries();
+
+// ---------------------------------------------------------------------------
+// STEP 5.8 — App version stamp. Writes the version from package.json into
+// android/app/build.gradle (versionName "2.8.0" style) and derives a
+// monotonically increasing versionCode (major*10000 + minor*100 + patch →
+// 2.8.0 = 20800), so every release installs cleanly over the previous one.
+// Idempotent + fail-soft.
+// ---------------------------------------------------------------------------
+function setAndroidVersion() {
+  console.log('\nStep 5.8: Stamping app version into android/app/build.gradle...');
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+    const version = String(pkg.version || '1.0.0');
+    const parts = version.split('.').map((n) => parseInt(n, 10) || 0);
+    const code = (parts[0] || 0) * 10000 + (parts[1] || 0) * 100 + (parts[2] || 0);
+    const gradlePath = path.join(ANDROID_DIR, 'app', 'build.gradle');
+    if (!exists(gradlePath)) {
+      console.log('  ⚠️  android/app/build.gradle not found — skipping version stamp.');
+      return;
+    }
+    let gradle = fs.readFileSync(gradlePath, 'utf8');
+    const before = gradle;
+    gradle = gradle.replace(/versionCode\s+\d+/, `versionCode ${code}`);
+    gradle = gradle.replace(/versionName\s+"[^"]*"/, `versionName "${version}"`);
+    if (gradle !== before) {
+      fs.writeFileSync(gradlePath, gradle);
+      console.log(`  ✅ App version set → ${version} (versionCode ${code}).`);
+    } else {
+      console.log('  ⚠️  versionCode/versionName not found in build.gradle — no changes made.');
+    }
+  } catch (err) {
+    console.log(`  ⚠️  Version stamp failed (${(err && err.message) || err}) — continuing.`);
+  }
+}
+setAndroidVersion();
+
 
 // ---------------------------------------------------------------------------
 // STEP 7 — Compile the APK with Gradle directly (no Android Studio needed).

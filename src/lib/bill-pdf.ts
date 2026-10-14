@@ -591,8 +591,9 @@ async function directWhatsappSend(
     if (res?.sent) return 'opened';
     if (res?.error === 'no-whatsapp') return 'no-whatsapp';
     return 'failed';
-  } catch {
+  } catch (err) {
     // plugin not present (old android/ project) or write failed → generic path
+    console.warn('[bill-pdf] direct WhatsApp send unavailable:', (err as Error)?.message || err);
     return 'failed';
   }
 }

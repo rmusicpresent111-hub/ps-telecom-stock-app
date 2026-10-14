@@ -1,5 +1,6 @@
 package __PACKAGE_NAME__;
 
+import android.content.ClipData;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
@@ -19,8 +20,15 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  *
  *   Intent.ACTION_SEND, type application/pdf,
  *   EXTRA_STREAM  = content:// URI of the cached PDF (Capacitor FileProvider),
+ *   ClipData      = same URI (some WhatsApp builds read the attachment from
+ *                   ClipData; it also carries the URI grant reliably),
  *   "jid" extra   = <phone>@s.whatsapp.net  → targets the exact chat,
  *   setPackage    = com.whatsapp (WhatsApp) or com.whatsapp.w4b (Business).
+ *
+ * Requires <queries> entries for com.whatsapp / com.whatsapp.w4b in
+ * AndroidManifest.xml (Android 11+ package visibility) — build-apk.js
+ * injects them automatically; without them this plugin would report
+ * "no-whatsapp" even with WhatsApp installed.
  *
  * JS side (bill-pdf.ts) falls back to the normal share sheet / wa.me flow
  * when this plugin is missing or reports no-whatsapp.
@@ -38,6 +46,8 @@ public class WhatsappSender extends Plugin {
             call.resolve(new JSObject().put("sent", false).put("error", "no-phone"));
             return;
         }
+        // digits only — "91 98765 43210" / "+91-98765-43210" must both work
+        String digits = phone.replaceAll("\\D", "");
 
         String waPackage = whatsappPackage();
         if (waPackage == null) {
@@ -45,32 +55,52 @@ public class WhatsappSender extends Plugin {
             return;
         }
 
+        // ---- attempt 1: exact chat (jid) with the PDF attached ----
+        if (launchShare(waPackage, digits, fileUri, text, true)) {
+            call.resolve(new JSObject().put("sent", true));
+            return;
+        }
+        // ---- attempt 2: WhatsApp opens with the PDF attached; if the jid
+        //      extra was the problem, dropping it still lands in WhatsApp's
+        //      send sheet with the file ready (chat stays easy to pick) ----
+        if (launchShare(waPackage, digits, fileUri, text, false)) {
+            call.resolve(new JSObject().put("sent", true).put("picked", true));
+            return;
+        }
+        call.resolve(new JSObject().put("sent", false).put("error", "failed"));
+    }
+
+    /** Builds and starts the WhatsApp share intent; true when the activity came up. */
+    private boolean launchShare(String waPackage, String digits, String fileUri, String text, boolean withJid) {
         try {
             Intent intent = new Intent(Intent.ACTION_SEND);
             intent.setType("application/pdf");
             if (fileUri != null && !fileUri.trim().isEmpty()) {
-                intent.putExtra(Intent.EXTRA_STREAM, Uri.parse(fileUri));
+                Uri stream = Uri.parse(fileUri);
+                intent.putExtra(Intent.EXTRA_STREAM, stream);
+                // ClipData: some WhatsApp builds take the attachment from here,
+                // and it propagates the content-URI read grant to WhatsApp.
+                intent.setClipData(ClipData.newRawUri("bill", stream));
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             }
             if (text != null && !text.isEmpty()) {
                 intent.putExtra(Intent.EXTRA_TEXT, text);
             }
-            // WhatsApp's documented-ish extra: target ONE chat by jid.
-            intent.putExtra("jid", phone.trim() + "@s.whatsapp.net");
+            if (withJid) {
+                // WhatsApp's chat-targeting extra: <digits>@s.whatsapp.net
+                intent.putExtra("jid", digits + "@s.whatsapp.net");
+            }
             intent.setPackage(waPackage);
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 
             if (getActivity() != null) {
                 getActivity().startActivity(intent);
-                call.resolve(new JSObject().put("sent", true));
             } else {
                 getContext().startActivity(intent);
-                call.resolve(new JSObject().put("sent", true));
             }
-        } catch (android.content.ActivityNotFoundException e) {
-            call.resolve(new JSObject().put("sent", false).put("error", "no-whatsapp"));
+            return true;
         } catch (Exception e) {
-            call.resolve(new JSObject().put("sent", false).put("error", e.getMessage()));
+            return false;
         }
     }
 

@@ -1429,3 +1429,23 @@ Stage Summary:
 - Bill PDF now looks like a real printed invoice; T&C keeps the exact format typed in Settings
 - APK: after rebuild via build-apk.js, generated bills open the customer's own WhatsApp chat with the PDF attached — one Send tap delivers it (no contact picking); WhatsApp/web builds keep share-sheet + wa.me fallbacks
 - User must rebuild the APK (git pull → node scripts/build-apk.js) to get all three fixes + the new native plugin
+
+---
+Task ID: 40
+Agent: Z.ai Code (main thread)
+Task: "APK er moddhe WhatsApp native features kaj korchena — bill er number e automatic message jachhena, chat list e khujte hochhe" + "app version 2.8.0 koro"
+
+Work Log:
+- ROOT CAUSE (Android 11+ package visibility): build-apk.js never added <queries> for com.whatsapp / com.whatsapp.w4b to AndroidManifest.xml → pm.getPackageInfo("com.whatsapp") threw NameNotFoundException on every modern phone → plugin returned 'no-whatsapp' → every bill fell back to the generic share sheet → WhatsApp's own "Send to…" picker → user had to SEARCH for the customer. Exactly the reported symptom
+- build-apk.js STEP 5.7b (NEW): idempotent AndroidManifest patch — injects <queries><package com.whatsapp /><package com.whatsapp.w4b /></queries> before <application> (or merges into an existing <queries> block); fail-soft. Verified: fresh Capacitor manifest gets correct block, re-run skips, existing-queries case merges
+- WhatsappSender.java HARDENED: digits-only phone normalization in Java; ClipData.newRawUri attached beside EXTRA_STREAM (some WhatsApp builds read the attachment from ClipData and it carries the URI grant); attempt-1 = jid-targeted chat, on any exception attempt-2 re-launches WITHOUT jid (WhatsApp opens with PDF attached, chat picker easy); both packages tried
+- bill-pdf.ts: diagnostic console.warn when direct send unavailable (future debugging)
+- build-apk.js STEP 5.8 (NEW): version stamp — reads package.json version → writes versionName "2.8.0" and versionCode = major*10000+minor*100+patch (= 20800) into android/app/build.gradle (monotonic, installs over older builds); idempotent; verified 1.0/1 → 2.8.0/20800 on a template gradle
+- package.json version 0.2.0 → 2.8.0
+- SANDBOX NOTES: sandbox .git had drifted (stale HEAD vs pushed origin/main 946b143) — re-aligned with fetch+reset, verified tracked repo self-consistent (ui = chart+sonner only, no firebase refs); stray auto-checkpoint commit excluded from history line; sandbox-only dead leftovers (firebase*.ts, CloudBackup/CloudSyncScreen, api/, db.ts, toast/toaster) are NOT on GitHub main and do not affect user builds (api/ + db.ts moved aside for the local web build, as build-apk.js also does)
+- VERIFIED: tsc clean on tracked tree (dead leftovers excluded), eslint clean, npm run build:web OK (static export), preview renders with zero page errors (browser E2E)
+
+Stage Summary:
+- Fixed: WhatsApp bill PDFs couldn't reach the customer's chat automatically because Android 11+ hid WhatsApp from the app (<queries> missing). Now the plugin can see WhatsApp → opens THE CUSTOMER's chat with the PDF attached (jid); if a WhatsApp build ignores jid it still opens WhatsApp with the PDF ready
+- App version is now 2.8.0 (versionName 2.8.0 / versionCode 20800, stamped automatically from package.json on every build)
+- User must rebuild the APK: git pull → node scripts/build-apk.js (or npm run build:web + npx cap sync android + Android Studio) — the manifest <queries> + plugin update + version stamp all land automatically
