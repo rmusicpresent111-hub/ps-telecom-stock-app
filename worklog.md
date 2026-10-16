@@ -1449,3 +1449,20 @@ Stage Summary:
 - Fixed: WhatsApp bill PDFs couldn't reach the customer's chat automatically because Android 11+ hid WhatsApp from the app (<queries> missing). Now the plugin can see WhatsApp → opens THE CUSTOMER's chat with the PDF attached (jid); if a WhatsApp build ignores jid it still opens WhatsApp with the PDF ready
 - App version is now 2.8.0 (versionName 2.8.0 / versionCode 20800, stamped automatically from package.json on every build)
 - User must rebuild the APK: git pull → node scripts/build-apk.js (or npm run build:web + npx cap sync android + Android Studio) — the manifest <queries> + plugin update + version stamp all land automatically
+
+---
+Task ID: 40b
+Agent: Z.ai Code (main thread)
+Task: "Preview error" (recurring) — sandbox cleaner keeps deleting git-ignored src/lib/d1-secrets.ts → "Module not found: './d1-secrets'" → whole preview 500
+
+Work Log:
+- Root cause: d1-secrets.ts is git-ignored by design (token never in git) → platform checkpoint/restore cycles drop it → static import in d1-config.ts kills the ENTIRE page bundle, not just cloud sync
+- Fix layer 1 — scripts/ensure-secrets.mjs (NEW, committed): idempotent boot helper; recreates src/lib/d1-secrets.ts from d1-secrets.example.ts (PASTE_YOUR_ placeholders) ONLY when missing; never touches a real file; plain node:fs (Windows-safe)
+- Fix layer 2 — package.json: dev / build / build:apk / build:web now run ensure-secrets first → fresh clones & Vercel deploys compile; APK builds still hard-fail on placeholders (build-apk.js preflight unchanged) so a shipped APK can never carry dead sync
+- Fix layer 3 — src/instrumentation.ts (NEW, committed): Next.js server hook; on boot + every 15s (unref'd timer) recreates the file from the template if missing → a running dev server self-heals the preview within ~15s of any deletion; production/APK unaffected (file always exists there)
+- VERIFIED live: deleted d1-secrets.ts while dev server ran → file auto-recreated within 20s → preview 200 (log: '[instrumentation] register() loaded, runtime = nodejs'); tsc clean on tracked tree; browser E2E renders, zero page errors
+- d1-sync/d1-config untouched — security model identical (real values still git-ignored; placeholders keep the app 100% offline-functional with cloud sync dormant)
+
+Stage Summary:
+- Preview 500s from a missing d1-secrets.ts can no longer happen: boot scripts + a 15s in-server self-heal cover fresh clones, cleaned workspaces, and running dev servers
+- User's own machine unaffected (their real file is never overwritten; APK preflight still demands real values)
