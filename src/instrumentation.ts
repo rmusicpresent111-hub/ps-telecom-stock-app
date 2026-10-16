@@ -1,5 +1,5 @@
 /**
- * Next.js instrumentation — runs inside the SERVER process (nodejs runtime).
+ * Next.js instrumentation — runs when the SERVER process boots.
  *
  * SELF-HEAL for a missing src/lib/d1-secrets.ts:
  * that file is GIT-IGNORED (the D1 token must never enter git), so a fresh
@@ -7,8 +7,10 @@
  * statically, the whole page bundle fails with
  * "Module not found: Can't resolve './d1-secrets'" (preview 500 / build fail).
  *
- * This hook checks for the file once at boot and then every 15 seconds while
- * the server lives; when it is missing it is recreated from the committed
+ * The Node.js half lives in instrumentation-node.ts and is imported ONLY
+ * inside the NEXT_RUNTIME === 'nodejs' branch — the documented pattern that
+ * keeps node:fs/node:path out of the Edge bundle. It checks the file at boot
+ * and every 15 seconds; when missing it is recreated from the committed
  * template (PASTE_YOUR_ placeholders → the app builds and runs 100% offline,
  * cloud sync simply stays dormant). An existing file is NEVER overwritten.
  *
@@ -16,29 +18,8 @@
  * there; the interval is unref'd so it can never keep a process alive.
  */
 export async function register(): Promise<void> {
-  if (process.env.NEXT_RUNTIME !== 'nodejs') return;
-
-  const fs = await import('node:fs');
-  const path = await import('node:path');
-
-  const heal = (): void => {
-    try {
-      const root = process.cwd();
-      const target = path.join(root, 'src', 'lib', 'd1-secrets.ts');
-      const example = path.join(root, 'src', 'lib', 'd1-secrets.example.ts');
-      if (!fs.existsSync(target) && fs.existsSync(example)) {
-        fs.copyFileSync(example, target);
-        console.log(
-          '[instrumentation] src/lib/d1-secrets.ts was missing — recreated from the template ' +
-            '(placeholders → offline mode; cloud sync OFF until real values are pasted).'
-        );
-      }
-    } catch {
-      // never crash the server for a convenience file
-    }
-  };
-
-  heal();
-  const timer = setInterval(heal, 15_000);
-  if (typeof timer.unref === 'function') timer.unref();
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    const { registerNodeHeal } = await import('./instrumentation-node');
+    registerNodeHeal();
+  }
 }
