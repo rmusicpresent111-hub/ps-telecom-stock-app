@@ -1466,3 +1466,23 @@ Work Log:
 Stage Summary:
 - Preview 500s from a missing d1-secrets.ts can no longer happen: boot scripts + a 15s in-server self-heal cover fresh clones, cleaned workspaces, and running dev servers
 - User's own machine unaffected (their real file is never overwritten; APK preflight still demands real values)
+
+---
+Task ID: 41
+Agent: Z.ai Code (main thread)
+Task: "Ami apk build korechi but native whatsapp sent kaj korchena manual vabe pathate hochhe eta fix koro" — user rebuilt the APK from a fresh clone and WhatsApp direct-send STILL falls back to manual sending
+
+Work Log:
+- Reproduced the user's exact build path (fresh clone → npm run build:apk) and found TWO independent fatal bugs the earlier /tmp/watest verification missed:
+  - Bug A (killer): Capacitor 8's fresh `cap add android` MainActivity is the ONE-LINE template `public class MainActivity extends BridgeActivity {}` — NO onCreate. STEP 5.7's marker `super.onCreate(savedInstanceState);` never matched → "plugin NOT registered" → every WhatsappSender.send() JS call throws UNIMPLEMENTED → bill-pdf.ts catch → Android share-sheet fallback = user picks WhatsApp manually. Confirmed against node_modules/@capacitor/cli/assets/android-template.tar.gz + Bridge.java (registerAllPlugins only loads npm plugins; local plugins MUST be registerPlugin()-ed in MainActivity.onCreate)
+  - Bug B (latent): @capacitor/filesystem v8 writeFile returns a raw `file:///data/user/0/<appId>/cache/…` URI; startActivity with file:// in EXTRA_STREAM/ClipData throws FileUriExposedException (Android 7+) → attachment would fail even with the plugin registered
+- Rewrote native/android/WhatsappSender.java: new toShareableUri() converts file:// (or bare path) → content:// via androidx FileProvider (authority "<applicationId>.fileprovider" — Capacitor template already declares it with <cache-path> coverage); content:// passes through; missing file → error "no-file" so JS uses the share sheet with the real file; kept jid attempt-1 / no-jid attempt-2 / ClipData+FLAG_GRANT_READ
+- Rewrote STEP 5.7 in scripts/build-apk.js as a 3-case MainActivity patcher: (a) already contains WhatsappSender → skip, (b) has super.onCreate(...) → inject registerPlugin right after it, (c) minimal no-onCreate template → inject a complete onCreate (fully-qualified android.os.Bundle, no import juggling) before the class's closing brace; fail-soft preserved
+- package.json version → 2.8.1 (versionCode auto-stamps 20801) so the user can verify the fixed build in Android Settings
+- Test harness (.tmp-test, since deleted) extracted the REAL functions from build-apk.js and ran them against a fixture: fresh minimal template (11/11 checks), idempotency rerun (no duplicates), legacy super.onCreate template — ALL PASSED; node --check + eslint clean; preview 200
+- Cleanup: removed .tmp-test + /tmp/watest2
+
+Stage Summary:
+- Root cause of the recurring complaint: the plugin was never registered in the built APK (Bug A) AND the attachment URI was unshareable (Bug B) — both now fixed and regression-tested
+- User rebuild steps: git pull → npm run build:apk → PS-TELECOM-debug.apk; build log must show "✅ WhatsappSender installed for com.pstelecom.stockapp"; verify version 2.8.1 (20801) in Android Settings
+- WhatsApp still requires one tap on its own Send button (platform policy) — but the customer's chat opens with the PDF attached, no contact picking/manual attach

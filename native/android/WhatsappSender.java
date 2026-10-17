@@ -5,11 +5,15 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 
+import androidx.core.content.FileProvider;
+
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+
+import java.io.File;
 
 /**
  * WhatsappSender — local Capacitor plugin (installed automatically by
@@ -19,11 +23,18 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  * no contact picking, no share sheet. Uses WhatsApp's Android intent API:
  *
  *   Intent.ACTION_SEND, type application/pdf,
- *   EXTRA_STREAM  = content:// URI of the cached PDF (Capacitor FileProvider),
+ *   EXTRA_STREAM  = content:// URI of the cached PDF (FileProvider),
  *   ClipData      = same URI (some WhatsApp builds read the attachment from
  *                   ClipData; it also carries the URI grant reliably),
  *   "jid" extra   = <phone>@s.whatsapp.net  → targets the exact chat,
  *   setPackage    = com.whatsapp (WhatsApp) or com.whatsapp.w4b (Business).
+ *
+ * CRITICAL: the JS side passes the Capacitor Filesystem `file://` URI of the
+ * app's PRIVATE cache dir. Other apps can neither read app-private files nor
+ * receive raw file:// URIs (FileUriExposedException, Android 7+). This plugin
+ * therefore converts the file:// URI into a shareable content:// URI through
+ * the androidx FileProvider that Capacitor's android template already declares
+ * (authority "<applicationId>.fileprovider", <cache-path> covered).
  *
  * Requires <queries> entries for com.whatsapp / com.whatsapp.w4b in
  * AndroidManifest.xml (Android 11+ package visibility) — build-apk.js
@@ -31,7 +42,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  * "no-whatsapp" even with WhatsApp installed.
  *
  * JS side (bill-pdf.ts) falls back to the normal share sheet / wa.me flow
- * when this plugin is missing or reports no-whatsapp.
+ * when this plugin is missing or reports an error.
  */
 @CapacitorPlugin(name = "WhatsappSender")
 public class WhatsappSender extends Plugin {
@@ -55,28 +66,63 @@ public class WhatsappSender extends Plugin {
             return;
         }
 
+        // Convert the private file:// URI into a shareable content:// URI.
+        // WhatsApp physically cannot read app-private files without this.
+        Uri shareable = toShareableUri(fileUri);
+        if (fileUri != null && !fileUri.trim().isEmpty() && shareable == null) {
+            // the PDF file is gone (or outside every FileProvider path) —
+            // report cleanly so JS uses the share sheet with the real file
+            call.resolve(new JSObject().put("sent", false).put("error", "no-file"));
+            return;
+        }
+
         // ---- attempt 1: exact chat (jid) with the PDF attached ----
-        if (launchShare(waPackage, digits, fileUri, text, true)) {
+        if (launchShare(waPackage, digits, shareable, text, true)) {
             call.resolve(new JSObject().put("sent", true));
             return;
         }
         // ---- attempt 2: WhatsApp opens with the PDF attached; if the jid
         //      extra was the problem, dropping it still lands in WhatsApp's
         //      send sheet with the file ready (chat stays easy to pick) ----
-        if (launchShare(waPackage, digits, fileUri, text, false)) {
+        if (launchShare(waPackage, digits, shareable, text, false)) {
             call.resolve(new JSObject().put("sent", true).put("picked", true));
             return;
         }
         call.resolve(new JSObject().put("sent", false).put("error", "failed"));
     }
 
+    /**
+     * file:// (or bare path) → content:// via the Capacitor FileProvider.
+     * Already-content:// URIs pass through untouched. Returns null when the
+     * file does not exist or no provider can serve it.
+     */
+    private Uri toShareableUri(String fileUri) {
+        if (fileUri == null || fileUri.trim().isEmpty()) return null;
+        try {
+            Uri raw = Uri.parse(fileUri.trim());
+            String scheme = raw.getScheme();
+            if ("content".equals(scheme)) return raw; // already shareable
+
+            String fsPath = "file".equals(scheme) ? raw.getPath() : raw.toString();
+            if (fsPath == null || fsPath.isEmpty()) return null;
+            File file = new File(fsPath);
+            if (!file.exists()) return null;
+
+            return FileProvider.getUriForFile(
+                    getContext(),
+                    getContext().getPackageName() + ".fileprovider",
+                    file);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /** Builds and starts the WhatsApp share intent; true when the activity came up. */
-    private boolean launchShare(String waPackage, String digits, String fileUri, String text, boolean withJid) {
+    private boolean launchShare(String waPackage, String digits, Uri stream, String text, boolean withJid) {
         try {
             Intent intent = new Intent(Intent.ACTION_SEND);
             intent.setType("application/pdf");
-            if (fileUri != null && !fileUri.trim().isEmpty()) {
-                Uri stream = Uri.parse(fileUri);
+            if (stream != null) {
                 intent.putExtra(Intent.EXTRA_STREAM, stream);
                 // ClipData: some WhatsApp builds take the attachment from here,
                 // and it propagates the content-URI read grant to WhatsApp.

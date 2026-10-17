@@ -267,18 +267,45 @@ function installWhatsappPlugin() {
     fs.writeFileSync(path.join(javaDir, 'WhatsappSender.java'), java);
 
     // 2) register it in MainActivity (same package → no import needed)
+    //    Capacitor 8's fresh template MainActivity is the ONE-LINE
+    //    "public class MainActivity extends BridgeActivity {}" — no onCreate
+    //    at all — so the old super.onCreate-marker patch silently failed and
+    //    the plugin was NEVER registered (the "WhatsApp direct send broken in
+    //    the built APK" bug). Handle every template shape:
+    //      a) already patched        → skip (idempotent)
+    //      b) has super.onCreate(...) → inject registerPlugin right after it
+    //      c) minimal class, no onCreate → add a complete onCreate with the
+    //         registration (fully-qualified android.os.Bundle → no imports)
     let ma = fs.readFileSync(mainActivity, 'utf8');
-    if (!ma.includes('WhatsappSender')) {
-      const marker = 'super.onCreate(savedInstanceState);';
-      if (!ma.includes(marker)) {
-        console.log('  ⚠️  Could not patch MainActivity (unexpected content) — plugin NOT registered.');
-        return;
-      }
+    if (ma.includes('WhatsappSender')) {
+      console.log('  ✓ WhatsappSender already registered in MainActivity.');
+    } else if (ma.includes('super.onCreate(')) {
       ma = ma.replace(
-        marker,
-        `${marker}\n        // Local plugin: bill PDF → customer's WhatsApp chat directly\n        registerPlugin(WhatsappSender.class);`
+        /(super\.onCreate\([^)]*\);)/,
+        '$1\n        // Local plugin: bill PDF → customer\'s WhatsApp chat directly\n        registerPlugin(WhatsappSender.class);'
       );
       fs.writeFileSync(mainActivity, ma);
+    } else if (!ma.includes('onCreate(')) {
+      const onCreateMethod = [
+        '',
+        '    @Override',
+        '    protected void onCreate(android.os.Bundle savedInstanceState) {',
+        '        super.onCreate(savedInstanceState);',
+        "        // Local plugin: bill PDF → customer's WhatsApp chat directly",
+        '        registerPlugin(WhatsappSender.class);',
+        '    }',
+        ''
+      ].join('\n');
+      const lastBrace = ma.lastIndexOf('}');
+      if (lastBrace === -1) {
+        console.log('  ⚠️  MainActivity.java has no closing brace — plugin NOT registered.');
+        return;
+      }
+      ma = ma.slice(0, lastBrace) + onCreateMethod + ma.slice(lastBrace);
+      fs.writeFileSync(mainActivity, ma);
+    } else {
+      console.log('  ⚠️  MainActivity has onCreate but no super.onCreate call — plugin NOT registered.');
+      return;
     }
     console.log(`  ✅ WhatsappSender installed for ${appId} (direct PDF → customer chat)`);
   } catch (err) {
@@ -360,6 +387,8 @@ function setAndroidVersion() {
     if (gradle !== before) {
       fs.writeFileSync(gradlePath, gradle);
       console.log(`  ✅ App version set → ${version} (versionCode ${code}).`);
+    } else if (gradle.includes(`versionCode ${code}`)) {
+      console.log(`  ✓ Already at ${version} (versionCode ${code}).`);
     } else {
       console.log('  ⚠️  versionCode/versionName not found in build.gradle — no changes made.');
     }
