@@ -22,6 +22,7 @@
 
 import { exportBackupOffline, importBackupOffline } from './offline-service';
 import { clearDirty } from './sync-dirty';
+import { isStaticWebHost } from './d1-config';
 
 // ============ CREDENTIALS (localStorage, per user) ============
 
@@ -407,6 +408,16 @@ export async function d1Query(
   params?: unknown[]
 ): Promise<D1QueryResult> {
   const native = await isNativeCapacitor();
+  // Static-only web hosts (GitHub Pages mirror) have no /api proxy, and the
+  // direct Cloudflare call is CORS-impossible from a browser — fail fast with
+  // a stable code so the UI can explain calmly instead of erroring.
+  if (!native && isStaticWebHost()) {
+    return {
+      ok: false,
+      error: 'Cloud sync is unavailable on this static host',
+      errorCode: 'static_hosting',
+    };
+  }
   const direct = native || webDirectMode;
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   let url: string;

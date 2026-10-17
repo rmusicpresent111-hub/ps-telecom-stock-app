@@ -23,6 +23,7 @@ import {
 } from '@/lib/cloud-d1';
 import { autoRestoreNow, clearAutoRestoreSettling } from '@/lib/auto-restore';
 import { registerBackModal } from '@/lib/modal-back';
+import { isStaticWebHost } from '@/lib/d1-config';
 import {
   scheduleCloudSync,
   runCloudSync,
@@ -38,6 +39,7 @@ import {
   CloudUpload,
   CloudDownload,
   KeyRound,
+  Info,
   Database,
   Loader2,
   CheckCircle2,
@@ -146,6 +148,9 @@ export default function CloudSyncScreen() {
   // Setup Code — one-paste credential transfer to/from the owner's other devices
   const [setupCode, setSetupCode] = useState('');
 
+  // Static-only web mirror (GitHub Pages etc.) — no /api proxy → sync dormant
+  const [staticHost] = useState(() => isStaticWebHost());
+
   // Restore success schedules a delayed navigation — keep the id so an
   // unmount can never leave an orphan timer teleporting the next screen.
   const navTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -171,6 +176,7 @@ export default function CloudSyncScreen() {
   // if that is not configured either, fall back to the manual creds form.
   useEffect(() => {
     if (!user?.id) return;
+    if (staticHost) return; // static mirror: skip cloud probing entirely
     const saved = getD1Credentials(user.id);
     if (saved) {
       // Account/Database IDs prefill normally (sanitized); the token stays hidden.
@@ -542,6 +548,21 @@ export default function CloudSyncScreen() {
             <h1 className="text-lg font-bold neon-glow">{t('cloudSync', language)}</h1>
           </div>
         </div>
+
+        {/* Static web mirror notice — sync engines stay dormant here */}
+        {staticHost && (
+          <div className="glass-card p-4 mb-4 flex items-start gap-3" role="note">
+            <Info size={18} className="text-amber-400 shrink-0 mt-0.5" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-semibold text-amber-300">
+                {t('cloudStaticTitle', language)}
+              </p>
+              <p className="text-xs text-white/60 mt-1 leading-relaxed">
+                {t('cloudStaticBody', language)}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Status card */}
         <motion.div

@@ -118,3 +118,24 @@ export function generateSyncId(): string {
   };
   return `PS-${pick(4)}-${pick(4)}`;
 }
+
+/**
+ * True when the app runs on a STATIC-ONLY web host (GitHub Pages mirror etc.)
+ * where no Next.js server — and therefore no /api/cloud/d1 relay — exists.
+ * Browsers on such hosts cannot reach api.cloudflare.com at all (the Cloudflare
+ * API sends no CORS headers, and its preflight endpoint answers 405), so the
+ * sync engines stay dormant and the UI shows a calm explanation instead.
+ *
+ * NEXT_PUBLIC_STATIC_HOST=1 is stamped at build time for known static deploys;
+ * the hostname check covers any other static-only host.
+ */
+export function isStaticWebHost(): boolean {
+  if (process.env.NEXT_PUBLIC_STATIC_HOST === '1') return true;
+  if (typeof window === 'undefined') return false;
+  try {
+    const h = window.location.hostname;
+    return h === 'github.io' || h.endsWith('.github.io') || h.endsWith('.gitlab.io');
+  } catch {
+    return false;
+  }
+}

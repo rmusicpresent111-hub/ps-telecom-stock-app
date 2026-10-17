@@ -15,7 +15,10 @@
  */
 
 const CACHE = 'ps-telecom-v1';
-const PRECACHE = ['/', '/manifest.json', '/pwa-192.png', '/pwa-512.png'];
+// Base path derived from the SW scope — works both at root (APK / server) and
+// under a sub-path (GitHub Pages mirror, e.g. /ps-telecom-stock-app/).
+const BASE = new URL(self.registration.scope).pathname;
+const PRECACHE = [BASE, `${BASE}manifest.json`, `${BASE}pwa-192.png`, `${BASE}pwa-512.png`];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -40,7 +43,10 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return; // Cloudflare sync etc. — never touch
 
   // Immutable, hashed build assets + icons → cache-first
-  if (url.pathname.startsWith('/_next/static/') || /\.(png|svg|ico|woff2?)$/.test(url.pathname)) {
+  if (
+    url.pathname.startsWith(`${BASE}_next/static/`) ||
+    /\.(png|svg|ico|woff2?)$/.test(url.pathname)
+  ) {
     event.respondWith(
       caches.match(req).then(
         (hit) =>
@@ -64,7 +70,7 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE).then((cache) => cache.put(req, copy));
           return res;
         })
-        .catch(() => caches.match(req).then((hit) => hit || caches.match('/')))
+        .catch(() => caches.match(req).then((hit) => hit || caches.match(BASE)))
     );
   }
 });

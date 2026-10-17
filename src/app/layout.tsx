@@ -18,10 +18,12 @@ export const metadata: Metadata = {
   title: "PS TELECOM - Stock Management",
   description: "Premium stock management app for telecom shops. Track products, manage inventory, calculate profits, and generate reports.",
   keywords: ["PS TELECOM", "Stock Management", "Inventory", "Telecom Shop"],
-  manifest: "/manifest.json",
+  // NEXT_PUBLIC_BASE_PATH is stamped at build time (GitHub Pages mirror);
+  // empty for APK / server builds.
+  manifest: `${process.env.NEXT_PUBLIC_BASE_PATH || ""}/manifest.json`,
   icons: {
-    icon: "/logo.svg",
-    apple: "/apple-touch-icon.png",
+    icon: `${process.env.NEXT_PUBLIC_BASE_PATH || ""}/logo.svg`,
+    apple: `${process.env.NEXT_PUBLIC_BASE_PATH || ""}/apple-touch-icon.png`,
   },
   appleWebApp: {
     capable: true,
@@ -48,11 +50,13 @@ export default function RootLayout({
       <head>
         {/* Fonts are self-hosted via next/font (no external hosts needed).
             connect-src allows: same-origin + dev/HMR + socket.io websockets +
-            api.cloudflare.com (D1 cloud sync). On Android, CapacitorHttp
-            bypasses CORS natively; the CSP entry covers browser/dev builds. */}
+            api.cloudflare.com (D1 cloud sync) + https: (user-deployed sync
+            proxy, e.g. a Cloudflare Worker on workers.dev). On Android,
+            CapacitorHttp bypasses CORS natively; the CSP entry covers
+            browser/dev builds. */}
         <meta
           httpEquiv="Content-Security-Policy"
-          content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' ws: wss: https://api.cloudflare.com; object-src 'none'; base-uri 'self'; form-action 'self'"
+          content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' ws: wss: https://api.cloudflare.com https:; object-src 'none'; base-uri 'self'; form-action 'self'"
         />
       </head>
       <body

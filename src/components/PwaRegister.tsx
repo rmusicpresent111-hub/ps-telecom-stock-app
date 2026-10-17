@@ -21,7 +21,9 @@ export default function PwaRegister() {
       if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local')) return;
 
       const register = () => {
-        navigator.serviceWorker.register('/sw.js').catch(() => {
+        // NEXT_PUBLIC_BASE_PATH is stamped at build time (GitHub Pages mirror)
+        const base = process.env.NEXT_PUBLIC_BASE_PATH || '';
+        navigator.serviceWorker.register(`${base}/sw.js`).catch(() => {
           /* PWA is a bonus — never let it break the app */
         });
       };

@@ -1,5 +1,9 @@
 import type { NextConfig } from "next";
 
+// GitHub Pages project-pages base path (web mirror deploy). Empty for the
+// APK/dev/Vercel builds — only scripts/build-web-pages.js sets WEB_BASE_PATH.
+const WEB_BASE_PATH = process.env.WEB_BASE_PATH || "";
+
 // Baseline security headers applied to every route (dev + prod responses).
 const securityHeaders = [
   {
@@ -23,6 +27,9 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   output: process.env.VERCEL ? undefined : "export",
   reactStrictMode: false,
+  // GitHub Pages project pages serve the site under /<repo>/ — set only for
+  // the web mirror build; APK (file serving) and servers keep the root path.
+  basePath: WEB_BASE_PATH || undefined,
   // APK static export ships client-side JS only — a stray type error (e.g. a
   // leftover file importing an uninstalled package) must never block the
   // user's local `npm run build`. Runtime correctness is guarded by the dev

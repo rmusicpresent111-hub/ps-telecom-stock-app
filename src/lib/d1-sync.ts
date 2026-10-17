@@ -39,10 +39,13 @@ import { DEFAULT_USER_ID } from './local-auth';
 import {
   D1_QUERY_URL,
   D1_API_TOKEN,
+  D1_ACCOUNT_ID,
+  D1_DATABASE_ID,
   getSyncAccount,
   setSyncAccount,
   clearSyncAccount,
   onSyncAccountChanged,
+  isStaticWebHost,
   SYNC_ID_RE,
 } from './d1-config';
 import {
@@ -139,22 +142,75 @@ interface D1ResponseShape {
   errors?: { code?: number; message?: string }[];
 }
 
-/** One D1 statement per request (the API rejects statement arrays). */
+/** Cached native-runtime probe (CapacitorHttp patches fetch → CORS-free). */
+let nativeRt: boolean | null = null;
+async function isNativeRuntime(): Promise<boolean> {
+  if (nativeRt === null) {
+    try {
+      const { Capacitor } = await import('@capacitor/core');
+      nativeRt = Capacitor.isNativePlatform();
+    } catch {
+      nativeRt = false;
+    }
+  }
+  return nativeRt;
+}
+
+/**
+ * One D1 statement per request (the API rejects statement arrays).
+ *
+ * Transport:
+ *  - Native (APK): plain fetch — CapacitorHttp patches fetch natively, so the
+ *    direct api.cloudflare.com call bypasses WebView CORS entirely.
+ *  - Browser (dev server / Vercel / Workers hosting): plain fetch CANNOT call
+ *    api.cloudflare.com (no CORS headers + 405 preflight) — the statement is
+ *    relayed through the same-origin /api/cloud/d1 proxy instead, which answers
+ *    the normalized { ok, rows } shape.
+ */
 async function d1Query<T = Row>(sql: string, params: unknown[] = []): Promise<T[]> {
+  const native = await isNativeRuntime();
   // Timeout via Promise.race (NOT AbortController): CapacitorHttp's native
   // fetch on Android ignores abort signals — race works identically everywhere.
   const exec = (async () => {
-    const res = await fetch(D1_QUERY_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${D1_API_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ sql, params }),
-    });
-    const body = (await res.json().catch(() => null)) as D1ResponseShape | null;
-    if (!res.ok || !body || body.success !== true) {
-      const apiMsg = body?.errors?.[0]?.message || `HTTP ${res.status}`;
+    const res = native
+      ? await fetch(D1_QUERY_URL, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${D1_API_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ sql, params }),
+        })
+      : await fetch('/api/cloud/d1', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            accountId: D1_ACCOUNT_ID,
+            databaseId: D1_DATABASE_ID,
+            apiToken: D1_API_TOKEN,
+            sql,
+            params,
+          }),
+        });
+    const body = (await res
+      .json()
+      .catch(() => null)) as (D1ResponseShape & {
+      ok?: boolean;
+      rows?: Record<string, unknown>[];
+      error?: string;
+    }) | null;
+    if (!res.ok || !body) {
+      const apiMsg = body?.error || body?.errors?.[0]?.message || `HTTP ${res.status}`;
+      throw new Error(`D1: ${apiMsg}`);
+    }
+    // Browser path → same-origin proxy answers the normalized shape.
+    if (typeof body.ok === 'boolean') {
+      if (body.ok !== true) throw new Error(`D1: ${body.error || 'statement failed'}`);
+      return (body.rows ?? []) as T[];
+    }
+    // Native path → raw Cloudflare response.
+    if (body.success !== true) {
+      const apiMsg = body?.errors?.[0]?.message || 'D1: request failed';
       throw new Error(`D1: ${apiMsg}`);
     }
     const first = body?.result?.[0];
@@ -325,6 +381,7 @@ export async function connectSync(
   pin: string,
   mode: ConnectMode
 ): Promise<ConnectResult> {
+  if (isStaticWebHost()) return { ok: false, error: 'static-host' };
   const syncId = syncIdRaw.trim();
   const inputErr = validateConnectInput(syncId, pin, mode);
   if (inputErr) return { ok: false, error: inputErr };
@@ -719,6 +776,7 @@ async function adoptCategory(
 }
 
 async function pullOnce(syncId: string): Promise<{ ok: boolean; error?: string }> {
+  if (isStaticWebHost()) return { ok: false, error: 'static-host' };
   if (!getSyncAccount() || !encKey) return { ok: false, error: 'no-account' };
   if (syncing) return { ok: true, error: 'busy' };
   syncing = true;
@@ -961,6 +1019,7 @@ async function hydrateTombCache(syncId: string): Promise<void> {
 }
 
 async function beginCycle(fullStart: boolean): Promise<void> {
+  if (isStaticWebHost()) return; // static mirror → engine stays dormant
   const acct = getSyncAccount();
   if (!acct) return;
   const syncId = acct.syncId;

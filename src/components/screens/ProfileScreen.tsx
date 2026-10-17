@@ -6,9 +6,9 @@ import { t, type TranslationKeys } from '@/lib/i18n';
 import { getProfileOffline, updateProfileOffline, exportBackupOffline, importBackupOffline, resetDataOffline, localDateStr, getProductsOffline, getBillsOffline } from '@/lib/offline-service';
 import { registerBackModal } from '@/lib/modal-back';
 import { subscribeD1Status, getD1SyncStatus, syncNowD1, connectSync, disconnectSync, type D1SyncStatus } from '@/lib/d1-sync';
-import { getSyncAccount, generateSyncId, type SyncAccount } from '@/lib/d1-config';
+import { getSyncAccount, generateSyncId, isStaticWebHost, type SyncAccount } from '@/lib/d1-config';
 import { motion } from 'framer-motion';
-import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, Receipt, ReceiptText, RefreshCw, CloudUpload, Lock, Repeat2, HandCoins, FileSpreadsheet } from 'lucide-react';
+import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, Receipt, ReceiptText, RefreshCw, CloudUpload, Lock, Repeat2, HandCoins, FileSpreadsheet, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import type { User as UserType, Category } from '@/lib/types';
 
@@ -38,6 +38,8 @@ export default function ProfileScreen() {
     typeof window !== 'undefined' ? getSyncAccount() : null
   );
   const [showSyncDialog, setShowSyncDialog] = useState(false);
+  // Static-only web mirror (GitHub Pages etc.) — sync stays dormant + notice shown
+  const [staticHost] = useState(() => isStaticWebHost());
   const [syncTab, setSyncTab] = useState<'create' | 'join'>('create');
   const [syncIdInput, setSyncIdInput] = useState('');
   const [pinInput, setPinInput] = useState('');
@@ -76,6 +78,7 @@ export default function ProfileScreen() {
         'bad-id': 'd1ErrBadId',
         'bad-pin': 'd1ErrBadPin',
         offline: 'd1ErrOffline',
+        'static-host': 'cloudStaticTitle',
         fail: 'd1ErrFail',
       };
       toast.error(t((keyMap[res.error ?? 'fail'] ?? 'd1ErrFail') as keyof TranslationKeys, language));
@@ -706,6 +709,17 @@ export default function ProfileScreen() {
               <CloudUpload size={18} className="text-sky-300" />
               {t('d1SetupTitle', language)}
             </h3>
+
+            {/* Static web mirror — sync engines stay dormant here */}
+            {staticHost && (
+              <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 mb-4 flex items-start gap-2" role="note">
+                <Info size={15} className="text-amber-400 shrink-0 mt-0.5" aria-hidden="true" />
+                <div>
+                  <p className="text-xs font-semibold text-amber-300">{t('cloudStaticTitle', language)}</p>
+                  <p className="text-[11px] text-white/60 mt-1 leading-relaxed">{t('cloudStaticBody', language)}</p>
+                </div>
+              </div>
+            )}
 
             {/* Tabs */}
             <div className="flex gap-2 mb-4">

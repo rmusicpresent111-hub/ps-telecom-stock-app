@@ -1506,3 +1506,30 @@ Stage Summary:
 - The web version is the same offline-first app + D1 sync, now with three new owner-facing features (Due Book, due alerts, CSV export) and installable-as-app PWA support
 - Access: preview panel link right now; permanent public link = deploy the repo to Vercel (build script already has the VERCEL guard → server mode with API routes)
 - No DB/sync schema changes — APK 2.8.1 and web stay fully interoperable on the same encrypted D1 account
+
+---
+Task ID: 43
+Agent: Z.ai Code (main thread)
+Task: "Web page er link dao" — deliver the web version links: live sync-capable preview + permanent public GitHub Pages mirror on the same codebase
+
+Work Log:
+- Permission reality check (curl against live APIs): the user's Cloudflare token is D1-only — Pages projects = Authentication error, Workers script upload = "No access", token management = 9109; and api.cloudflare.com sends NO Access-Control-Allow-Origin (preflight OPTIONS → 405) → browser-direct D1 is impossible on ANY static host
+- Fixed a REAL latent bug found on the way: d1-sync.ts used plain fetch to api.cloudflare.com — works only in the APK (CapacitorHttp patches fetch) and was silently CORS-dead in every browser; now d1Query picks transport by runtime: native → direct REST (unchanged), browser → same-origin POST /api/cloud/d1 relay (dev server / Vercel / future Worker hosting), with a dual response parser (normalized proxy shape + raw Cloudflare shape)
+- Static-mirror guard: isStaticWebHost() in d1-config.ts (NEXT_PUBLIC_STATIC_HOST build flag + *.github.io/*.gitlab.io sniff); connectSync/pullOnce/beginCycle return early on static hosts; cloud-d1.d1Query fails fast with errorCode 'static_hosting'; amber bn/en/hi notice added to the Profile sync dialog (staticHost state + 'static-host' mapped to cloudStaticTitle) and CloudSyncScreen (notice + cloud-probe skipped)
+- Resurrected-lost i18n repair: the committed i18n.ts was missing ALL 66 cloud-era keys (autoSync*, cloud*, setup*, err*, copy/connecting/never …) — a sandbox restore had rolled i18n.ts back before commit 827cc33, so the cloud UI showed raw key names; re-authored all 66 keys × bn/en/hi (+cloudStaticTitle/cloudStaticBody) — tsc is 100% clean again
+- Dead files re-removed (auto-checkpoint resurrection): src/lib/db.ts (prisma), src/lib/firebase-sync.ts, src/lib/firebase.ts, CloudBackupScreen.tsx, .firebaserc, firebase.json — unimported, referencing uninstalled packages
+- GitHub Pages pipeline: next.config.ts basePath from WEB_BASE_PATH; layout metadata manifest/icons + CSP connect-src (now https:) base-aware; PwaRegister registers ${base}/sw.js; sw.js derives BASE from its own registration scope (root + subpath safe); manifest.json fully relative (id/start_url '.', icons without leading slash)
+- scripts/build-web-pages.js (npm run build:pages): moves src/app/api aside, builds with WEB_BASE_PATH=/ps-telecom-stock-app + NEXT_PUBLIC_STATIC_HOST=1, swaps d1-secrets.ts to the SAFE TEMPLATE so the real Cloudflare token is NEVER bundled into the public mirror (verified: no token string in out/), restores both in a fail-safe exit handler, writes out/.nojekyll + out/404.html, asserts basePath landed in index.html
+- Deployed out/ → gh-pages branch (first push accidentally dropped .nojekyll because `cp -r out/*` skips dotfiles → ALL _next/static 404 on github.io → diagnosed via browser network log, re-pushed with `cp -a out/.`); Pages enabled on the repo (source gh-pages /)
+- version → 2.8.2 (build:pages script added)
+
+E2E verified:
+- Local subpath mirror (python http.server :4173/ps-telecom-stock-app/): splash → Get Started → Skip → dashboard renders; sync dialog shows the amber static-mirror notice; Start sync with 6-char PIN → toast "Cloud sync is off on this mirror" (guard works)
+- LIVE https://rmusicpresent111-hub.github.io/ps-telecom-stock-app/: renders, golden path works (welcome → dashboard → profile → sync dialog + notice), zero page errors, manifest 200, no token in bundle
+- Preview D1 relay: POST /api/cloud/d1 (308 → trailing slash, method+body preserved) returned {"ok":true,"rows":[{"x":1}]} → browser d1-sync now truly works on the preview/server builds
+- tsc 0 errors, eslint clean
+
+Stage Summary:
+- LINK 1 (full sync, same D1): the sandbox preview URL — dev server = server mode with /api/cloud/d1 relay, so auto-sync + cloud backup work from the browser against the SAME encrypted D1 as the APK
+- LINK 2 (permanent public mirror): https://rmusicpresent111-hub.github.io/ps-telecom-stock-app/ — full offline PWA (stock/bills/Due Book/CSV/reports, installable), cloud sync intentionally dormant with a clear in-app notice (tokenless bundle by design)
+- Upgrade paths for permanent sync on the web: (a) user adds "Cloudflare Pages:Edit / Workers Scripts:Edit" to the CF token → deploy a tiny Worker proxy + rebuild mirror with real creds; or (b) import the repo into Vercel (VERCEL guard already in place) → sync out of the box

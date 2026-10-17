@@ -223,6 +223,79 @@ export type TranslationKeys = {
   productsCsv: string;
   billsCsv: string;
   csvExported: string;
+  cloudStaticTitle: string;
+  cloudStaticBody: string;
+  accountId: string;
+  apiToken: string;
+  databaseId: string;
+  autoSync: string;
+  autoSyncDesc: string;
+  autoSyncDone: string;
+  autoSyncFailed: string;
+  autoSyncFirstNote: string;
+  autoSyncLast: string;
+  autoSyncPending: string;
+  autoSyncRunNow: string;
+  autoSyncRunning: string;
+  backingUp: string;
+  backupNow: string;
+  backupToCloud: string;
+  clearCredentials: string;
+  cloudAutoRestoreDoneToast: string;
+  cloudBackup: string;
+  cloudBackupDone: string;
+  cloudBackupOwner: string;
+  cloudDbEmpty: string;
+  cloudInfo: string;
+  cloudManagedDesc: string;
+  cloudManagedTitle: string;
+  cloudRestoreDesc: string;
+  cloudRestoreDone: string;
+  cloudRestoreTitle: string;
+  cloudStatusConnected: string;
+  cloudStatusNotConnected: string;
+  cloudSync: string;
+  cloudUseOwnCreds: string;
+  connecting: string;
+  connectionFailed: string;
+  connectionOk: string;
+  copy: string;
+  copyFailed: string;
+  fillAllFields: string;
+  invalidAccountIdHint: string;
+  invalidDatabaseIdHint: string;
+  invalidSetupCode: string;
+  lastCloudBackup: string;
+  lastSynced: string;
+  liveSync: string;
+  never: string;
+  neverSynced: string;
+  restoreDifferentAccountWarn: string;
+  restoreFromCloud: string;
+  restoring: string;
+  rulesHint: string;
+  saveTestConnection: string;
+  setupCodeConnect: string;
+  setupCodeCopied: string;
+  setupCodeDesc: string;
+  setupCodePasteLabel: string;
+  setupCodeTitle: string;
+  setupGuide: string;
+  syncDone: string;
+  syncFailed: string;
+  syncing: string;
+  tokenSavedHint: string;
+  errTokenInvalid: string;
+  setupStep1: string;
+  setupStep2: string;
+  setupStep3: string;
+  setupStep4: string;
+  setupStep5: string;
+  errMissingCreds: string;
+  errIdsWrong: string;
+  errIdsMalformed: string;
+  errRateLimit: string;
+  errTimeout: string;
   saved: string;
   // Password re-auth + backup-owner safety
   // Fresh-device login guidance (empty local database)
@@ -431,6 +504,79 @@ const translations: Record<Language, TranslationKeys> = {
     productsCsv: 'প্রোডাক্ট CSV',
     billsCsv: 'বিল CSV',
     csvExported: 'CSV ডাউনলোড হয়েছে',
+    cloudStaticTitle: 'ক্লাউড সিঙ্ক এই মিররে বন্ধ',
+    cloudStaticBody: 'এটি অ্যাপের static ওয়েব মিরর (GitHub Pages) — ব্রাউজার থেকে সরাসরি Cloudflare D1 এ সংযোগ সম্ভব নয়। ফোনের APK বা Vercel-এ হোস্ট করা সংস্করণে অটো-সিঙ্ক চলে। এই ব্রাউজারে যা লিখবেন তা এই ডিভাইসেই নিরাপদে থাকবে।',
+    setupStep1: 'dash.cloudflare.com এ লগইন করুন',
+    setupStep2: 'Workers & Pages → D1 থেকে আপনার ডেটাবেস খুলুন',
+    setupStep3: 'Database ID ও Account ID কপি করুন',
+    setupStep4: 'My Profile → API Tokens থেকে একটি টোকেন বানান',
+    setupStep5: 'টোকেনসহ তিনটি মান এখানে পেস্ট করে সংরক্ষণ করুন',
+    accountId: 'অ্যাকাউন্ট আইডি',
+    apiToken: 'API টোকেন',
+    databaseId: 'ডেটাবেস আইডি',
+    autoSync: 'অটো সিঙ্ক',
+    autoSyncDesc: 'ব্যাকআপ ও সিঙ্ক ব্যাকগ্রাউন্ডে নিজেই চলে',
+    autoSyncDone: 'সিঙ্ক সম্পূর্ণ হয়েছে',
+    autoSyncFailed: 'সিঙ্ক ব্যর্থ হয়েছে',
+    autoSyncFirstNote: 'প্রথম সিঙ্কে সব ডেটা যায়, এরপর শুধু পরিবর্তন যায়',
+    autoSyncLast: 'শেষ সিঙ্ক',
+    autoSyncPending: 'পরিবর্তন সিঙ্কের অপেক্ষায়',
+    autoSyncRunNow: 'এখনই সিঙ্ক করুন',
+    autoSyncRunning: 'সিঙ্ক হচ্ছে…',
+    backingUp: 'ব্যাকআপ হচ্ছে…',
+    backupNow: 'এখনই ব্যাকআপ',
+    backupToCloud: 'ক্লাউডে ব্যাকআপ',
+    clearCredentials: 'সংরক্ষিত কী মুছে ফেলুন',
+    cloudAutoRestoreDoneToast: 'ক্লাউড থেকে ডেটা ফিরিয়ে আনা হয়েছে',
+    cloudBackup: 'ক্লাউড ব্যাকআপ',
+    cloudBackupDone: 'ক্লাউড ব্যাকআপ সম্পূর্ণ',
+    cloudBackupOwner: 'মালিক',
+    cloudDbEmpty: 'ক্লাউড ডেটাবেস খালি',
+    cloudInfo: 'আপনার ডেটা এনক্রিপ্ট হয়ে ক্লাউডে যায় — কী ছাড়া কেউ পড়তে পারে না।',
+    cloudManagedDesc: 'এই ডিভাইস অ্যাপ-পরিচালিত ক্লাউড সংযোগ ব্যবহার করছে — কিছু পেস্ট করতে হবে না।',
+    cloudManagedTitle: 'পরিচালিত সংযোগ',
+    cloudRestoreDesc: 'এতে এই ডিভাইসের ডেটা ক্লাউড কপি দিয়ে বদলে যাবে। চালিয়ে যাবেন?',
+    cloudRestoreDone: 'রিস্টোর সম্পূর্ণ হয়েছে',
+    cloudRestoreTitle: 'ক্লাউড থেকে রিস্টোর',
+    cloudStatusConnected: 'সংযুক্ত',
+    cloudStatusNotConnected: 'সংযোগ নেই',
+    cloudSync: 'ক্লাউড সিঙ্ক',
+    cloudUseOwnCreds: 'নিজের কী ব্যবহার করুন',
+    connecting: 'সংযোগ হচ্ছে…',
+    connectionFailed: 'সংযোগ ব্যর্থ হয়েছে',
+    connectionOk: 'সংযোগ ঠিক আছে',
+    copy: 'কপি',
+    copyFailed: 'কপি করা যায়নি',
+    fillAllFields: 'সব ঘর পূরণ করুন',
+    invalidAccountIdHint: '৩২ অক্ষরের হেক্স Account ID দিন',
+    invalidDatabaseIdHint: 'UUID ফরম্যাটের Database ID দিন',
+    invalidSetupCode: 'সেটআপ কোডটি সঠিক নয়',
+    lastCloudBackup: 'শেষ ব্যাকআপ',
+    lastSynced: 'শেষ সিঙ্ক',
+    liveSync: 'লাইভ সিঙ্ক',
+    never: 'কখনো হয়নি',
+    neverSynced: 'কখনো সিঙ্ক হয়নি',
+    restoreDifferentAccountWarn: 'ক্লাউড ব্যাকআপটি {email} অ্যাকাউন্টের — ভিন্ন অ্যাকাউন্টে রিস্টোর করবেন না।',
+    restoreFromCloud: 'ক্লাউড থেকে রিস্টোর করুন',
+    restoring: 'রিস্টোর হচ্ছে…',
+    rulesHint: 'ব্যাকআপ নিয়ম',
+    saveTestConnection: 'সংরক্ষণ ও সংযোগ পরীক্ষা',
+    setupCodeConnect: 'সেটআপ কোড দিয়ে সংযোগ',
+    setupCodeCopied: 'সেটআপ কোড কপি হয়েছে',
+    setupCodeDesc: 'একবার কপি-পেস্টেই এই ডিভাইসের ক্লাউড কী অন্য ডিভাইসে চলে যাবে।',
+    setupCodePasteLabel: 'সেটআপ কোড পেস্ট করুন',
+    setupCodeTitle: 'সেটআপ কোড',
+    setupGuide: 'সেটআপ গাইড',
+    syncDone: 'সিঙ্ক সম্পূর্ণ',
+    syncFailed: 'সিঙ্ক ব্যর্থ',
+    syncing: 'সিঙ্ক হচ্ছে…',
+    tokenSavedHint: 'টোকেন শুধু এই ডিভাইসেই থাকে',
+    errTokenInvalid: 'API টোকেন ভুল বা মেয়াদ শেষ',
+    errMissingCreds: 'Account ID, Database ID ও টোকেন — সবই দরকার',
+    errIdsWrong: 'Account/Database ID টোকেনের সাথে মেলে না',
+    errIdsMalformed: 'আইডির ফরম্যাট ভুল — ড্যাশবোর্ড থেকে আবার কপি করুন',
+    errRateLimit: 'অনেক বেশি অনুরোধ — একটু অপেক্ষা করুন',
+    errTimeout: 'Cloudflare অনুরোধের সময় শেষ',
     saved: 'সংরক্ষিত হয়েছে',
   },
   en: {
@@ -634,6 +780,79 @@ const translations: Record<Language, TranslationKeys> = {
     productsCsv: 'Products CSV',
     billsCsv: 'Bills CSV',
     csvExported: 'CSV downloaded',
+    cloudStaticTitle: 'Cloud sync is off on this mirror',
+    cloudStaticBody: 'This is the static web mirror (GitHub Pages) — browsers cannot reach Cloudflare D1 directly from here. Auto-sync runs on the phone APK or a server-hosted build (Vercel/Workers). Anything you enter here stays safely in this browser.',
+    setupStep1: 'Log in at dash.cloudflare.com',
+    setupStep2: 'Open your database under Workers & Pages → D1',
+    setupStep3: 'Copy the Database ID and Account ID',
+    setupStep4: 'Create an API token under My Profile → API Tokens',
+    setupStep5: 'Paste all three values with the token and Save',
+    accountId: 'Account ID',
+    apiToken: 'API Token',
+    databaseId: 'Database ID',
+    autoSync: 'Auto Sync',
+    autoSyncDesc: 'Backup and sync run automatically in the background',
+    autoSyncDone: 'Sync complete',
+    autoSyncFailed: 'Sync failed',
+    autoSyncFirstNote: 'The first sync uploads everything, after that only changes',
+    autoSyncLast: 'Last sync',
+    autoSyncPending: 'Changes waiting to sync',
+    autoSyncRunNow: 'Sync now',
+    autoSyncRunning: 'Syncing…',
+    backingUp: 'Backing up…',
+    backupNow: 'Backup now',
+    backupToCloud: 'Backup to Cloud',
+    clearCredentials: 'Clear saved credentials',
+    cloudAutoRestoreDoneToast: 'Data restored from the cloud',
+    cloudBackup: 'Cloud Backup',
+    cloudBackupDone: 'Cloud backup complete',
+    cloudBackupOwner: 'Owner',
+    cloudDbEmpty: 'Cloud database is empty',
+    cloudInfo: 'Your data is encrypted before it reaches the cloud — nobody can read it without the key.',
+    cloudManagedDesc: 'This device uses the app-managed cloud connection — nothing to paste.',
+    cloudManagedTitle: 'Managed connection',
+    cloudRestoreDesc: 'This will REPLACE the data on this device with the cloud copy. Continue?',
+    cloudRestoreDone: 'Restore complete',
+    cloudRestoreTitle: 'Restore from cloud',
+    cloudStatusConnected: 'Connected',
+    cloudStatusNotConnected: 'Not connected',
+    cloudSync: 'Cloud Sync',
+    cloudUseOwnCreds: 'Use my own keys',
+    connecting: 'Connecting…',
+    connectionFailed: 'Connection failed',
+    connectionOk: 'Connection OK',
+    copy: 'Copy',
+    copyFailed: 'Copy failed',
+    fillAllFields: 'Fill in all fields',
+    invalidAccountIdHint: 'Enter the 32-character hex Account ID',
+    invalidDatabaseIdHint: 'Enter the UUID-format Database ID',
+    invalidSetupCode: 'Invalid setup code',
+    lastCloudBackup: 'Last backup',
+    lastSynced: 'Last synced',
+    liveSync: 'Live sync',
+    never: 'Never',
+    neverSynced: 'Never synced',
+    restoreDifferentAccountWarn: 'The cloud backup belongs to {email} — do not restore it into a different account.',
+    restoreFromCloud: 'Restore from Cloud',
+    restoring: 'Restoring…',
+    rulesHint: 'Backup rules',
+    saveTestConnection: 'Save & Test Connection',
+    setupCodeConnect: 'Connect with Setup Code',
+    setupCodeCopied: 'Setup code copied',
+    setupCodeDesc: 'One copy-paste carries this device cloud keys to your other device.',
+    setupCodePasteLabel: 'Paste setup code',
+    setupCodeTitle: 'Setup Code',
+    setupGuide: 'Setup guide',
+    syncDone: 'Sync complete',
+    syncFailed: 'Sync failed',
+    syncing: 'Syncing…',
+    tokenSavedHint: 'The token stays on this device only',
+    errTokenInvalid: 'The API token is invalid or expired',
+    errMissingCreds: 'Account ID, Database ID and token are all required',
+    errIdsWrong: 'The Account/Database ID does not match the token',
+    errIdsMalformed: 'The ID format is wrong — copy them again from the dashboard',
+    errRateLimit: 'Too many requests — wait a moment',
+    errTimeout: 'The Cloudflare request timed out',
     saved: 'Saved successfully',
   },
   hi: {
@@ -837,6 +1056,79 @@ const translations: Record<Language, TranslationKeys> = {
     productsCsv: 'प्रोडक्ट CSV',
     billsCsv: 'बिल CSV',
     csvExported: 'CSV डाउनलोड हुआ',
+    cloudStaticTitle: 'इस मिरर पर क्लाउड सिंक बंद है',
+    cloudStaticBody: 'यह ऐप का स्टैटिक वेब मिरर (GitHub Pages) है — ब्राउज़र से सीधे Cloudflare D1 तक पहुँच संभव नहीं है। ऑटो-सिंक फ़ोन APK या सर्वर-होस्टेड बिल्ड (Vercel/Workers) पर चलता है। यहाँ डाला डेटा इसी ब्राउज़र में सुरक्षित रहता है।',
+    setupStep1: 'dash.cloudflare.com पर लॉगिन करें',
+    setupStep2: 'Workers & Pages → D1 के अंतर्गत अपना डेटाबेस खोलें',
+    setupStep3: 'Database ID और Account ID कॉपी करें',
+    setupStep4: 'My Profile → API Tokens से एक टोकन बनाएँ',
+    setupStep5: 'तीनों मान टोकन सहित पेस्ट करके सेव करें',
+    accountId: 'अकाउंट आईडी',
+    apiToken: 'API टोकन',
+    databaseId: 'डेटाबेस आईडी',
+    autoSync: 'ऑटो सिंक',
+    autoSyncDesc: 'बैकअप और सिंक बैकग्राउंड में अपने आप चलता है',
+    autoSyncDone: 'सिंक पूरा हुआ',
+    autoSyncFailed: 'सिंक विफल हुआ',
+    autoSyncFirstNote: 'पहली सिंक में पूरा डेटा जाता है, फिर केवल बदलाव जाते हैं',
+    autoSyncLast: 'अंतिम सिंक',
+    autoSyncPending: 'बदलाव सिंक की प्रतीक्षा में',
+    autoSyncRunNow: 'अभी सिंक करें',
+    autoSyncRunning: 'सिंक हो रहा है…',
+    backingUp: 'बैकअप हो रहा है…',
+    backupNow: 'अभी बैकअप करें',
+    backupToCloud: 'क्लाउड पर बैकअप',
+    clearCredentials: 'सेव की गई कुंजियाँ हटाएँ',
+    cloudAutoRestoreDoneToast: 'क्लाउड से डेटा रिस्टोर हुआ',
+    cloudBackup: 'क्लाउड बैकअप',
+    cloudBackupDone: 'क्लाउड बैकअप पूरा',
+    cloudBackupOwner: 'मालिक',
+    cloudDbEmpty: 'क्लाउड डेटाबेस खाली है',
+    cloudInfo: 'आपका डेटा एन्क्रिप्ट होकर क्लाउड जाता है — कुंजी के बिना कोई नहीं पढ़ सकता।',
+    cloudManagedDesc: 'यह डिवाइस ऐप-प्रबंधিত क्लাউड कনেক्शन उपयोग कर रहा है — कुछ पेस्ट करने की ज़रूरत नहीं।',
+    cloudManagedTitle: 'प्रबंधিত कनेक्शन',
+    cloudRestoreDesc: 'इससे इस डिवাইस का डेटा क्लाउड कॉपी से बदल जाएगा। जारी रखें?',
+    cloudRestoreDone: 'रिस्टोर पूरा हुआ',
+    cloudRestoreTitle: 'क्लाउड से रिस्टोर',
+    cloudStatusConnected: 'कनेक्टेड',
+    cloudStatusNotConnected: 'कनेक्टेड नहीं',
+    cloudSync: 'क्लाउड सिंक',
+    cloudUseOwnCreds: 'अपनी कुंजी उपयोग करें',
+    connecting: 'कनेक्ट हो रहा है…',
+    connectionFailed: 'कनेक्शन विफल',
+    connectionOk: 'कनेक्शन ठीक है',
+    copy: 'कॉपी',
+    copyFailed: 'कॉपी नहीं हुआ',
+    fillAllFields: 'सभी फ़ील्ड भरें',
+    invalidAccountIdHint: '32 अक्षर का हेक्स Account ID दें',
+    invalidDatabaseIdHint: 'UUID फ़ॉर्मेट का Database ID दें',
+    invalidSetupCode: 'सेटअप कोड अमान्य है',
+    lastCloudBackup: 'अंतिम बैकअप',
+    lastSynced: 'अंतिम सिंक',
+    liveSync: 'लाइव सिंक',
+    never: 'कभी नहीं',
+    neverSynced: 'कभी सिंक नहीं हुआ',
+    restoreDifferentAccountWarn: 'क्लाउड बैकअप {email} अकाउंट का है — दूसरे अकाउंट पर रिस्टोर न करें।',
+    restoreFromCloud: 'क्लाउड से रिस्टोर करें',
+    restoring: 'रिस्टोर हो रहा है…',
+    rulesHint: 'बैकअप नियम',
+    saveTestConnection: 'सेव और कनेक्शन जाँच',
+    setupCodeConnect: 'सेटअप कोड से कनेक्ट कরেন',
+    setupCodeCopied: 'सेटअप कोड कॉपी हुआ',
+    setupCodeDesc: 'एक कॉपी-पेस्ट में इस डिवाइस की क्लाउड कुंजी दूसरे डिवाइस पर चली जाएगी।',
+    setupCodePasteLabel: 'सेटअप कोड पेस্ট करें',
+    setupCodeTitle: 'सेटअप कोड',
+    setupGuide: 'सेटअप गाइड',
+    syncDone: 'सिंক पूरा',
+    syncFailed: 'सिंक विफল',
+    syncing: 'सिंक हो रहा है…',
+    tokenSavedHint: 'टोकन केवल इसी डिवाइस पर रहता है',
+    errTokenInvalid: 'API टोकन अमान्य या समाप्त',
+    errMissingCreds: 'Account ID, Database ID और टोकन — तीनों चाहिए',
+    errIdsWrong: 'Account/Database ID टोकन से मेल नहीं खाता',
+    errIdsMalformed: 'आईडी फ़ॉर्मेट गलत है — डैशबोर्ड से फिर कॉपी करें',
+    errRateLimit: 'बहुत अधिक अनुरोध — थोड़ा रुकें',
+    errTimeout: 'Cloudflare अनुरोध का समय समाप्त',
     saved: 'सहेजा गया',
   },
 };
