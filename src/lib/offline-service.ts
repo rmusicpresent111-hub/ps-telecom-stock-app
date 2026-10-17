@@ -627,10 +627,11 @@ export async function getTransactionsOffline(userId: string, options?: { type?: 
 // ============ DASHBOARD (Local) ============
 
 export async function getDashboardOffline(userId: string) {
-  const [localProducts, localCategories, localTransactions] = await Promise.all([
+  const [localProducts, localCategories, localTransactions, localBills] = await Promise.all([
     offlineProducts.getAll(userId),
     offlineCategories.getAll(userId),
     offlineTransactions.getAll(userId),
+    offlineBills.getAll(userId),
   ]);
 
   const products = localProducts.map(p => stripSync<Product>(p));
@@ -706,12 +707,18 @@ export async function getDashboardOffline(userId: string) {
     return sum + ((tx.totalAmount || 0) - cost);
   }, 0);
 
+  // ---- Due Book aggregates (customer credit) — same pass, no extra store scan
+  const totalDue = round2(localBills.reduce((sum, b) => sum + (b.dueAmount || 0), 0));
+  const dueBills = localBills.filter(b => (b.dueAmount || 0) > 0.009).length;
+
   return {
     stats: {
       totalItems: products.length,
       lowItems,
       todayTransactions: todayTxns.length,
       stockValue,
+      totalDue,
+      dueBills,
     },
     lowStockProducts,
     recentTransactions,
@@ -1467,6 +1474,45 @@ export async function deleteBillOffline(id: string, userId: string): Promise<{ s
   await recordPendingDelete('bills', id, userId);
   notifyLocalDataChanged(userId);
   return { success: true };
+}
+
+/**
+ * Record a payment against a bill's due (Due Book). Passing no amount clears
+ * the ENTIRE due (full settlement); a partial amount reduces the due by that
+ * much. The updated `updatedAt` makes the D1 push pick the bill up on the
+ * next sync — the customer's state reaches every device on the same account.
+ */
+export async function markBillPaidOffline(
+  id: string,
+  userId: string,
+  amount?: number,
+): Promise<{ bill: Bill }> {
+  const db = await getOfflineDB();
+  const row = await db.get('bills', id);
+  if (!row || row.userId !== userId) throw new Error('Bill not found');
+
+  const total = Number(row.total) || 0;
+  const due = Number(row.dueAmount) || 0;
+  if (due <= 0) throw new Error('This bill has no due left');
+
+  let pay = amount === undefined ? due : round2(Math.max(0, Number(amount) || 0));
+  pay = Math.min(pay, due);
+
+  const paidAmount = round2(Math.min(total, (Number(row.paidAmount) || 0) + pay));
+  const dueAmount = round2(total - paidAmount);
+
+  const next = {
+    ...row,
+    paidAmount,
+    dueAmount,
+    // A full settlement makes the payment obvious in every list/report.
+    paymentMethod: dueAmount === 0 && row.paymentMethod === 'due' ? 'cash' : row.paymentMethod,
+    updatedAt: new Date().toISOString(),
+  } as OfflineDBSchema['bills']['value'];
+
+  await db.put('bills', next);
+  notifyLocalDataChanged(userId);
+  return { bill: next as unknown as Bill };
 }
 
 // ============ BACKUP (Local) ============

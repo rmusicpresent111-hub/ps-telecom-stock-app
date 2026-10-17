@@ -6,7 +6,7 @@ import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { getDashboard } from '@/lib/offline-service';
 import { DashboardStats, Category, Product } from '@/lib/types';
-import { Search, Plus, Package, AlertTriangle, ArrowLeftRight, IndianRupee, User, ChevronRight, TrendingUp, BarChart3, ArrowUpRight, Wrench } from 'lucide-react';
+import { Search, Plus, Package, AlertTriangle, ArrowLeftRight, IndianRupee, User, ChevronRight, TrendingUp, BarChart3, ArrowUpRight, Wrench, HandCoins } from 'lucide-react';
 import { toast } from 'sonner';
 import dynamic from 'next/dynamic';
 
@@ -306,6 +306,8 @@ export default function DashboardScreen() {
     addCategory: t('addCategory', language),
     lowStockAlert: t('lowStockAlert', language),
     lowStockMsg: t('lowStockMsg', language).toLowerCase(),
+    dueBook: t('dueBook', language),
+    dueBillsLabel: t('dueBillsLabel', language),
   }), [language]);
 
   return (
@@ -390,7 +392,7 @@ export default function DashboardScreen() {
         {/* Low stock alert */}
         {lowStockProducts.length > 0 && (
           <div
-            className="glass-card p-4 mb-6 border-orange-500/30"
+            className="glass-card p-4 mb-4 border-orange-500/30"
             onClick={() => navigateToTab('product-list')}
             role="button"
           >
@@ -402,6 +404,29 @@ export default function DashboardScreen() {
                 <p className="text-sm font-semibold text-orange-400">{labels.lowStockAlert}</p>
                 <p className="text-xs text-white/60">
                   {lowStockProducts.length} {labels.lowStockMsg}
+                </p>
+              </div>
+              <ChevronRight size={18} className="text-white/40" />
+            </div>
+          </div>
+        )}
+
+        {/* Due Book alert — customer credit waiting to be collected */}
+        {!loading && (stats?.totalDue ?? 0) > 0 && (
+          <div
+            className="glass-card p-4 mb-6 border-red-500/30 cursor-pointer hover:border-red-500/50 transition-colors"
+            onClick={() => navigateTo('due-book')}
+            role="button"
+            aria-label={labels.dueBook}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
+                <HandCoins size={20} className="text-red-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-red-400">{labels.dueBook}</p>
+                <p className="text-xs text-white/60 truncate">
+                  ₹{(stats?.totalDue ?? 0).toLocaleString('en-IN')} · {stats?.dueBills ?? 0} {labels.dueBillsLabel}
                 </p>
               </div>
               <ChevronRight size={18} className="text-white/40" />

@@ -3,12 +3,12 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t, type TranslationKeys } from '@/lib/i18n';
-import { getProfileOffline, updateProfileOffline, exportBackupOffline, importBackupOffline, resetDataOffline, localDateStr } from '@/lib/offline-service';
+import { getProfileOffline, updateProfileOffline, exportBackupOffline, importBackupOffline, resetDataOffline, localDateStr, getProductsOffline, getBillsOffline } from '@/lib/offline-service';
 import { registerBackModal } from '@/lib/modal-back';
 import { subscribeD1Status, getD1SyncStatus, syncNowD1, connectSync, disconnectSync, type D1SyncStatus } from '@/lib/d1-sync';
 import { getSyncAccount, generateSyncId, type SyncAccount } from '@/lib/d1-config';
 import { motion } from 'framer-motion';
-import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, Receipt, ReceiptText, RefreshCw, CloudUpload, Lock, Repeat2 } from 'lucide-react';
+import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, Receipt, ReceiptText, RefreshCw, CloudUpload, Lock, Repeat2, HandCoins, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
 import type { User as UserType, Category } from '@/lib/types';
 
@@ -197,6 +197,65 @@ export default function ProfileScreen() {
     fileInputRef.current?.click();
   };
 
+  /**
+   * CSV data export — the RAW product master / bills register (the Reports
+   * screen already exports computed reports). Proper escaping keeps commas &
+   * quotes inside names from corrupting columns; a UTF-8 BOM makes Excel open
+   * Bangla/Hindi text correctly instead of mojibake.
+   */
+  const handleExportCsv = async (kind: 'products' | 'bills') => {
+    if (!user?.id) return;
+    try {
+      const esc = (v: unknown) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+      let csv = '\uFEFF';
+      if (kind === 'products') {
+        const products = await getProductsOffline(user.id);
+        csv += 'Name,Category,Quantity,Box,Purchase Price,Selling Price,Low Stock Alert,Value\n';
+        for (const p of products) {
+          csv += [
+            esc(p.name),
+            esc(p.category?.name || p.categoryId),
+            p.quantity,
+            esc(p.boxNumber),
+            p.purchasePrice,
+            p.sellingPrice,
+            p.lowStockThreshold,
+            p.quantity * p.purchasePrice,
+          ].join(',') + '\n';
+        }
+      } else {
+        const bills = await getBillsOffline(user.id);
+        csv += 'Bill No,Date,Customer,Mobile,Items,Subtotal,Discount,GST,Total,Paid,Due,Payment\n';
+        for (const b of bills) {
+          csv += [
+            esc(b.billNumber),
+            b.date,
+            esc(b.customerName),
+            esc(b.customerMobile),
+            esc(b.items.map(i => `${i.name} x${i.quantity}`).join('; ')),
+            b.subtotal,
+            b.discountAmount,
+            b.gstAmount,
+            b.total,
+            b.paidAmount,
+            b.dueAmount,
+            b.paymentMethod,
+          ].join(',') + '\n';
+        }
+      }
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ps-telecom-${kind}-${localDateStr()}.csv`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      toast.success(t('csvExported', language));
+    } catch {
+      toast.error(t('error', language));
+    }
+  };
+
   // File selection only PARSES the backup — the import itself happens after
   // the confirmation dialog, so nobody can wipe the device by dropping a
   // file in by accident.
@@ -372,6 +431,21 @@ export default function ProfileScreen() {
             <span className="text-xs text-white/40">₹</span>
           </button>
 
+          {/* Due Book — customer credit tracking */}
+          <button
+            onClick={() => navigateTo('due-book')}
+            className="glass-card w-full p-4 flex items-center justify-between"
+          >
+            <div className="flex items-center gap-3">
+              <HandCoins size={18} className="text-red-400" />
+              <div className="text-left">
+                <span className="text-sm block">{t('dueBook', language)}</span>
+                <span className="text-[10px] text-white/40">{t('dueBookDesc', language)}</span>
+              </div>
+            </div>
+            <span className="text-xs text-white/40">₹</span>
+          </button>
+
           {/* Cloud Sync (D1) — setup / status + manual sync */}
           <button
             onClick={syncAccount ? handleSyncNow : openSyncDialog}
@@ -489,6 +563,28 @@ export default function ProfileScreen() {
             accept=".json"
             className="hidden"
           />
+
+          {/* CSV data export — products & bills open in Excel/Sheets */}
+          <div className="pt-2">
+            <p className="text-xs text-white/40 mb-2">{t('exportCsvTitle', language)}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => handleExportCsv('products')}
+              className="glass-card p-4 flex flex-col items-center gap-2"
+            >
+              <FileSpreadsheet size={18} className="text-emerald-400" />
+              <span className="text-xs font-medium">{t('productsCsv', language)}</span>
+            </button>
+            <button
+              onClick={() => handleExportCsv('bills')}
+              className="glass-card p-4 flex flex-col items-center gap-2"
+            >
+              <FileSpreadsheet size={18} className="text-amber-300" />
+              <span className="text-xs font-medium">{t('billsCsv', language)}</span>
+            </button>
+          </div>
+          <p className="text-[10px] text-white/30 px-1 -mt-1">{t('exportCsvDesc', language)}</p>
 
           {/* Reset All Data */}
           <button

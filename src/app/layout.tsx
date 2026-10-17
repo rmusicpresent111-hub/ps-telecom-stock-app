@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
+import PwaRegister from "@/components/PwaRegister";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -17,8 +18,15 @@ export const metadata: Metadata = {
   title: "PS TELECOM - Stock Management",
   description: "Premium stock management app for telecom shops. Track products, manage inventory, calculate profits, and generate reports.",
   keywords: ["PS TELECOM", "Stock Management", "Inventory", "Telecom Shop"],
+  manifest: "/manifest.json",
   icons: {
     icon: "/logo.svg",
+    apple: "/apple-touch-icon.png",
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "PS TELECOM",
   },
 };
 
@@ -50,6 +58,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
+        <PwaRegister />
         {children}
         <Toaster
           position="top-center"

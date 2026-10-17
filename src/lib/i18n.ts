@@ -203,6 +203,26 @@ export type TranslationKeys = {
   billDeleted: string;
   viewBill: string;
   soldAmount: string;
+  // Due Book (customer credit tracking)
+  dueBook: string;
+  dueBookDesc: string;
+  totalDue: string;
+  dueCustomersLabel: string;
+  dueBillsLabel: string;
+  markPaid: string;
+  markPaidConfirm: string;
+  paymentRecorded: string;
+  whatsappRemind: string;
+  noDues: string;
+  noDuesDesc: string;
+  searchDueCustomer: string;
+  dueRemindMsg: string;
+  // CSV data export
+  exportCsvTitle: string;
+  exportCsvDesc: string;
+  productsCsv: string;
+  billsCsv: string;
+  csvExported: string;
   saved: string;
   // Password re-auth + backup-owner safety
   // Fresh-device login guidance (empty local database)
@@ -393,6 +413,24 @@ const translations: Record<Language, TranslationKeys> = {
     billDeleted: 'বিল মুছে ফেলা হয়েছে',
     viewBill: 'বিল দেখুন',
     soldAmount: 'বিক্রয়',
+    dueBook: 'বাকির খাতা',
+    dueBookDesc: 'কার কত বাকি — এক জায়গায়',
+    totalDue: 'মোট বাকি',
+    dueCustomersLabel: 'গ্রাহক',
+    dueBillsLabel: 'বিল',
+    markPaid: 'পরিশোধ হয়েছে',
+    markPaidConfirm: 'পুরো বাকি পরিশোধ হিসেবে নেবেন?',
+    paymentRecorded: 'পেমেন্ট হয়ে গেছে',
+    whatsappRemind: 'রিমাইন্ডার',
+    noDues: 'কোনো বাকি নেই 🎉',
+    noDuesDesc: 'সব গ্রাহকের হিসাব পরিষ্কার',
+    searchDueCustomer: 'নাম বা নম্বর দিয়ে খুঁজুন…',
+    dueRemindMsg: 'নমস্কার {name}, আপনার বাকি আছে ₹{amount} ({bills}টি বিল)। অনুগ্রহ করে পরিশোধ করুন। — {shop}',
+    exportCsvTitle: 'ডেটা এক্সপোর্ট (CSV)',
+    exportCsvDesc: 'Excel/Gmail-এ খোলা যাবে',
+    productsCsv: 'প্রোডাক্ট CSV',
+    billsCsv: 'বিল CSV',
+    csvExported: 'CSV ডাউনলোড হয়েছে',
     saved: 'সংরক্ষিত হয়েছে',
   },
   en: {
@@ -578,6 +616,24 @@ const translations: Record<Language, TranslationKeys> = {
     billDeleted: 'Bill deleted',
     viewBill: 'View Bill',
     soldAmount: 'Sales',
+    dueBook: 'Due Book',
+    dueBookDesc: 'Who owes what — all in one place',
+    totalDue: 'Total Due',
+    dueCustomersLabel: 'Customers',
+    dueBillsLabel: 'Bills',
+    markPaid: 'Mark Paid',
+    markPaidConfirm: 'Record the FULL due as paid?',
+    paymentRecorded: 'Payment recorded',
+    whatsappRemind: 'Remind',
+    noDues: 'No dues 🎉',
+    noDuesDesc: 'Every customer is fully settled',
+    searchDueCustomer: 'Search name or number…',
+    dueRemindMsg: 'Hello {name}, you have ₹{amount} due ({bills} bills) at {shop}. Kindly pay at your earliest convenience.',
+    exportCsvTitle: 'Data Export (CSV)',
+    exportCsvDesc: 'Opens in Excel / Google Sheets',
+    productsCsv: 'Products CSV',
+    billsCsv: 'Bills CSV',
+    csvExported: 'CSV downloaded',
     saved: 'Saved successfully',
   },
   hi: {
@@ -763,6 +819,24 @@ const translations: Record<Language, TranslationKeys> = {
     billDeleted: 'बिल मिटा दिया गया',
     viewBill: 'बिल देखें',
     soldAmount: 'बिक्री',
+    dueBook: 'बकाया बही',
+    dueBookDesc: 'किसका कितना बकाया — एक जगह',
+    totalDue: 'कुल बकाया',
+    dueCustomersLabel: 'ग्राहक',
+    dueBillsLabel: 'बिल',
+    markPaid: 'भुगतान हो गया',
+    markPaidConfirm: 'पूरा बकाया भुगतान के रूप में दर्ज करें?',
+    paymentRecorded: 'भुगतान दर्ज हुआ',
+    whatsappRemind: 'रिमाइंडर',
+    noDues: 'कोई बकाया नहीं 🎉',
+    noDuesDesc: 'सभी ग्राहकों का हिसाब साफ़',
+    searchDueCustomer: 'नाम या नंबर से खोजें…',
+    dueRemindMsg: 'नमस्ते {name}, आपका ₹{amount} बकाया है ({bills} बिल)। कृपया भुगतान करें। — {shop}',
+    exportCsvTitle: 'डेटा एक्सपोर्ट (CSV)',
+    exportCsvDesc: 'Excel/Google Sheets में खुलेगा',
+    productsCsv: 'प्रोडक्ट CSV',
+    billsCsv: 'बिल CSV',
+    csvExported: 'CSV डाउनलोड हुआ',
     saved: 'सहेजा गया',
   },
 };

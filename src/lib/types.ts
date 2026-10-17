@@ -19,6 +19,7 @@ export type Screen =
   | 'invoice'
   | 'billing-settings'
   | 'daily-book'
+  | 'due-book'
   | 'service-category';
 
 export type Language = 'bn' | 'en' | 'hi';
@@ -78,6 +79,10 @@ export interface DashboardStats {
   lowItems: number;
   todayTransactions: number;
   stockValue: number;
+  /** Sum of all bills' dueAmount — powers the dashboard Due Book banner. */
+  totalDue: number;
+  /** How many bills still carry a due. */
+  dueBills: number;
 }
 
 export interface CashEntry {

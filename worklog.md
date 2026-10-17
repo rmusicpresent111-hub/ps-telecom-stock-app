@@ -1486,3 +1486,23 @@ Stage Summary:
 - Root cause of the recurring complaint: the plugin was never registered in the built APK (Bug A) AND the attachment URI was unshareable (Bug B) — both now fixed and regression-tested
 - User rebuild steps: git pull → npm run build:apk → PS-TELECOM-debug.apk; build log must show "✅ WhatsappSender installed for com.pstelecom.stockapp"; verify version 2.8.1 (20801) in Android Settings
 - WhatsApp still requires one tap on its own Send button (platform policy) — but the customer's chat opens with the PDF attached, no contact picking/manual attach
+
+---
+Task ID: 42
+Agent: Z.ai Code (main thread)
+Task: "ei app tar ekta web version banao, aro features add kore same database connect kore web version dao, ami link diye access korbo" — full-featured web version on the same D1 database
+
+Work Log:
+- Explored the codebase: the app already IS a web app (Next.js) — the web version = the same codebase served over HTTP; D1 cloud sync (d1-sync.ts) already works from any browser, so "same database" holds by construction. Decision: keep one codebase, add web-only value on top of EXISTING synced stores (bills/products) — zero sync-schema changes needed
+- FEATURE 1 — Due Book (বাকির খাতা): new 'due-book' Screen + DueBookScreen.tsx; bills with dueAmount>0 grouped by customer (mobile→name key), grand-total summary card, search, expandable per-customer bill lists, two-tap "Mark Paid" (markBillPaidOffline in offline-service.ts — full or partial payment, bumps updatedAt → rides the normal D1 push), WhatsApp reminder via openWhatsappChat with i18n template (bn/en/hi)
+- FEATURE 2 — Dashboard due alert: getDashboardOffline now also loads bills → stats.totalDue + stats.dueBills; DashboardScreen renders a red Due Book banner (amount + bill count) when totalDue>0 → deep-links to the screen
+- FEATURE 3 — CSV data export: Profile gets "Data Export (CSV)" — Products CSV (name/category/qty/box/prices/value) + Bills CSV (full register incl. paid/due); UTF-8 BOM so Excel renders Bangla/Hindi correctly; proper quote escaping
+- FEATURE 4 — PWA: public/manifest.json (standalone, #091413, 192/512 icons generated from the logo via sharp) + apple-touch-icon + minimal public/sw.js (network-first navigations w/ cached shell fallback, cache-first /_next/static) + PwaRegister.tsx registering ONLY on production non-localhost origins (never in next dev / preview / APK)
+- i18n: 20 new keys × bn/en/hi (dueBook…csvExported, dueRemindMsg template with {name}/{amount}/{bills}/{shop})
+- Cleanup: git rm dead toast.tsx / toaster.tsx / use-toast.ts (unimported, imported uninstalled @radix-ui/react-toast — resurrected by a sandbox auto-checkpoint after commit bc9ac4f had removed them); tsc now 100% clean on tracked tree
+- E2E (agent-browser): welcome→skip→dashboard; add product → stock out 2×₹1500 → create e-Bill (Rahim Miya, due) → dashboard showed Due Book banner ₹3,000 → Due Book listed the customer group → expand → two-tap Mark Paid ("Record the FULL due as paid?" → "Payment recorded") → Total Due ₹0.00 → No-dues empty state; Products/Bills CSV → "CSV downloaded" toast; ZERO page errors / console errors
+
+Stage Summary:
+- The web version is the same offline-first app + D1 sync, now with three new owner-facing features (Due Book, due alerts, CSV export) and installable-as-app PWA support
+- Access: preview panel link right now; permanent public link = deploy the repo to Vercel (build script already has the VERCEL guard → server mode with API routes)
+- No DB/sync schema changes — APK 2.8.1 and web stay fully interoperable on the same encrypted D1 account
