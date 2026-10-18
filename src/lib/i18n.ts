@@ -297,6 +297,9 @@ export type TranslationKeys = {
   errRateLimit: string;
   errTimeout: string;
   saved: string;
+  // Web Admin Panel entry (Profile screen, browser only)
+  adminPanel: string;
+  adminPanelDesc: string;
   // Password re-auth + backup-owner safety
   // Fresh-device login guidance (empty local database)
   // Setup Code — one-paste credential transfer across the owner's devices
@@ -578,6 +581,8 @@ const translations: Record<Language, TranslationKeys> = {
     errRateLimit: 'অনেক বেশি অনুরোধ — একটু অপেক্ষা করুন',
     errTimeout: 'Cloudflare অনুরোধের সময় শেষ',
     saved: 'সংরক্ষিত হয়েছে',
+    adminPanel: 'অ্যাডমিন প্যানেল (ওয়েব)',
+    adminPanelDesc: 'ব্রাউজারে আলাদা Vyapar-স্টাইল কনসোল — একই ডেটাবেস',
   },
   en: {
     appName: 'PS TELECOM',
@@ -854,6 +859,8 @@ const translations: Record<Language, TranslationKeys> = {
     errRateLimit: 'Too many requests — wait a moment',
     errTimeout: 'The Cloudflare request timed out',
     saved: 'Saved successfully',
+    adminPanel: 'Admin Panel (Web)',
+    adminPanelDesc: 'Separate Vyapar-style console in the browser — same database',
   },
   hi: {
     appName: 'PS TELECOM',
@@ -1130,6 +1137,8 @@ const translations: Record<Language, TranslationKeys> = {
     errRateLimit: 'बहुत अधिक अनुरोध — थोड़ा रुकें',
     errTimeout: 'Cloudflare अनुरोध का समय समाप्त',
     saved: 'सहेजा गया',
+    adminPanel: 'एडमिन पैनल (वेब)',
+    adminPanelDesc: 'ब्राउज़र में अलग Vyapar-स्टाइल कंसोल — वही डेटाबेस',
   },
 };
 

@@ -8,9 +8,16 @@ import { registerBackModal } from '@/lib/modal-back';
 import { subscribeD1Status, getD1SyncStatus, syncNowD1, connectSync, disconnectSync, type D1SyncStatus } from '@/lib/d1-sync';
 import { getSyncAccount, generateSyncId, isStaticWebHost, type SyncAccount } from '@/lib/d1-config';
 import { motion } from 'framer-motion';
-import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, Receipt, ReceiptText, RefreshCw, CloudUpload, Lock, Repeat2, HandCoins, FileSpreadsheet, Info } from 'lucide-react';
+import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, Receipt, ReceiptText, RefreshCw, CloudUpload, Lock, Repeat2, HandCoins, FileSpreadsheet, Info, Monitor } from 'lucide-react';
 import { toast } from 'sonner';
 import type { User as UserType, Category } from '@/lib/types';
+
+/** True inside the Capacitor APK — the Admin Panel link is browser-only. */
+function isNativeApp(): boolean {
+  if (typeof window === 'undefined') return true;
+  const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+  return typeof cap?.isNativePlatform === 'function' && cap.isNativePlatform();
+}
 
 export default function ProfileScreen() {
   const {
@@ -588,6 +595,26 @@ export default function ProfileScreen() {
             </button>
           </div>
           <p className="text-[10px] text-white/30 px-1 -mt-1">{t('exportCsvDesc', language)}</p>
+
+          {/* Web Admin Panel — separate Vyapar-style console (browser only,
+              hidden inside the APK where an admin/ link would leave the app) */}
+          {!isNativeApp() && (
+            <a
+              href="admin/"
+              target="_blank"
+              rel="noreferrer"
+              className="glass-card w-full p-4 flex items-center justify-between hover:border-amber-300/40 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <Monitor size={18} className="text-amber-300" />
+                <span>
+                  <span className="block text-sm font-medium">{t('adminPanel', language)}</span>
+                  <span className="block text-[10px] text-white/40">{t('adminPanelDesc', language)}</span>
+                </span>
+              </div>
+              <span className="text-white/30">↗</span>
+            </a>
+          )}
 
           {/* Reset All Data */}
           <button
