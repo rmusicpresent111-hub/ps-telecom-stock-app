@@ -17,6 +17,8 @@ export type AdminSection =
   | 'bills'
   | 'due'
   | 'expenses'
+  | 'parties'
+  | 'staff'
   | 'reports'
   | 'billsettings'
   | 'sync';

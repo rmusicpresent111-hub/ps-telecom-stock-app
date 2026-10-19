@@ -548,6 +548,137 @@ ${termsBlock}
   return pageShell(`${shop.name} — ${t('bills.soldReport')}`, body);
 }
 
+// ── document 3: generic business report (reports page tabs) ────
+
+export interface ReportColumn {
+  label: string;
+  right?: boolean;
+  width?: string;
+}
+
+export interface ReportTable {
+  sectionTitle?: string;
+  columns: ReportColumn[];
+  /** Pre-escaped HTML cell values, aligned with columns. */
+  rows: string[][];
+  /** Optional bold grand-total row. */
+  totalRow?: string[];
+}
+
+export interface GenericReportOpts {
+  title: string;
+  periodLabel?: string;
+  lang: AdminLang;
+  /** Summary chips (label → value) shown in the summary box. */
+  chips?: { k: string; v: string }[];
+  tables: ReportTable[];
+  note?: string;
+  settings?: BillingSettings | null;
+}
+
+/** Escape helper for report cell values (callers build their own cell HTML). */
+export function escHtml(s: unknown): string {
+  return esc(s);
+}
+
+export function buildGenericReportHtml(opts: GenericReportOpts): string {
+  const lang = opts.lang;
+  const t = (k: string) => ta(k, lang);
+  const shop = resolveShop({ shopSnapshot: {} } as unknown as Bill, opts.settings);
+
+  const shopSub = [
+    shop.proprietor ? `<p class="proprietor">${esc(shop.proprietor)}</p>` : '',
+    shop.address ? `<p class="shopline">${escMultiline(shop.address)}</p>` : '',
+    contactBits(shop) ? `<p class="shopline">${esc(contactBits(shop))}</p>` : '',
+  ].join('');
+
+  const chipsHtml = (opts.chips || []).length
+    ? `<div class="summary-box">${(opts.chips || [])
+        .map((c) => `<div class="chip"><div class="k">${esc(c.k)}</div><div class="v">${esc(c.v)}</div></div>`)
+        .join('')}</div>`
+    : '';
+
+  const tablesHtml = opts.tables
+    .map((tb) => {
+      const head = `<tr>${tb.columns
+        .map(
+          (c) =>
+            `<th${c.width ? ` style="width:${esc(c.width)}"` : ''}${c.right ? ' class="r"' : ''}>${esc(c.label)}</th>`
+        )
+        .join('')}</tr>`;
+      const body = tb.rows
+        .map(
+          (cells) =>
+            `<tr>${cells
+              .map((cell, i) => `<td${tb.columns[i]?.right ? ' class="r"' : ''}>${cell}</td>`)
+              .join('')}</tr>`
+        )
+        .join('');
+      const total = tb.totalRow
+        ? `<tr class="tot">${tb.totalRow
+            .map((cell, i) => `<td${tb.columns[i]?.right ? ' class="r"' : ''}>${cell}</td>`)
+            .join('')}</tr>`
+        : '';
+      const bodyBlock = body
+        ? `<table><thead>${head}</thead><tbody>${body}${total}</tbody></table>`
+        : `<p class="sec" style="color:#6B7280">${esc(t('rep.noData'))}</p>`;
+      return `${tb.sectionTitle ? `<p class="sec">${esc(tb.sectionTitle)}</p>` : ''}${bodyBlock}`;
+    })
+    .join('\n');
+
+  const body = `
+<div class="doc">
+<div class="head">
+  <div class="brandline">
+    ${monogramHtml(shop.name)}
+    <div class="min-w-0">
+      <p class="brand">${esc(shop.name)}</p>
+      ${shopSub}
+    </div>
+  </div>
+  <div style="text-align:right; flex:0 0 auto">
+    <h2 class="doc-title">${esc(opts.title)}</h2>
+    ${opts.periodLabel ? `<p class="sub" style="color:#6B7280;font-size:11px;margin:3px 0 0">${esc(t('rep.period'))}: ${esc(opts.periodLabel)}</p>` : ''}
+  </div>
+</div>
+
+${chipsHtml}
+${tablesHtml}
+${opts.note ? `<p style="font-size:10.5px;color:#6B7280;margin:10px 0 0">${esc(opts.note)}</p>` : ''}
+
+<div class="sig-row">
+  <p class="thanks">${esc(shop.thankyou || t('print.thankyou'))}</p>
+  <div class="sig-block">
+    ${shop.name ? `<p class="sig-for"${shop.signature ? ' style="margin-bottom:2px"' : ''}>${esc(
+      taf('print.sigFor', lang, { shop: shop.name })
+    )}</p>` : ''}
+    ${shop.signature ? `<img src="${shop.signature}" alt="signature">` : ''}
+    <div class="sig-line">${esc(t('print.authorised'))}</div>
+  </div>
+</div>
+
+<div class="foot">
+  <span>${esc(t('print.generated'))}: ${new Date().toLocaleString('en-IN')}</span>
+  <span>${esc(shop.name)}${shop.phone ? ` · ${esc(shop.phone)}` : ''}</span>
+</div>
+</div>`;
+
+  return pageShell(`${shop.name} — ${opts.title}`, body);
+}
+
+/** One-call generic report printer (loads Bill Settings for the shop header). */
+export async function printGenericReport(
+  opts: Omit<GenericReportOpts, 'settings'>
+): Promise<void> {
+  let settings: BillingSettings | null = null;
+  try {
+    settings = await getBillingSettingsOffline(DEFAULT_USER_ID);
+  } catch {
+    /* fall back to the default header */
+  }
+  printHtml(buildGenericReportHtml({ ...opts, settings }));
+}
+
 // ── one-call printers (load Bill Settings, then print) ─────────
 
 /** Print the A4 invoice for one bill, using the CURRENT bill settings header. */

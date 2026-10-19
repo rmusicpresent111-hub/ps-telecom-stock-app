@@ -19,6 +19,7 @@ import {
   offlineCashEntries,
   offlineServiceTransactions,
   offlineBills,
+  offlineStaffPayments,
   clearOfflineData,
   getOfflineDB,
   type OfflineDBSchema,
@@ -26,7 +27,7 @@ import {
 import { getLocalUser, updateLocalUser } from './local-auth';
 import { generateRecordId } from './id';
 import { notifyLocalDataChanged, notifyLocalWipe } from './sync-events';
-import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillingSettings, PaymentMethod } from './types';
+import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillingSettings, PaymentMethod, StaffPayment, StaffPaymentKind } from './types';
 
 // ============ DATE HELPERS (local timezone — never use UTC for business days) ============
 
@@ -85,7 +86,7 @@ function stripSync<T>(row: Record<string, unknown>): T {
  * the cloud on device B.
  */
 async function recordPendingDelete(
-  storeName: 'products' | 'expenses' | 'cashEntries' | 'serviceTransactions' | 'bills',
+  storeName: 'products' | 'expenses' | 'cashEntries' | 'serviceTransactions' | 'bills' | 'staffPayments',
   itemId: string,
   userId: string
 ): Promise<void> {
@@ -829,6 +830,120 @@ export async function deleteExpenseOffline(id: string, userId: string): Promise<
   return { success: true };
 }
 
+// ============ STAFF PAYMENTS (Local, synced via D1) ============
+
+const STAFF_KINDS: StaffPaymentKind[] = ['salary', 'advance', 'bonus', 'other'];
+
+function normalizeStaffKind(k: unknown): StaffPaymentKind {
+  return STAFF_KINDS.includes(k as StaffPaymentKind) ? (k as StaffPaymentKind) : 'other';
+}
+
+export async function getStaffPaymentsOffline(
+  userId: string,
+  options?: { from?: string; to?: string; staff?: string }
+): Promise<{
+  staffPayments: StaffPayment[];
+  summary: { total: number; count: number; byStaff: { name: string; total: number; count: number }[] };
+}> {
+  let rows = await offlineStaffPayments.getAll(userId);
+  if (options?.from) rows = rows.filter(p => p.date >= options.from!);
+  if (options?.to) rows = rows.filter(p => p.date <= options.to!);
+  if (options?.staff) {
+    const q = options.staff.trim().toLowerCase();
+    if (q) rows = rows.filter(p => (p.staffName || '').toLowerCase().includes(q));
+  }
+  const staffPayments = rows
+    .map(p => stripSync<StaffPayment>(p))
+    .sort((a, b) => (a.date === b.date ? String(b.createdAt).localeCompare(String(a.createdAt)) : b.date.localeCompare(a.date)));
+  const total = staffPayments.reduce((s, p) => s + (p.amount || 0), 0);
+  const staffMap = new Map<string, { name: string; total: number; count: number }>();
+  for (const p of staffPayments) {
+    const key = (p.staffName || '—').trim();
+    const e = staffMap.get(key) || { name: key, total: 0, count: 0 };
+    e.total += p.amount || 0;
+    e.count += 1;
+    staffMap.set(key, e);
+  }
+  const byStaff = [...staffMap.values()].sort((a, b) => b.total - a.total);
+  return { staffPayments, summary: { total, count: staffPayments.length, byStaff } };
+}
+
+export async function createStaffPaymentOffline(data: {
+  userId: string;
+  date?: string;
+  staffName: string;
+  staffPhone?: string;
+  kind?: StaffPaymentKind;
+  amount: number;
+  note?: string;
+}): Promise<{ staffPayment: StaffPayment }> {
+  const staffName = (data.staffName || '').trim();
+  if (!staffName) throw new Error('Staff name is required');
+  const amount = Number(data.amount);
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Payment amount must be greater than 0');
+
+  const now = new Date().toISOString();
+  const row = {
+    id: generateRecordId(),
+    userId: data.userId,
+    date: data.date || localDateStr(),
+    staffName,
+    staffPhone: (data.staffPhone || '').trim(),
+    kind: normalizeStaffKind(data.kind),
+    amount,
+    note: (data.note || '').trim(),
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await offlineStaffPayments.put({ ...row, _synced: Date.now(), _dirty: 0 });
+  notifyLocalDataChanged(data.userId);
+  return { staffPayment: row };
+}
+
+export async function updateStaffPaymentOffline(
+  id: string,
+  updates: { date?: string; staffName?: string; staffPhone?: string; kind?: StaffPaymentKind; amount?: number; note?: string },
+  userId: string
+): Promise<{ staffPayment: StaffPayment }> {
+  const all = await offlineStaffPayments.getAll(userId);
+  const existing = all.find(p => p.id === id);
+  if (!existing) throw new Error('Staff payment not found');
+
+  let amount = existing.amount;
+  if (updates.amount !== undefined) {
+    amount = Number(updates.amount);
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error('Payment amount must be greater than 0');
+  }
+  const staffName = updates.staffName !== undefined ? updates.staffName.trim() : existing.staffName;
+  if (!staffName) throw new Error('Staff name is required');
+
+  const updated = {
+    ...existing,
+    ...(updates.date !== undefined ? { date: updates.date || existing.date } : {}),
+    staffName,
+    ...(updates.staffPhone !== undefined ? { staffPhone: updates.staffPhone.trim() } : {}),
+    ...(updates.kind !== undefined ? { kind: normalizeStaffKind(updates.kind) } : {}),
+    amount,
+    ...(updates.note !== undefined ? { note: updates.note.trim() } : {}),
+    updatedAt: new Date().toISOString(),
+  };
+
+  await offlineStaffPayments.put({ ...updated, _synced: Date.now(), _dirty: 0 });
+  notifyLocalDataChanged(userId);
+  return { staffPayment: stripSync<StaffPayment>(updated) };
+}
+
+export async function deleteStaffPaymentOffline(id: string, userId: string): Promise<{ success: boolean }> {
+  const db = await getOfflineDB();
+  const row = await db.get('staffPayments', id);
+  if (!row || (userId && row.userId !== userId)) throw new Error('Not found');
+  await offlineStaffPayments.delete(id);
+  await recordPendingDelete('staffPayments', id, userId);
+  notifyLocalDataChanged(userId);
+  return { success: true };
+}
+
 // ============ CASH ENTRIES (Local) ============
 
 export async function getCashEntriesOffline(userId: string, options?: { period?: string; date?: string; from?: string; to?: string }) {
@@ -1518,7 +1633,7 @@ export async function markBillPaidOffline(
 // ============ BACKUP (Local) ============
 
 export async function exportBackupOffline(userId: string) {
-  const [localCategories, localProducts, localTransactions, localExpenses, localCashEntries, localServiceTxns, localBills, billingSettings] = await Promise.all([
+  const [localCategories, localProducts, localTransactions, localExpenses, localCashEntries, localServiceTxns, localBills, localStaffPayments, billingSettings] = await Promise.all([
     offlineCategories.getAll(userId),
     offlineProducts.getAll(userId),
     offlineTransactions.getAll(userId),
@@ -1526,6 +1641,7 @@ export async function exportBackupOffline(userId: string) {
     offlineCashEntries.getAll(userId),
     offlineServiceTransactions.getAll(userId),
     offlineBills.getAll(userId),
+    offlineStaffPayments.getAll(userId),
     getBillingSettingsOffline(userId),
   ]);
 
@@ -1539,6 +1655,7 @@ export async function exportBackupOffline(userId: string) {
     cashEntries: localCashEntries.map(e => stripSync(e)),
     serviceTransactions: localServiceTxns.map(s => stripSync(s)),
     bills: localBills.map(b => b),
+    staffPayments: localStaffPayments.map(p => stripSync(p)),
     billingSettings,
     exportedAt: new Date().toISOString(),
   };
@@ -1552,6 +1669,7 @@ export async function importBackupOffline(userId: string, backupData: {
   cashEntries?: unknown[];
   serviceTransactions?: unknown[];
   bills?: unknown[];
+  staffPayments?: unknown[];
   billingSettings?: unknown;
 }) {
   const now = Date.now();
@@ -1604,11 +1722,12 @@ export async function importBackupOffline(userId: string, backupData: {
   const cashEntries = asRows(backupData.cashEntries || []);
   const serviceTransactions = asRows(backupData.serviceTransactions || []);
   const bills = asRows(backupData.bills || []);
+  const staffPayments = asRows(backupData.staffPayments || []);
   const billingSettings = (backupData.billingSettings && typeof backupData.billingSettings === 'object')
     ? backupData.billingSettings as Record<string, unknown>
     : null;
 
-  if (categories.length === 0 && products.length === 0 && transactions.length === 0 && expenses.length === 0 && cashEntries.length === 0 && serviceTransactions.length === 0 && bills.length === 0 && !billingSettings) {
+  if (categories.length === 0 && products.length === 0 && transactions.length === 0 && expenses.length === 0 && cashEntries.length === 0 && serviceTransactions.length === 0 && bills.length === 0 && staffPayments.length === 0 && !billingSettings) {
     // A settings-only backup (fresh shop, no rows yet) is legitimate — only
     // reject a file that has literally nothing usable.
     throw new Error('Backup file contains no valid data');
@@ -1677,16 +1796,26 @@ export async function importBackupOffline(userId: string, backupData: {
       dueAmount: 'num',
     }) as OfflineDBSchema['bills']['value']
   );
+  const staffRows: OfflineDBSchema['staffPayments']['value'][] = staffPayments.map(
+    (row) => coerce({
+      ...fixDates(row),
+      date: isoStr(row.date),
+      userId,
+      staffName: typeof row.staffName === 'string' ? row.staffName : '',
+      staffPhone: typeof row.staffPhone === 'string' ? row.staffPhone : '',
+      note: typeof row.note === 'string' ? row.note : '',
+    }, { amount: 'num' }) as OfflineDBSchema['staffPayments']['value']
+  );
 
   // 2. One readwrite transaction across ALL stores: wipe this user's rows,
   //    write the imported ones, swap billingSettings — all or nothing.
   const db = await getOfflineDB();
   const tx = db.transaction(
-    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills', 'billingSettings'],
+    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills', 'staffPayments', 'billingSettings'],
     'readwrite'
   );
 
-  for (const store of ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills'] as const) {
+  for (const store of ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills', 'staffPayments'] as const) {
     const os = tx.objectStore(store);
     const keys = await os.index('by-userId').getAllKeys(userId);
     for (const key of keys) void os.delete(key);
@@ -1699,6 +1828,7 @@ export async function importBackupOffline(userId: string, backupData: {
   for (const row of cashRows) void tx.objectStore('cashEntries').put(row);
   for (const row of svcRows) void tx.objectStore('serviceTransactions').put(row);
   for (const row of billRows) void tx.objectStore('bills').put(row);
+  for (const row of staffRows) void tx.objectStore('staffPayments').put(row);
 
   if (billingSettings) {
     void tx.objectStore('billingSettings').put({

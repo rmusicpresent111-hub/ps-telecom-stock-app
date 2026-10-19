@@ -107,6 +107,23 @@ export interface Expense {
   updatedAt: string;
 }
 
+// ============ STAFF PAYMENTS (admin panel) ============
+
+export type StaffPaymentKind = 'salary' | 'advance' | 'bonus' | 'other';
+
+export interface StaffPayment {
+  id: string;
+  userId: string;
+  date: string;           // YYYY-MM-DD (local)
+  staffName: string;
+  staffPhone: string;     // optional, for call/WhatsApp
+  kind: StaffPaymentKind; // salary | advance | bonus | other
+  amount: number;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ServiceTransaction {
   id: string;
   userId: string;

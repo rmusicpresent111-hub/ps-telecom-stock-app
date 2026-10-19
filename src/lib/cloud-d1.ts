@@ -692,6 +692,18 @@ export const D1_SCHEMA_STATEMENTS: string[] = [
     created_at TEXT DEFAULT '',
     updated_at TEXT DEFAULT ''
   )`,
+  `CREATE TABLE IF NOT EXISTS ps_staff_payments (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    date TEXT DEFAULT '',
+    staff_name TEXT DEFAULT '',
+    staff_phone TEXT DEFAULT '',
+    kind TEXT DEFAULT 'other',
+    amount REAL DEFAULT 0,
+    note TEXT DEFAULT '',
+    created_at TEXT DEFAULT '',
+    updated_at TEXT DEFAULT ''
+  )`,
   `CREATE TABLE IF NOT EXISTS ps_billing_settings (
     user_id TEXT PRIMARY KEY,
     shop_name TEXT DEFAULT '',
@@ -726,6 +738,7 @@ export const D1_SCHEMA_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_ps_cash_user ON ps_cash_entries (user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_ps_service_user ON ps_service_transactions (user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_ps_bills_user ON ps_bills (user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_ps_staff_payments_user ON ps_staff_payments (user_id)`,
 ];
 
 export async function ensureD1Schema(creds: D1Credentials): Promise<D1QueryResult> {
@@ -890,6 +903,22 @@ export const CLOUD_TABLES: CloudTable[] = [
       ['transactionId', 'transaction_id'],
       ['shopSnapshot', 'shop_snapshot'],
       ['date', 'date'],
+      ['userId', 'user_id'],
+      ['createdAt', 'created_at'],
+      ['updatedAt', 'updated_at'],
+    ],
+  },
+  {
+    cloud: 'ps_staff_payments',
+    local: 'staffPayments',
+    columns: [
+      ['id', 'id'],
+      ['date', 'date'],
+      ['staffName', 'staff_name'],
+      ['staffPhone', 'staff_phone'],
+      ['kind', 'kind'],
+      ['amount', 'amount'],
+      ['note', 'note'],
       ['userId', 'user_id'],
       ['createdAt', 'created_at'],
       ['updatedAt', 'updated_at'],
@@ -1222,7 +1251,12 @@ export async function restoreFromD1(
     };
   }
 
-  // 2. Pull every table (rows written with the backup owner's userId)
+  // 2. Pull every table (rows written with the backup owner's userId).
+  //    ensureD1Schema first: an older backup may predate a newly added table
+  //    (e.g. ps_staff_payments) — the idempotent CREATE IF NOT EXISTS keeps
+  //    the SELECTs from failing on a pre-existing cloud database.
+  const schemaEnsure = await ensureD1Schema(creds);
+  if (!schemaEnsure.ok) return { ok: false, backupEmail, error: schemaEnsure.error };
   const payload: Record<string, Record<string, unknown>[]> = {};
   let anyRows = 0;
   for (const table of CLOUD_TABLES) {

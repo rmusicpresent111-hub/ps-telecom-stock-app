@@ -80,6 +80,7 @@ const SYNCED_STORES = [
   'cashEntries',
   'serviceTransactions',
   'bills',
+  'staffPayments',
   'billingSettings',
 ] as const;
 type SyncStore = (typeof SYNCED_STORES)[number];

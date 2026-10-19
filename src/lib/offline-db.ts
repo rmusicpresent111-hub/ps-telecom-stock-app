@@ -7,7 +7,7 @@
 import { openDB, type IDBPDatabase } from 'idb';
 
 const DB_NAME = 'ps-telecom-offline';
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 
 // ============ LOCAL USERS (authentication) ============
 
@@ -212,6 +212,24 @@ export interface OfflineDBSchema {
     };
     indexes: Record<never, never>;
   };
+  staffPayments: {
+    key: string;
+    value: {
+      id: string;
+      userId: string;
+      date: string;
+      staffName: string;
+      staffPhone: string;
+      kind: 'salary' | 'advance' | 'bonus' | 'other';
+      amount: number;
+      note: string;
+      createdAt: string;
+      updatedAt: string;
+      _synced: number;
+      _dirty: number;
+    };
+    indexes: { 'by-userId': string; 'by-dirty': number };
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<OfflineDBSchema>> | null = null;
@@ -282,6 +300,11 @@ function getDB(): Promise<IDBPDatabase<OfflineDBSchema>> {
         }
         if (!db.objectStoreNames.contains('billingSettings')) {
           db.createObjectStore('billingSettings', { keyPath: 'userId' });
+        }
+        if (!db.objectStoreNames.contains('staffPayments')) {
+          const staffStore = db.createObjectStore('staffPayments', { keyPath: 'id' });
+          staffStore.createIndex('by-userId', 'userId');
+          staffStore.createIndex('by-dirty', '_dirty');
         }
       },
     }).catch((err) => {
@@ -412,6 +435,15 @@ export const offlineBills = {
   delete: (id: string) => deleteItem('bills', id),
 };
 
+// ============ STAFF PAYMENTS ============
+
+export const offlineStaffPayments = {
+  getAll: (userId: string) => getAllByUser('staffPayments', userId),
+  put: (row: OfflineDBSchema['staffPayments']['value']) => putItem('staffPayments', row),
+  putBulk: (rows: OfflineDBSchema['staffPayments']['value'][]) => putBulk('staffPayments', rows),
+  delete: (id: string) => deleteItem('staffPayments', id),
+};
+
 // ============ CLEAR ALL ============
 
 // NOTE: the legacy `syncMeta` / `pendingDeletes` object stores are kept in the
@@ -421,7 +453,7 @@ export const offlineBills = {
 export async function clearOfflineData(userId: string): Promise<void> {
   const db = await getDB();
   const userStores = (
-    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'syncMeta', 'pendingDeletes', 'serviceTransactions', 'bills'] as const
+    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'syncMeta', 'pendingDeletes', 'serviceTransactions', 'bills', 'staffPayments'] as const
   ).filter(s => db.objectStoreNames.contains(s));
   const txStores: (keyof OfflineDBSchema)[] = [...userStores];
   if (db.objectStoreNames.contains('billingSettings')) txStores.push('billingSettings');
