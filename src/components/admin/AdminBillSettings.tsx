@@ -9,7 +9,7 @@
  * so settings saved here sync to the APK via the encrypted D1 cycle.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Store,
   Percent,
@@ -22,6 +22,7 @@ import {
   Upload,
   Trash2,
   ImageUp,
+  Loader2,
 } from 'lucide-react';
 import {
   getBillingSettingsOffline,
@@ -94,6 +95,104 @@ function sampleBill(form: BillingSettings): Bill {
   };
 }
 
+/**
+ * Upload slot for signature / payment QR.
+ *
+ * Deliberately defined at MODULE level (NOT inside the page component):
+ * a component created inside the render body gets a new identity on every
+ * re-render, so React would fully remount the <input type="file">. If a
+ * re-render happens while the OS file dialog is open (the 20s data tick or
+ * a window-focus refresh), the input the dialog is bound to gets detached
+ * and the picked file's change event is silently LOST — the user picks an
+ * image and nothing happens. A stable module-level component keeps the
+ * input mounted for the lifetime of the page.
+ */
+function ImageSlot({
+  label,
+  hint,
+  value,
+  busy,
+  accept = 'image/*',
+  t,
+  onPick,
+  onFile,
+  onRemove,
+}: {
+  label: string;
+  hint: string;
+  value: string;
+  busy: boolean;
+  accept?: string;
+  t: (k: string) => string;
+  onPick: () => void;
+  onFile: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onRemove: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <span className="text-xs font-semibold text-[var(--psa-sub)]">{label}</span>
+      </div>
+      <div className="flex items-start gap-3">
+        <div className="w-28 h-16 shrink-0 rounded-lg border border-[var(--psa-field-border)] bg-white flex items-center justify-center overflow-hidden relative">
+          {value ? (
+            <img src={value} alt={label} className="max-w-full max-h-full object-contain" />
+          ) : (
+            <ImageUp size={18} className="text-[var(--psa-faint)]" />
+          )}
+          {busy && (
+            <span className="absolute inset-0 bg-white/70 flex items-center justify-center">
+              <Loader2 size={18} className="animate-spin text-[#FA6E41]" />
+            </span>
+          )}
+        </div>
+        <div className="min-w-0 grow">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                onPick();
+                inputRef.current?.click();
+              }}
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold cursor-pointer bg-[var(--psa-soft-orange)] text-[#E8552C] hover:bg-[var(--psa-soft-orange-h)] transition-colors"
+            >
+              <Upload size={13} /> {value ? t('bset.change') : t('bset.upload')}
+            </button>
+            {value && (
+              <Btn size="sm" variant="outline" onClick={onRemove}>
+                <Trash2 size={13} /> {t('bset.remove')}
+              </Btn>
+            )}
+          </div>
+          <p className="text-[11px] text-[var(--psa-faint)] mt-1.5 leading-snug">{hint}</p>
+        </div>
+      </div>
+      {/* Visually hidden but NOT display:none — some browsers refuse to open
+          the file dialog for display:none inputs. Kept OUTSIDE the flex row
+          so it never shifts the layout. */}
+      <input
+        ref={inputRef}
+        type="file"
+        accept={accept}
+        onChange={onFile}
+        style={{
+          position: 'absolute',
+          width: 1,
+          height: 1,
+          opacity: 0,
+          overflow: 'hidden',
+          clip: 'rect(0 0 0 0)',
+          whiteSpace: 'nowrap',
+        }}
+        tabIndex={-1}
+        aria-hidden="true"
+      />
+    </div>
+  );
+}
+
 export default function AdminBillSettings() {
   const lang = useAdminStore((s) => s.language);
   const t = (k: string) => ta(k, lang);
@@ -104,11 +203,28 @@ export default function AdminBillSettings() {
   const [busy, setBusy] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [latestBill, setLatestBill] = useState<Bill | null>(null);
+  const [uploading, setUploading] = useState<'signatureDataUrl' | 'qrCodeDataUrl' | null>(null);
+
+  // Guards against the reload/refresh cycle clobbering live user edits and
+  // in-flight image uploads (refs are read synchronously, even from async code).
+  const editSeqRef = useRef(0); // bumped on every local edit — stale loads are discarded
+  const pickingRef = useRef(false); // OS file dialog open — pause auto-reload
+  const uploadingRef = useRef(false); // resize/save in progress — pause auto-reload
+  const pickTimerRef = useRef<number | null>(null);
 
   const load = async () => {
+    const seq = editSeqRef.current; // snapshot at fetch start
     try {
       const s = await getBillingSettingsOffline(DEFAULT_USER_ID);
-      setForm(s);
+      // The user edited (or is uploading) while we fetched — our result is
+      // stale, applying it would wipe their work.
+      if (seq !== editSeqRef.current || pickingRef.current || uploadingRef.current) return;
+      setForm((prev) => {
+        if (!prev) return s;
+        // Skip the state write when nothing actually changed — an object
+        // identity change re-renders the page every 20s for no reason.
+        return JSON.stringify(prev) === JSON.stringify(s) ? prev : s;
+      });
     } catch {
       /* private mode — leave the form empty */
     }
@@ -139,8 +255,21 @@ export default function AdminBillSettings() {
   }, [previewOpen]);
 
   const set = <K extends keyof BillingSettings>(k: K, v: BillingSettings[K]) => {
+    editSeqRef.current++; // any in-flight load() is now stale — do not apply it
     setForm((p) => (p ? { ...p, [k]: v } : p));
     setDirty(true);
+  };
+
+  /** Called right BEFORE the OS file dialog opens — freezes auto-reload so a
+   *  20s tick / focus refresh can never re-render (and detach the input) while
+   *  the user is browsing their gallery/files for the signature or QR image. */
+  const beginPick = () => {
+    pickingRef.current = true;
+    if (pickTimerRef.current) clearTimeout(pickTimerRef.current);
+    // Safety: if the dialog is cancelled no change event fires — unblock reloads
+    pickTimerRef.current = window.setTimeout(() => {
+      pickingRef.current = false;
+    }, 60_000);
   };
 
   const save = async () => {
@@ -172,22 +301,35 @@ export default function AdminBillSettings() {
     }
   };
 
-  const pickImage = async (
+  const handleFile = async (
     e: React.ChangeEvent<HTMLInputElement>,
     key: 'signatureDataUrl' | 'qrCodeDataUrl'
   ) => {
     const file = e.target.files?.[0];
-    e.target.value = '';
+    e.target.value = ''; // allow re-picking the same file later
+    pickingRef.current = false; // dialog closed
+    if (pickTimerRef.current) {
+      clearTimeout(pickTimerRef.current);
+      pickTimerRef.current = null;
+    }
     if (!file) return;
+    uploadingRef.current = true;
+    setUploading(key);
     try {
       const url =
         key === 'signatureDataUrl'
           ? await fileToResizedDataUrl(file, 500, 120 * 1024)
           : await fileToResizedDataUrl(file, 600, 250 * 1024);
-      set(key, url);
+      editSeqRef.current++; // our write wins over any in-flight load()
+      setForm((p) => (p ? { ...p, [key]: url } : p));
+      setDirty(true);
       adminToast(t('c.saved'));
     } catch (err) {
-      adminToast((err as Error)?.message || t('c.error'), 'err');
+      const msg = (err as Error)?.message || '';
+      adminToast(/image/i.test(msg) ? t('bset.imgErr') : msg || t('c.error'), 'err');
+    } finally {
+      uploadingRef.current = false;
+      setUploading(null);
     }
   };
 
@@ -196,56 +338,6 @@ export default function AdminBillSettings() {
     const bill = latestBill || sampleBill(form);
     return buildBillReceiptHtml(bill, lang, form);
   }, [form, latestBill, lang, previewOpen]);
-
-  const ImageSlot = ({
-    label,
-    hint,
-    value,
-    onKey,
-    accept = 'image/*',
-  }: {
-    label: string;
-    hint: string;
-    value: string;
-    onKey: 'signatureDataUrl' | 'qrCodeDataUrl';
-    accept?: string;
-  }) => (
-    <div>
-      <div className="flex items-center justify-between gap-2 mb-1.5">
-        <span className="text-xs font-semibold text-[var(--psa-sub)]">{label}</span>
-      </div>
-      <div className="flex items-start gap-3">
-        <div className="w-28 h-16 shrink-0 rounded-lg border border-[var(--psa-field-border)] bg-white flex items-center justify-center overflow-hidden">
-          {value ? (
-            <img src={value} alt={label} className="max-w-full max-h-full object-contain" />
-          ) : (
-            <ImageUp size={18} className="text-[var(--psa-faint)]" />
-          )}
-        </div>
-        <div className="min-w-0 grow">
-          <div className="flex flex-wrap gap-2">
-            <label className="inline-flex">
-              <input
-                type="file"
-                accept={accept}
-                className="hidden"
-                onChange={(e) => void pickImage(e, onKey)}
-              />
-              <span className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold cursor-pointer bg-[var(--psa-soft-orange)] text-[#E8552C] hover:bg-[var(--psa-soft-orange-h)] transition-colors">
-                <Upload size={13} /> {value ? t('bset.change') : t('bset.upload')}
-              </span>
-            </label>
-            {value && (
-              <Btn size="sm" variant="outline" onClick={() => set(onKey, '')}>
-                <Trash2 size={13} /> {t('bset.remove')}
-              </Btn>
-            )}
-          </div>
-          <p className="text-[11px] text-[var(--psa-faint)] mt-1.5 leading-snug">{hint}</p>
-        </div>
-      </div>
-    </div>
-  );
 
   if (!form) {
     return (
@@ -406,7 +498,11 @@ export default function AdminBillSettings() {
               label={t('bset.signature')}
               hint={t('bset.sigHint')}
               value={form.signatureDataUrl}
-              onKey="signatureDataUrl"
+              busy={uploading === 'signatureDataUrl'}
+              t={t}
+              onPick={beginPick}
+              onFile={(e) => void handleFile(e, 'signatureDataUrl')}
+              onRemove={() => set('signatureDataUrl', '')}
             />
             <div className="border-t border-[var(--psa-line)] pt-4">
               <div className="flex items-center gap-2 mb-2">
@@ -417,7 +513,11 @@ export default function AdminBillSettings() {
                 label={t('bset.qr')}
                 hint={t('bset.qrHint')}
                 value={form.qrCodeDataUrl}
-                onKey="qrCodeDataUrl"
+                busy={uploading === 'qrCodeDataUrl'}
+                t={t}
+                onPick={beginPick}
+                onFile={(e) => void handleFile(e, 'qrCodeDataUrl')}
+                onRemove={() => set('qrCodeDataUrl', '')}
               />
             </div>
           </div>

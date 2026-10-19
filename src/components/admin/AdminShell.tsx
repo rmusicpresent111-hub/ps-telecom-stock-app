@@ -320,7 +320,7 @@ export default function AdminShell() {
         {/* footer (sticky bottom, Vyapar-style strip) */}
         <footer className="mt-auto hidden lg:block border-t border-[var(--psa-border)] bg-[var(--psa-card)]">
           <div className="max-w-[1200px] mx-auto px-6 py-3 flex items-center justify-between text-[11px] text-[var(--psa-faint)]">
-            <span>PS TELECOM {ta('shell.title', lang)} · v2.9.2</span>
+            <span>PS TELECOM {ta('shell.title', lang)} · v2.9.3</span>
             <span className="flex items-center gap-2">
               <Badge tone="orange">Web Admin</Badge>
               <Badge tone="green">D1 encrypted</Badge>

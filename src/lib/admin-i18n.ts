@@ -275,6 +275,11 @@ const D: Record<string, Entry> = {
   'bset.upload': { bn: 'ছবি আপলোড', en: 'Upload Image', hi: 'इमेज अपलोड' },
   'bset.change': { bn: 'পরিবর্তন করুন', en: 'Change', hi: 'बदलें' },
   'bset.remove': { bn: 'সরিয়ে ফেলুন', en: 'Remove', hi: 'हटाएं' },
+  'bset.imgErr': {
+    bn: 'ছবিটি পড়া যাচ্ছে না — JPG বা PNG ফরম্যাটে আবার চেষ্টা করুন (স্ক্রিনশট নিয়েও দিতে পারেন)',
+    en: 'This image cannot be read — please try a JPG or PNG file (a screenshot works too)',
+    hi: 'यह इमेज पढ़ी नहीं जा रही — कृपया JPG या PNG फ़ाइल से फिर कोशिश करें (स्क्रीनशॉट भी चलेगा)',
+  },
   'bset.terms': { bn: 'শর্তাবলী (T&C)', en: 'Terms & Conditions', hi: 'नियम और शर्तें' },
   'bset.termsHint': {
     bn: 'প্রতি লাইনে একটি শর্ত লিখুন — প্রতিটি বিলের নিচে ছাপা হবে',
