@@ -11,13 +11,20 @@ import {
   getBillsOffline,
   markBillPaidOffline,
   deleteBillOffline,
+  getBillingSettingsOffline,
   localDateStr,
 } from '@/lib/offline-service';
 import { DEFAULT_USER_ID } from '@/lib/local-auth';
 import { useAdminStore } from '@/store/adminStore';
 import { ta, taf } from '@/lib/admin-i18n';
+import type { BillingSettings } from '@/lib/types';
 import { useAdminDataTick } from './useAdminData';
-import { buildBillReceiptHtml, buildSoldProductsReportHtml, printHtml } from './print';
+import {
+  buildBillReceiptHtml,
+  printBillReceipt,
+  printSoldProductsReport,
+} from './print';
+import A4Preview from './A4Preview';
 import {
   AdminCard,
   Badge,
@@ -69,6 +76,7 @@ export default function AdminBills() {
   const [customFrom, setCustomFrom] = useState(localDateStr(new Date(Date.now() - 29 * 86400000)));
   const [customTo, setCustomTo] = useState(localDateStr());
   const [busy, setBusy] = useState(false);
+  const [billSettings, setBillSettings] = useState<BillingSettings | null>(null);
   const [detail, setDetail] = useState<Bill | null>(null);
   const [payModal, setPayModal] = useState<{ bill: Bill; partial: boolean; amount: string } | null>(null);
   const [deleting, setDeleting] = useState<Bill | null>(null);
@@ -90,6 +98,24 @@ export default function AdminBills() {
       alive = false;
     };
   }, [tick, search, range.from, range.to]);
+
+  // live bill settings → A4 invoice header / signature / terms
+  useEffect(() => {
+    let alive = true;
+    getBillingSettingsOffline(DEFAULT_USER_ID)
+      .then((s) => {
+        if (alive) setBillSettings(s);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [tick]);
+
+  const detailHtml = useMemo(
+    () => (detail ? buildBillReceiptHtml(detail, lang, billSettings) : ''),
+    [detail, lang, billSettings]
+  );
 
   const shown = useMemo(
     () => (dueFilter === 'due' ? bills.filter((b) => (b.dueAmount || 0) > 0.009) : bills),
@@ -148,7 +174,7 @@ export default function AdminBills() {
       adminToast(t('bills.noBillsPrint'), 'err');
       return;
     }
-    printHtml(buildSoldProductsReportHtml(shown, { from: range.from, to: range.to, lang }));
+    void printSoldProductsReport(shown, { from: range.from, to: range.to, lang });
   };
 
   return (
@@ -276,85 +302,17 @@ export default function AdminBills() {
               <Btn variant="outline" onClick={() => setDetail(null)}>
                 {t('c.close')}
               </Btn>
-              <Btn onClick={() => printHtml(buildBillReceiptHtml(detail, lang))}>
+              <Btn onClick={() => void printBillReceipt(detail, lang)}>
                 <Printer size={15} /> {t('qsell.printReceipt')}
               </Btn>
             </>
           )
         }
       >
-        {detail && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-              <div>
-                <p className="text-[11px] text-[var(--psa-faint)] font-semibold uppercase">{t('exp.date')}</p>
-                <p className="font-medium">{fmtDate(detail.date)}</p>
-              </div>
-              <div>
-                <p className="text-[11px] text-[var(--psa-faint)] font-semibold uppercase">{t('bills.method')}</p>
-                <p className="font-medium">{methodBadge(detail.paymentMethod)}</p>
-              </div>
-              <div>
-                <p className="text-[11px] text-[var(--psa-faint)] font-semibold uppercase">{t('bills.paid')}</p>
-                <p className="font-medium text-[#16A34A] tabular-nums">{fmtMoney(detail.paidAmount)}</p>
-              </div>
-              <div>
-                <p className="text-[11px] text-[var(--psa-faint)] font-semibold uppercase">{t('bills.due')}</p>
-                <p className="font-medium text-[#DC2626] tabular-nums">{fmtMoney(detail.dueAmount)}</p>
-              </div>
-            </div>
-
-            <div className="border border-[var(--psa-border)] rounded-xl overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-[var(--psa-hover)]">
-                  <tr>
-                    <Th>{t('bills.items')}</Th>
-                    <Th className="text-right">{t('prod.qty')}</Th>
-                    <Th className="text-right">{t('prod.rate')}</Th>
-                    <Th className="text-right">{t('bills.total')}</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detail.items.map((it, i) => (
-                    <tr key={i}>
-                      <Td>{it.name}</Td>
-                      <Td className="text-right tabular-nums">{it.quantity}</Td>
-                      <Td className="text-right tabular-nums">{fmtMoney(it.unitPrice)}</Td>
-                      <Td className="text-right tabular-nums font-semibold">{fmtMoney(it.total)}</Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="text-sm space-y-1.5">
-              <div className="flex justify-between text-[var(--psa-muted)]">
-                <span>{t('bills.subtotal')}</span>
-                <span className="tabular-nums">{fmtMoney(detail.subtotal)}</span>
-              </div>
-              {(detail.discountAmount || 0) > 0 && (
-                <div className="flex justify-between text-[var(--psa-muted)]">
-                  <span>{t('bills.discount')}</span>
-                  <span className="tabular-nums">− {fmtMoney(detail.discountAmount)}</span>
-                </div>
-              )}
-              {(detail.gstAmount || 0) > 0 && (
-                <div className="flex justify-between text-[var(--psa-muted)]">
-                  <span>{t('bills.gst')} ({detail.gstRate}%)</span>
-                  <span className="tabular-nums">+ {fmtMoney(detail.gstAmount)}</span>
-                </div>
-              )}
-              <div className="flex justify-between font-bold text-base border-t border-[var(--psa-border)] pt-2">
-                <span>{t('bills.total')}</span>
-                <span className="tabular-nums text-[#E8552C]">{fmtMoney(detail.total)}</span>
-              </div>
-            </div>
-
-            {detail.note && (
-              <div className="bg-[var(--psa-hover)] rounded-lg p-3 text-xs text-[var(--psa-muted)]">
-                <b>{t('bills.note')}:</b> {detail.note}
-              </div>
-            )}
+        {detail && detailHtml && (
+          <div>
+            {/* the bill, exactly as it prints on A4 */}
+            <A4Preview html={detailHtml} ariaLabel={detail.billNumber || 'bill'} />
           </div>
         )}
       </Modal>

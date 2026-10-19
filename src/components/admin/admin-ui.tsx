@@ -210,6 +210,49 @@ export function SelectInput(props: React.SelectHTMLAttributes<HTMLSelectElement>
   );
 }
 
+export function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const { className = '', ...rest } = props;
+  return (
+    <textarea
+      {...rest}
+      className={`${FIELD_BASE} h-auto min-h-20 py-2 leading-relaxed resize-y ${className}`}
+    />
+  );
+}
+
+export function Toggle({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="inline-flex items-center gap-2.5 select-none"
+    >
+      <span
+        className={`w-10 h-[22px] rounded-full p-0.5 transition-colors shrink-0 ${
+          checked ? 'bg-[#16A34A]' : 'bg-[#C7CDD6]'
+        }`}
+      >
+        <span
+          className={`block w-[18px] h-[18px] rounded-full bg-white shadow transition-transform ${
+            checked ? 'translate-x-[18px]' : ''
+          }`}
+        />
+      </span>
+      {label && <span className="text-sm font-semibold text-[var(--psa-ink)]">{label}</span>}
+    </button>
+  );
+}
+
 export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
   return (
     <label className="block">

@@ -18,6 +18,7 @@ export type AdminSection =
   | 'due'
   | 'expenses'
   | 'reports'
+  | 'billsettings'
   | 'sync';
 
 export type AdminTheme = 'light' | 'dark';

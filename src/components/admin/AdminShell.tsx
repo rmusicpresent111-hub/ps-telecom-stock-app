@@ -18,6 +18,7 @@ import {
   Wallet,
   Coins,
   BarChart3,
+  FileText,
   Cloud,
   Menu,
   X,
@@ -38,6 +39,7 @@ import AdminBills from './AdminBills';
 import AdminDueBook from './AdminDueBook';
 import AdminExpenses from './AdminExpenses';
 import AdminReports from './AdminReports';
+import AdminBillSettings from './AdminBillSettings';
 import AdminSync from './AdminSync';
 
 const NAV: { key: AdminSection; icon: React.ComponentType<{ size?: number | string }>; navKey: string }[] = [
@@ -47,6 +49,7 @@ const NAV: { key: AdminSection; icon: React.ComponentType<{ size?: number | stri
   { key: 'due', icon: Wallet, navKey: 'nav.due' },
   { key: 'expenses', icon: Coins, navKey: 'nav.expenses' },
   { key: 'reports', icon: BarChart3, navKey: 'nav.reports' },
+  { key: 'billsettings', icon: FileText, navKey: 'nav.billSettings' },
   { key: 'sync', icon: Cloud, navKey: 'nav.sync' },
 ];
 
@@ -59,6 +62,7 @@ const SECTION_TITLE: Record<AdminSection, string> = {
   due: 'nav.due',
   expenses: 'nav.expenses',
   reports: 'nav.reports',
+  billsettings: 'nav.billSettings',
   sync: 'nav.sync',
 };
 
@@ -309,13 +313,14 @@ export default function AdminShell() {
           {section === 'due' && <AdminDueBook />}
           {section === 'expenses' && <AdminExpenses />}
           {section === 'reports' && <AdminReports />}
+          {section === 'billsettings' && <AdminBillSettings />}
           {section === 'sync' && <AdminSync />}
         </main>
 
         {/* footer (sticky bottom, Vyapar-style strip) */}
         <footer className="mt-auto hidden lg:block border-t border-[var(--psa-border)] bg-[var(--psa-card)]">
           <div className="max-w-[1200px] mx-auto px-6 py-3 flex items-center justify-between text-[11px] text-[var(--psa-faint)]">
-            <span>PS TELECOM {ta('shell.title', lang)} · v2.9.1</span>
+            <span>PS TELECOM {ta('shell.title', lang)} · v2.9.2</span>
             <span className="flex items-center gap-2">
               <Badge tone="orange">Web Admin</Badge>
               <Badge tone="green">D1 encrypted</Badge>

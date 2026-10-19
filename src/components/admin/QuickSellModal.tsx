@@ -16,13 +16,14 @@ import {
   getProductsOffline,
   createTransactionOffline,
   createBillOffline,
+  getBillingSettingsOffline,
 } from '@/lib/offline-service';
 import { DEFAULT_USER_ID } from '@/lib/local-auth';
 import { useAdminStore } from '@/store/adminStore';
-import { ta } from '@/lib/admin-i18n';
+import { ta, taf } from '@/lib/admin-i18n';
 import { Badge, Btn, Field, Modal, TextInput, adminToast, fmtMoney } from './admin-ui';
-import { buildBillReceiptHtml, printHtml } from './print';
-import type { Bill, PaymentMethod, Product } from '@/lib/types';
+import { printBillReceipt } from './print';
+import type { Bill, BillingSettings, PaymentMethod, Product } from '@/lib/types';
 
 const METHODS: PaymentMethod[] = ['cash', 'upi', 'card', 'due'];
 
@@ -54,6 +55,7 @@ export default function QuickSellModal({
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<{ bill: Bill; productName: string } | null>(null);
+  const [billSettings, setBillSettings] = useState<BillingSettings | null>(null);
 
   // load products each time the dialog opens
   useEffect(() => {
@@ -68,6 +70,11 @@ export default function QuickSellModal({
       .finally(() => {
         if (alive) setLoading(false);
       });
+    getBillingSettingsOffline(DEFAULT_USER_ID)
+      .then((s) => {
+        if (alive) setBillSettings(s);
+      })
+      .catch(() => undefined);
     return () => {
       alive = false;
     };
@@ -105,6 +112,11 @@ export default function QuickSellModal({
   const rateNum = Math.max(0, Number(rate) || 0);
   const total = qtyNum * rateNum;
   const overStock = !!selected && qtyNum > selected.quantity;
+
+  // mirror createBillOffline's GST rule so the shown total == the bill total
+  const gstOn = !!billSettings?.gstEnabled && !!billSettings?.gstNumber.trim() && (billSettings?.gstRate || 0) > 0;
+  const gstAmt = gstOn ? Math.round(((total * (billSettings?.gstRate || 0)) / 100) * 100) / 100 : 0;
+  const grand = Math.round((total + gstAmt) * 100) / 100;
 
   const confirmSale = async () => {
     if (!selected) return;
@@ -186,7 +198,7 @@ export default function QuickSellModal({
             <Btn variant="outline" onClick={close}>
               {t('c.close')}
             </Btn>
-            <Btn variant="soft" onClick={() => printHtml(buildBillReceiptHtml(b, lang))}>
+            <Btn variant="soft" onClick={() => void printBillReceipt(b, lang)}>
               <Printer size={15} /> {t('qsell.printReceipt')}
             </Btn>
             <Btn variant="green" onClick={resetToPicker}>
@@ -300,7 +312,7 @@ export default function QuickSellModal({
             {t('c.cancel')}
           </Btn>
           <Btn onClick={confirmSale} disabled={busy || qtyNum <= 0 || overStock}>
-            <CheckCircle2 size={15} /> {t('qsell.complete')} · {fmtMoney(total)}
+            <CheckCircle2 size={15} /> {t('qsell.complete')} · {fmtMoney(grand)}
           </Btn>
         </>
       }
@@ -314,7 +326,7 @@ export default function QuickSellModal({
               {t('qsell.stockLeft')}: <b className="text-[var(--psa-ink)]">{selected.quantity}</b>
             </p>
           </div>
-          <Badge tone={overStock ? 'red' : 'orange'}>{overStock ? t('qsell.errStock') : fmtMoney(total)}</Badge>
+          <Badge tone={overStock ? 'red' : 'orange'}>{overStock ? t('qsell.errStock') : fmtMoney(grand)}</Badge>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -374,8 +386,13 @@ export default function QuickSellModal({
           <span className="text-sm font-semibold text-[var(--psa-muted)]">
             {qtyNum} × {fmtMoney(rateNum)}
           </span>
-          <span className="text-xl font-black text-[#E8552C] tabular-nums">{fmtMoney(total)}</span>
+          <span className="text-xl font-black text-[#E8552C] tabular-nums">{fmtMoney(grand)}</span>
         </div>
+        {gstOn && total > 0 && (
+          <p className="text-[11px] text-[var(--psa-muted)] bg-[var(--psa-hover)] rounded-lg px-2.5 py-1.5">
+            {taf('qsell.gstNote', lang, { rate: billSettings?.gstRate || 0, gst: fmtMoney(gstAmt), grand: fmtMoney(grand) })}
+          </p>
+        )}
       </div>
     </Modal>
   );
