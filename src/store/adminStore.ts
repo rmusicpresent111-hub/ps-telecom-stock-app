@@ -20,11 +20,16 @@ export type AdminSection =
   | 'reports'
   | 'sync';
 
+export type AdminTheme = 'light' | 'dark';
+
 interface AdminState {
   section: AdminSection;
   setSection: (s: AdminSection) => void;
   language: AdminLang;
   setLanguage: (l: AdminLang) => void;
+  theme: AdminTheme;
+  setTheme: (t: AdminTheme) => void;
+  toggleTheme: () => void;
   drawerOpen: boolean;
   setDrawerOpen: (v: boolean) => void;
 }
@@ -36,12 +41,15 @@ export const useAdminStore = create<AdminState>()(
       setSection: (section) => set({ section, drawerOpen: false }),
       language: 'bn',
       setLanguage: (language) => set({ language }),
+      theme: 'light',
+      setTheme: (theme) => set({ theme }),
+      toggleTheme: () => set((s) => ({ theme: s.theme === 'light' ? 'dark' : 'light' })),
       drawerOpen: false,
       setDrawerOpen: (drawerOpen) => set({ drawerOpen }),
     }),
     {
       name: 'ps-admin-store-v1',
-      partialize: (state) => ({ language: state.language, section: state.section }),
+      partialize: (state) => ({ language: state.language, section: state.section, theme: state.theme }),
     }
   )
 );

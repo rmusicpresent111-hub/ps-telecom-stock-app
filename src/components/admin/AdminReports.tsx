@@ -66,6 +66,7 @@ function dayLabel(dateStr: string): string {
 
 export default function AdminReports() {
   const lang = useAdminStore((s) => s.language);
+  const dark = useAdminStore((s) => s.theme === 'dark');
   const t = (k: string) => ta(k, lang);
   const tick = useAdminDataTick();
 
@@ -149,8 +150,8 @@ export default function AdminReports() {
                     onClick={() => setPeriod(p)}
                     className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-colors ${
                       period === p
-                        ? 'bg-[#FFF1EB] border-[#FA6E41] text-[#E8552C]'
-                        : 'bg-white border-[#E1E4E8] text-[#6B7280] hover:border-[#FA6E41]/50'
+                        ? 'bg-[var(--psa-soft-orange)] border-[#FA6E41] text-[#E8552C]'
+                        : 'bg-[var(--psa-card)] border-[var(--psa-field-border)] text-[var(--psa-muted)] hover:border-[#FA6E41]/50'
                     }`}
                   >
                     {t(p === 'today' ? 'rep.today' : p === 'week' ? 'rep.week' : p === 'month' ? 'rep.month' : 'rep.custom')}
@@ -170,7 +171,7 @@ export default function AdminReports() {
             </>
           )}
         </div>
-        <p className="text-xs text-[#9CA3AF] mt-2">
+        <p className="text-xs text-[var(--psa-faint)] mt-2">
           {range.from} → {range.to}
         </p>
       </AdminCard>
@@ -195,18 +196,24 @@ export default function AdminReports() {
             <div className="h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: -10, bottom: 0 }}>
-                  <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 11, fill: '#6B7280' }} axisLine={false} tickLine={false} width={58} />
+                  <XAxis dataKey="day" tick={{ fontSize: 11, fill: dark ? '#8E9AAB' : '#6B7280' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: dark ? '#8E9AAB' : '#6B7280' }} axisLine={false} tickLine={false} width={58} />
                   <RTooltip
                     formatter={(v: number, name: string) => [
                       fmtMoney(v),
                       name === 'sales' ? t('rep.totalSales') : t('rep.totalProfit'),
                     ]}
-                    contentStyle={{ borderRadius: 10, border: '1px solid #E8EAED', fontSize: 12 }}
+                    contentStyle={{
+                      borderRadius: 10,
+                      border: '1px solid var(--psa-border)',
+                      background: 'var(--psa-card)',
+                      color: 'var(--psa-ink)',
+                      fontSize: 12,
+                    }}
                   />
                   <Legend
                     formatter={(v: string) => (
-                      <span className="text-xs text-[#6B7280]">{v === 'sales' ? t('rep.totalSales') : t('rep.totalProfit')}</span>
+                      <span className="text-xs text-[var(--psa-muted)]">{v === 'sales' ? t('rep.totalSales') : t('rep.totalProfit')}</span>
                     )}
                   />
                   <Bar dataKey="sales" fill={ADMIN_COLORS.orange} radius={[5, 5, 0, 0]} maxBarSize={26} />
@@ -225,18 +232,18 @@ export default function AdminReports() {
               {report.topProducts.map((p, i) => (
                 <div key={i}>
                   <div className="flex justify-between text-xs mb-1 gap-2">
-                    <span className="font-medium text-[#374151] truncate">
+                    <span className="font-medium text-[var(--psa-sub)] truncate">
                       {i + 1}. {p.name}
                     </span>
-                    <span className="text-[#6B7280] tabular-nums shrink-0">{fmtMoney(p.revenue)}</span>
+                    <span className="text-[var(--psa-muted)] tabular-nums shrink-0">{fmtMoney(p.revenue)}</span>
                   </div>
-                  <div className="h-2 rounded-full bg-[#F1F5F9] overflow-hidden">
+                  <div className="h-2 rounded-full bg-[var(--psa-soft-slate)] overflow-hidden">
                     <div
                       className="h-full rounded-full bg-[#FA6E41]"
                       style={{ width: `${Math.max(4, (p.revenue / report.maxRevenue) * 100)}%` }}
                     />
                   </div>
-                  <p className="text-[10px] text-[#9CA3AF] mt-0.5">
+                  <p className="text-[10px] text-[var(--psa-faint)] mt-0.5">
                     {p.qty} {t('rep.sold')}
                   </p>
                 </div>

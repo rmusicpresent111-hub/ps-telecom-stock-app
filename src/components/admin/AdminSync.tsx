@@ -220,9 +220,9 @@ export default function AdminSync() {
       <PageHeader title={t('sync.title')} />
 
       {staticHost && (
-        <div className="mb-4 flex items-start gap-3 bg-[#FFFBEB] border border-[#FDE68A] rounded-xl p-4">
+        <div className="mb-4 flex items-start gap-3 bg-[var(--psa-soft-amber)] border border-[var(--psa-amber-line)] rounded-xl p-4">
           <CloudOff size={18} className="text-[#D97706] shrink-0 mt-0.5" />
-          <p className="text-sm text-[#92400E]">{t('sync.errStatic')}</p>
+          <p className="text-sm text-[var(--psa-amber-ink)]">{t('sync.errStatic')}</p>
         </div>
       )}
 
@@ -238,11 +238,11 @@ export default function AdminSync() {
         >
           {account ? (
             <div className="space-y-4">
-              <div className="flex items-center justify-between gap-3 bg-[#F0FDF4] border border-[#BBF7D0] rounded-xl p-4">
+              <div className="flex items-center justify-between gap-3 bg-[var(--psa-soft-green)] border border-[var(--psa-green-line)] rounded-xl p-4">
                 <div className="flex items-center gap-3 min-w-0">
                   <CloudCheck size={26} className="text-[#16A34A] shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-sm font-bold text-[#166534]">{account.syncId}</p>
+                    <p className="text-sm font-bold text-[var(--psa-green-ink)]">{account.syncId}</p>
                     <p className="text-[11px] text-[#15803D]/80">
                       {t('sync.lastSync')}: {status.lastSyncAt ? `${relative(status.lastSyncAt)} ${t('c.of')} ${fmtDateTime(new Date(status.lastSyncAt).toISOString())}` : t('sync.never')}
                     </p>
@@ -258,11 +258,11 @@ export default function AdminSync() {
                   <Unplug size={15} /> {t('sync.disconnect')}
                 </Btn>
               </div>
-              <p className="text-[11px] text-[#9CA3AF] leading-relaxed">{t('sync.autoNote')}</p>
+              <p className="text-[11px] text-[var(--psa-faint)] leading-relaxed">{t('sync.autoNote')}</p>
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="flex items-center gap-3 text-sm text-[#374151]">
+              <div className="flex items-center gap-3 text-sm text-[var(--psa-sub)]">
                 <KeyRound size={18} className="text-[#FA6E41] shrink-0" />
                 {t('sync.sameDb')}
               </div>
@@ -270,14 +270,14 @@ export default function AdminSync() {
                 <button
                   type="button"
                   onClick={() => setMode('join')}
-                  className={`grow py-2 rounded-lg text-xs font-semibold border transition-colors ${mode === 'join' ? 'bg-[#FFF1EB] border-[#FA6E41] text-[#E8552C]' : 'border-[#E1E4E8] text-[#6B7280]'}`}
+                  className={`grow py-2 rounded-lg text-xs font-semibold border transition-colors ${mode === 'join' ? 'bg-[var(--psa-soft-orange)] border-[#FA6E41] text-[#E8552C]' : 'border-[var(--psa-field-border)] text-[var(--psa-muted)]'}`}
                 >
                   {t('sync.useExisting')}
                 </button>
                 <button
                   type="button"
                   onClick={() => setMode('create')}
-                  className={`grow py-2 rounded-lg text-xs font-semibold border transition-colors ${mode === 'create' ? 'bg-[#FFF1EB] border-[#FA6E41] text-[#E8552C]' : 'border-[#E1E4E8] text-[#6B7280]'}`}
+                  className={`grow py-2 rounded-lg text-xs font-semibold border transition-colors ${mode === 'create' ? 'bg-[var(--psa-soft-orange)] border-[#FA6E41] text-[#E8552C]' : 'border-[var(--psa-field-border)] text-[var(--psa-muted)]'}`}
                 >
                   {t('sync.createNew')}
                 </button>
@@ -299,9 +299,9 @@ export default function AdminSync() {
                   placeholder="••••••"
                 />
               </Field>
-              {connectError && <p className="text-xs text-[#DC2626] bg-[#FEF2F2] rounded-lg p-2.5">{connectError}</p>}
+              {connectError && <p className="text-xs text-[#DC2626] bg-[var(--psa-soft-red)] rounded-lg p-2.5">{connectError}</p>}
               {status.state === 'error' && status.lastError && (
-                <p className="text-[11px] text-[#92400E] bg-[#FFFBEB] rounded-lg p-2.5 break-words">
+                <p className="text-[11px] text-[var(--psa-amber-ink)] bg-[var(--psa-soft-amber)] rounded-lg p-2.5 break-words">
                   {status.lastError}
                 </p>
               )}
@@ -322,10 +322,10 @@ export default function AdminSync() {
           }
         >
           <div className="space-y-4">
-            <div className="flex items-center justify-between gap-3 bg-[#FFF1EB] rounded-xl p-4">
+            <div className="flex items-center justify-between gap-3 bg-[var(--psa-soft-orange)] rounded-xl p-4">
               <div>
-                <p className="text-[11px] text-[#9CA3AF] font-semibold uppercase">{t('sync.shop')}</p>
-                <p className="text-base font-bold text-[#1F2937]">{shopName || 'PS TELECOM'}</p>
+                <p className="text-[11px] text-[var(--psa-faint)] font-semibold uppercase">{t('sync.shop')}</p>
+                <p className="text-base font-bold text-[var(--psa-ink)]">{shopName || 'PS TELECOM'}</p>
               </div>
               <div className="w-10 h-10 rounded-lg bg-[#FA6E41] text-white flex items-center justify-center font-bold text-lg">
                 {(shopName || 'PS').charAt(0)}
@@ -342,7 +342,7 @@ export default function AdminSync() {
                 <Download size={15} /> JSON
               </Btn>
             </div>
-            <p className="text-[11px] text-[#9CA3AF] leading-relaxed">
+            <p className="text-[11px] text-[var(--psa-faint)] leading-relaxed">
               Excel / Google Sheets–ready · UTF-8 (বাংলা ঠিকভাবে দেখাবে) · {t('sync.sameDb')}
             </p>
           </div>

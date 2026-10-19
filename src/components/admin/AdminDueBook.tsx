@@ -122,20 +122,20 @@ export default function AdminDueBook() {
         {groups.length === 0 ? (
           <EmptyState icon={<CheckCircle2 size={22} />} title={t('due.noDue')} />
         ) : (
-          <div className="divide-y divide-[#F1F3F5] max-h-[68vh] overflow-y-auto">
+          <div className="divide-y divide-[var(--psa-line)] max-h-[68vh] overflow-y-auto">
             {groups.map((g) => (
               <div key={g.key}>
                 <button
                   onClick={() => setExpanded(expanded === g.key ? null : g.key)}
-                  className="w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 hover:bg-[#FFFBF9] transition-colors text-left"
+                  className="w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 hover:bg-[var(--psa-row-hover)] transition-colors text-left"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className="w-9 h-9 rounded-full bg-[#FEF2F2] text-[#DC2626] flex items-center justify-center shrink-0 text-sm font-bold">
+                    <span className="w-9 h-9 rounded-full bg-[var(--psa-soft-red)] text-[#DC2626] flex items-center justify-center shrink-0 text-sm font-bold">
                       {g.name.charAt(0).toUpperCase()}
                     </span>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-[#1F2937] truncate">{g.name}</p>
-                      <p className="text-[11px] text-[#9CA3AF]">
+                      <p className="text-sm font-semibold text-[var(--psa-ink)] truncate">{g.name}</p>
+                      <p className="text-[11px] text-[var(--psa-faint)]">
                         {g.bills.length} {t('due.billsCount')}{g.mobile ? ` · ${g.mobile}` : ''}
                       </p>
                     </div>
@@ -144,7 +144,7 @@ export default function AdminDueBook() {
                     <span className="text-sm font-bold text-[#DC2626] tabular-nums">{fmtMoney(g.totalDue)}</span>
                     <ChevronDown
                       size={16}
-                      className={`text-[#9CA3AF] transition-transform ${expanded === g.key ? 'rotate-180' : ''}`}
+                      className={`text-[var(--psa-faint)] transition-transform ${expanded === g.key ? 'rotate-180' : ''}`}
                     />
                   </div>
                 </button>
@@ -152,12 +152,12 @@ export default function AdminDueBook() {
                 {expanded === g.key && (
                   <div className="px-4 sm:px-5 pb-4 space-y-2">
                     {g.bills.map((b) => (
-                      <div key={b.id} className="flex items-center justify-between gap-3 bg-[#F9FAFB] rounded-lg px-3 py-2.5">
+                      <div key={b.id} className="flex items-center justify-between gap-3 bg-[var(--psa-hover)] rounded-lg px-3 py-2.5">
                         <div className="min-w-0">
-                          <p className="text-xs font-semibold text-[#1F2937]">
+                          <p className="text-xs font-semibold text-[var(--psa-ink)]">
                             {b.billNumber || '—'} · {fmtDate(b.date)}
                           </p>
-                          <p className="text-[11px] text-[#9CA3AF] tabular-nums">
+                          <p className="text-[11px] text-[var(--psa-faint)] tabular-nums">
                             {t('bills.total')} {fmtMoney(b.total)} · {t('bills.paid')} {fmtMoney(b.paidAmount)}
                           </p>
                         </div>
@@ -199,11 +199,11 @@ export default function AdminDueBook() {
       >
         {payModal && (
           <div className="space-y-3.5">
-            <p className="text-sm text-[#374151]">
+            <p className="text-sm text-[var(--psa-sub)]">
               {payModal.bill.billNumber} · {payModal.bill.customerName || t('due.walkIn')} — <b>{fmtMoney(payModal.bill.dueAmount)}</b>
             </p>
             {!payModal.partial ? (
-              <p className="text-xs text-[#6B7280] bg-[#F0FDF4] rounded-lg p-3">
+              <p className="text-xs text-[var(--psa-muted)] bg-[var(--psa-soft-green)] rounded-lg p-3">
                 {tf('bills.markPaidFull', { amount: fmtMoney(payModal.bill.dueAmount) })}
               </p>
             ) : (

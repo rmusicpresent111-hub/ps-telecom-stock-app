@@ -76,11 +76,11 @@ export function AdminCard({
 }) {
   return (
     <div
-      className={`bg-white rounded-xl border border-[#E8EAED] shadow-[0_1px_2px_rgba(16,24,40,0.04)] ${className}`}
+      className={`bg-[var(--psa-card)] rounded-xl border border-[var(--psa-border)] shadow-[0_1px_2px_rgba(16,24,40,0.04)] ${className}`}
     >
       {(title || action) && (
         <div className="flex items-center justify-between gap-3 px-4 sm:px-5 pt-4 pb-1">
-          {title && <h3 className="text-[15px] font-semibold text-[#1F2937]">{title}</h3>}
+          {title && <h3 className="text-[15px] font-semibold text-[var(--psa-ink)]">{title}</h3>}
           {action}
         </div>
       )}
@@ -90,11 +90,11 @@ export function AdminCard({
 }
 
 const STAT_TONES = {
-  orange: { bg: '#FFF1EB', fg: '#E8552C' },
-  green: { bg: '#F0FDF4', fg: '#16A34A' },
-  red: { bg: '#FEF2F2', fg: '#DC2626' },
-  amber: { bg: '#FFFBEB', fg: '#D97706' },
-  slate: { bg: '#F1F5F9', fg: '#475569' },
+  orange: { bg: 'var(--psa-soft-orange)', fg: '#E8552C' },
+  green: { bg: 'var(--psa-soft-green)', fg: '#16A34A' },
+  red: { bg: 'var(--psa-soft-red)', fg: '#DC2626' },
+  amber: { bg: 'var(--psa-soft-amber)', fg: '#D97706' },
+  slate: { bg: 'var(--psa-soft-slate)', fg: 'var(--psa-sub)' },
 } as const;
 
 export type StatTone = keyof typeof STAT_TONES;
@@ -119,7 +119,7 @@ export function StatCard({
     <button
       type="button"
       onClick={onClick}
-      className={`text-left bg-white rounded-xl border border-[#E8EAED] shadow-[0_1px_2px_rgba(16,24,40,0.04)] p-4 flex items-start gap-3 transition-all ${onClick ? 'hover:border-[#FA6E41]/40 hover:shadow-[0_4px_12px_rgba(250,110,65,0.12)] cursor-pointer' : 'cursor-default'}`}
+      className={`text-left bg-[var(--psa-card)] rounded-xl border border-[var(--psa-border)] shadow-[0_1px_2px_rgba(16,24,40,0.04)] p-4 flex items-start gap-3 transition-all ${onClick ? 'hover:border-[#FA6E41]/40 hover:shadow-[0_4px_12px_rgba(250,110,65,0.12)] cursor-pointer' : 'cursor-default'}`}
     >
       <span
         aria-hidden
@@ -129,11 +129,11 @@ export function StatCard({
         {icon}
       </span>
       <span className="min-w-0">
-        <span className="block text-xs font-medium text-[#6B7280] truncate">{label}</span>
-        <span className="block text-lg sm:text-xl font-bold text-[#1F2937] tabular-nums leading-tight mt-0.5">
+        <span className="block text-xs font-medium text-[var(--psa-muted)] truncate">{label}</span>
+        <span className="block text-lg sm:text-xl font-bold text-[var(--psa-ink)] tabular-nums leading-tight mt-0.5">
           {value}
         </span>
-        {sub && <span className="block text-[11px] text-[#6B7280] mt-0.5 truncate">{sub}</span>}
+        {sub && <span className="block text-[11px] text-[var(--psa-muted)] mt-0.5 truncate">{sub}</span>}
       </span>
     </button>
   );
@@ -143,8 +143,8 @@ export function PageHeader({ title, sub, action }: { title: string; sub?: string
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
       <div>
-        <h2 className="text-xl font-bold text-[#1F2937]">{title}</h2>
-        {sub && <p className="text-sm text-[#6B7280] mt-0.5">{sub}</p>}
+        <h2 className="text-xl font-bold text-[var(--psa-ink)]">{title}</h2>
+        {sub && <p className="text-sm text-[var(--psa-muted)] mt-0.5">{sub}</p>}
       </div>
       {action && <div className="flex items-center gap-2">{action}</div>}
     </div>
@@ -157,10 +157,10 @@ type BtnVariant = 'primary' | 'soft' | 'outline' | 'danger' | 'ghost' | 'green';
 
 const BTN_STYLES: Record<BtnVariant, string> = {
   primary: 'bg-[#FA6E41] hover:bg-[#E8552C] text-white shadow-sm disabled:bg-[#FA6E41]/50',
-  soft: 'bg-[#FFF1EB] hover:bg-[#FFE4D6] text-[#E8552C]',
-  outline: 'border border-[#E8EAED] bg-white hover:bg-[#F9FAFB] text-[#374151]',
+  soft: 'bg-[var(--psa-soft-orange)] hover:bg-[var(--psa-soft-orange-h)] text-[#E8552C]',
+  outline: 'border border-[var(--psa-border)] bg-[var(--psa-card)] hover:bg-[var(--psa-hover)] text-[var(--psa-sub)]',
   danger: 'bg-[#DC2626] hover:bg-[#B91C1C] text-white',
-  ghost: 'text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#1F2937]',
+  ghost: 'text-[var(--psa-muted)] hover:bg-[var(--psa-hover2)] hover:text-[var(--psa-ink)]',
   green: 'bg-[#16A34A] hover:bg-[#15803D] text-white',
 };
 
@@ -191,7 +191,7 @@ export function Btn({
 // ── form controls ───────────────────────────────────────────────
 
 const FIELD_BASE =
-  'w-full h-10 rounded-lg border border-[#E1E4E8] bg-white px-3 text-sm text-[#1F2937] placeholder:text-[#9CA3AF] outline-none focus:border-[#FA6E41] focus:ring-2 focus:ring-[#FA6E41]/15 transition-shadow';
+  'w-full h-10 rounded-lg border border-[var(--psa-field-border)] bg-[var(--psa-card)] px-3 text-sm text-[var(--psa-ink)] placeholder:text-[var(--psa-faint)] outline-none focus:border-[#FA6E41] focus:ring-2 focus:ring-[#FA6E41]/15 transition-shadow';
 
 export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   const { className = '', ...rest } = props;
@@ -213,9 +213,9 @@ export function SelectInput(props: React.SelectHTMLAttributes<HTMLSelectElement>
 export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
   return (
     <label className="block">
-      <span className="block text-xs font-semibold text-[#4B5563] mb-1.5">{label}</span>
+      <span className="block text-xs font-semibold text-[var(--psa-sub)] mb-1.5">{label}</span>
       {children}
-      {hint && <span className="block text-[11px] text-[#9CA3AF] mt-1">{hint}</span>}
+      {hint && <span className="block text-[11px] text-[var(--psa-faint)] mt-1">{hint}</span>}
     </label>
   );
 }
@@ -225,11 +225,11 @@ export function Field({ label, children, hint }: { label: string; children: Reac
 type BadgeTone = 'green' | 'red' | 'amber' | 'slate' | 'orange';
 
 const BADGE_STYLES: Record<BadgeTone, string> = {
-  green: 'bg-[#F0FDF4] text-[#16A34A]',
-  red: 'bg-[#FEF2F2] text-[#DC2626]',
-  amber: 'bg-[#FFFBEB] text-[#D97706]',
-  slate: 'bg-[#F1F5F9] text-[#475569]',
-  orange: 'bg-[#FFF1EB] text-[#E8552C]',
+  green: 'bg-[var(--psa-soft-green)] text-[#16A34A]',
+  red: 'bg-[var(--psa-soft-red)] text-[#DC2626]',
+  amber: 'bg-[var(--psa-soft-amber)] text-[#D97706]',
+  slate: 'bg-[var(--psa-soft-slate)] text-[var(--psa-sub)]',
+  orange: 'bg-[var(--psa-soft-orange)] text-[#E8552C]',
 };
 
 export function Badge({ tone = 'slate', children }: { tone?: BadgeTone; children: ReactNode }) {
@@ -271,14 +271,14 @@ export function Modal({
     <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-[#0F172A]/45 backdrop-blur-[2px]" onClick={onClose} />
       <div
-        className={`relative bg-white w-full ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'} rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[92vh] flex flex-col`}
+        className={`relative bg-[var(--psa-card)] w-full ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'} rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[92vh] flex flex-col`}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#E8EAED] shrink-0">
-          <h3 className="text-base font-bold text-[#1F2937]">{title}</h3>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--psa-border)] shrink-0">
+          <h3 className="text-base font-bold text-[var(--psa-ink)]">{title}</h3>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-[#6B7280] hover:bg-[#F3F4F6]"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--psa-muted)] hover:bg-[var(--psa-hover2)]"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
               <path d="M18 6 6 18M6 6l12 12" />
@@ -286,7 +286,7 @@ export function Modal({
           </button>
         </div>
         <div className="overflow-y-auto px-5 py-4 grow">{children}</div>
-        {footer && <div className="flex justify-end gap-2 px-5 py-3.5 border-t border-[#E8EAED] shrink-0">{footer}</div>}
+        {footer && <div className="flex justify-end gap-2 px-5 py-3.5 border-t border-[var(--psa-border)] shrink-0">{footer}</div>}
       </div>
     </div>
   );
@@ -307,11 +307,11 @@ export function Spinner({ className = '' }: { className?: string }) {
 export function EmptyState({ icon, title, body }: { icon: ReactNode; title: string; body?: string }) {
   return (
     <div className="py-10 text-center">
-      <div className="mx-auto w-12 h-12 rounded-full bg-[#FFF1EB] text-[#FA6E41] flex items-center justify-center mb-3">
+      <div className="mx-auto w-12 h-12 rounded-full bg-[var(--psa-soft-orange)] text-[#FA6E41] flex items-center justify-center mb-3">
         {icon}
       </div>
-      <p className="text-sm font-semibold text-[#374151]">{title}</p>
-      {body && <p className="text-xs text-[#9CA3AF] mt-1">{body}</p>}
+      <p className="text-sm font-semibold text-[var(--psa-sub)]">{title}</p>
+      {body && <p className="text-xs text-[var(--psa-faint)] mt-1">{body}</p>}
     </div>
   );
 }
@@ -349,7 +349,7 @@ export function AdminToaster() {
         <div
           key={t.id}
           role="status"
-          className="flex items-center gap-2.5 bg-white border border-[#E8EAED] shadow-[0_8px_24px_rgba(16,24,40,0.16)] rounded-xl px-4 py-2.5 text-sm font-medium text-[#1F2937]"
+          className="flex items-center gap-2.5 bg-[var(--psa-card)] border border-[var(--psa-border)] shadow-[0_8px_24px_rgba(16,24,40,0.16)] rounded-xl px-4 py-2.5 text-sm font-medium text-[var(--psa-ink)]"
         >
           <span
             aria-hidden
@@ -371,7 +371,7 @@ export function AdminToaster() {
 export function Th({ children, className = '' }: { children?: ReactNode; className?: string }) {
   return (
     <th
-      className={`text-left text-[11px] font-bold uppercase tracking-wide text-[#6B7280] px-4 py-2.5 border-b border-[#E8EAED] whitespace-nowrap ${className}`}
+      className={`text-left text-[11px] font-bold uppercase tracking-wide text-[var(--psa-muted)] px-4 py-2.5 border-b border-[var(--psa-border)] whitespace-nowrap ${className}`}
     >
       {children}
     </th>
@@ -380,6 +380,6 @@ export function Th({ children, className = '' }: { children?: ReactNode; classNa
 
 export function Td({ children, className = '' }: { children?: ReactNode; className?: string }) {
   return (
-    <td className={`px-4 py-3 text-sm text-[#1F2937] border-b border-[#F1F3F5] align-middle ${className}`}>{children}</td>
+    <td className={`px-4 py-3 text-sm text-[var(--psa-ink)] border-b border-[var(--psa-line)] align-middle ${className}`}>{children}</td>
   );
 }

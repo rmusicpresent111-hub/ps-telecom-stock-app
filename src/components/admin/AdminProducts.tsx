@@ -14,6 +14,8 @@ import {
   Search,
   Package,
   PackageX,
+  Zap,
+  Check,
 } from 'lucide-react';
 import {
   getProductsOffline,
@@ -78,7 +80,96 @@ function categoryImageFor(name: string): string {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-export default function AdminProducts() {
+/**
+ * Category suggestions combobox — once a category exists it is suggested
+ * EVERY time a product is added/edited. Typing filters; a new name creates
+ * the category inline and selects it.
+ */
+function CategoryCombobox({
+  value,
+  categories,
+  onSelect,
+  onCreate,
+  placeholder,
+  createLabel,
+  noneLabel,
+}: {
+  value: string;
+  categories: Category[];
+  onSelect: (id: string) => void;
+  onCreate: (name: string) => void;
+  placeholder: string;
+  createLabel: string;
+  noneLabel: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const selected = categories.find((c) => c.id === value) || null;
+  const query = q.trim().toLowerCase();
+  const matches = query ? categories.filter((c) => c.name.toLowerCase().includes(query)) : categories;
+  const exact = categories.find((c) => c.name.toLowerCase() === query);
+  const canCreate = q.trim().length > 0 && !exact;
+
+  return (
+    <div className="relative">
+      <TextInput
+        value={open ? q : selected?.name || ''}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => {
+          setOpen(true);
+          setQ('');
+        }}
+        onBlur={() => window.setTimeout(() => setOpen(false), 150)}
+        placeholder={placeholder}
+        autoComplete="off"
+      />
+      {open && (
+        <div className="absolute z-30 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-[var(--psa-border)] bg-[var(--psa-card)] shadow-[0_10px_30px_rgba(16,24,40,0.14)] py-1">
+          {matches.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onSelect(c.id);
+                setOpen(false);
+                setQ('');
+              }}
+              className={`w-full text-left px-3.5 py-2 text-sm hover:bg-[var(--psa-hover)] transition-colors flex items-center justify-between gap-2 ${
+                c.id === value ? 'text-[#E8552C] font-semibold' : 'text-[var(--psa-ink)]'
+              }`}
+            >
+              <span className="truncate">{c.name}</span>
+              {c.id === value && <Check size={14} />}
+            </button>
+          ))}
+          {canCreate && (
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onCreate(q.trim());
+                setOpen(false);
+                setQ('');
+              }}
+              className="w-full text-left px-3.5 py-2.5 text-sm font-semibold text-[#E8552C] hover:bg-[var(--psa-soft-orange)] transition-colors flex items-center gap-2 border-t border-[var(--psa-line)]"
+            >
+              <Plus size={14} /> {createLabel} “{q.trim()}”
+            </button>
+          )}
+          {matches.length === 0 && !canCreate && (
+            <p className="px-3.5 py-2.5 text-xs text-[var(--psa-faint)]">{noneLabel}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Product) => void }) {
   const lang = useAdminStore((s) => s.language);
   const t = (k: string) => ta(k, lang);
   const tick = useAdminDataTick();
@@ -140,14 +231,20 @@ export default function AdminProducts() {
       adminToast(t('c.required'), 'err');
       return;
     }
+    await createAndPickCategory(newCatName);
+    setCatModalOpen(false);
+    setNewCatName('');
+  };
+
+  /** Create a category inline (combobox “create” row) and select it for the form. */
+  const createAndPickCategory = async (name: string) => {
+    if (!name.trim()) return;
     setBusy(true);
     try {
-      const { category } = await createCategoryOffline(newCatName, categoryImageFor(newCatName), DEFAULT_USER_ID);
+      const { category } = await createCategoryOffline(name, categoryImageFor(name), DEFAULT_USER_ID);
       setCategories((prev) => [...prev, category]);
       setForm((f) => ({ ...f, categoryId: category.id }));
       adminToast(t('c.added'));
-      setCatModalOpen(false);
-      setNewCatName('');
     } catch (err) {
       adminToast((err as Error)?.message || t('c.error'), 'err');
     } finally {
@@ -294,9 +391,9 @@ export default function AdminProducts() {
       </div>
 
       <AdminCard bodyClass="!p-0">
-        <div className="flex flex-col sm:flex-row gap-2 p-4 border-b border-[#E8EAED]">
+        <div className="flex flex-col sm:flex-row gap-2 p-4 border-b border-[var(--psa-border)]">
           <div className="relative grow">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" />
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--psa-faint)]" />
             <TextInput
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -319,7 +416,7 @@ export default function AdminProducts() {
         ) : (
           <div className="overflow-x-auto max-h-[62vh] overflow-y-auto">
             <table className="w-full min-w-[760px]">
-              <thead className="bg-[#FAFAFB] sticky top-0 z-10">
+              <thead className="bg-[var(--psa-hover)] sticky top-0 z-10">
                 <tr>
                   <Th>{t('prod.name')}</Th>
                   <Th>{t('prod.category')}</Th>
@@ -333,7 +430,7 @@ export default function AdminProducts() {
               </thead>
               <tbody>
                 {filtered.map((p) => (
-                  <tr key={p.id} className="hover:bg-[#FFFBF9] transition-colors">
+                  <tr key={p.id} className="hover:bg-[var(--psa-row-hover)] transition-colors">
                     <Td>
                       <span className="font-semibold">{p.name}</span>
                       <div className="sm:hidden mt-1">{statusBadge(p)}</div>
@@ -345,12 +442,19 @@ export default function AdminProducts() {
                       <span className="tabular-nums font-semibold">{p.quantity}</span>{' '}
                       <span className="hidden lg:inline">{statusBadge(p)}</span>
                     </Td>
-                    <Td className="hidden lg:table-cell text-[#6B7280]">{p.boxNumber || '—'}</Td>
+                    <Td className="hidden lg:table-cell text-[var(--psa-muted)]">{p.boxNumber || '—'}</Td>
                     <Td className="text-right tabular-nums">{fmtMoney(p.purchasePrice)}</Td>
                     <Td className="text-right tabular-nums">{fmtMoney(p.sellingPrice)}</Td>
                     <Td className="text-right tabular-nums font-semibold">{fmtMoney(p.quantity * p.purchasePrice)}</Td>
                     <Td>
                       <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => onQuickSell?.(p)}
+                          title={t('shell.quickSell')}
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-[#E8552C] hover:bg-[var(--psa-soft-orange)]"
+                        >
+                          <Zap size={15} />
+                        </button>
                         <button
                           onClick={() => {
                             setStockModal({ product: p, type: 'STOCK_IN' });
@@ -358,7 +462,7 @@ export default function AdminProducts() {
                             setStockRate('');
                           }}
                           title={t('prod.stockIn')}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-[#16A34A] hover:bg-[#F0FDF4]"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-[#16A34A] hover:bg-[var(--psa-soft-green)]"
                         >
                           <ArrowDownToLine size={15} />
                         </button>
@@ -369,21 +473,21 @@ export default function AdminProducts() {
                             setStockRate(String(p.sellingPrice));
                           }}
                           title={t('prod.stockOut')}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-[#DC2626] hover:bg-[#FEF2F2]"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-[#DC2626] hover:bg-[var(--psa-soft-red)]"
                         >
                           <ArrowUpFromLine size={15} />
                         </button>
                         <button
                           onClick={() => openEdit(p)}
                           title={t('c.edit')}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-[#6B7280] hover:bg-[#F3F4F6]"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--psa-muted)] hover:bg-[var(--psa-hover2)]"
                         >
                           <Pencil size={14} />
                         </button>
                         <button
                           onClick={() => setDeleting(p)}
                           title={t('c.delete')}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-[#DC2626] hover:bg-[#FEF2F2]"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-[#DC2626] hover:bg-[var(--psa-soft-red)]"
                         >
                           <Trash2 size={14} />
                         </button>
@@ -417,17 +521,18 @@ export default function AdminProducts() {
           <Field label={t('prod.name')}>
             <TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </Field>
-          <Field label={t('prod.category')}>
+          <Field label={t('prod.category')} hint={t('cat.searchOrCreate')}>
             <div className="flex gap-2">
               <div className="grow">
-                <SelectInput value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })}>
-                  <option value="">—</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </SelectInput>
+                <CategoryCombobox
+                  value={form.categoryId}
+                  categories={categories}
+                  onSelect={(id) => setForm((f) => ({ ...f, categoryId: id }))}
+                  onCreate={createAndPickCategory}
+                  placeholder={t('cat.searchOrCreate')}
+                  createLabel={t('cat.create')}
+                  noneLabel={t('cat.none')}
+                />
               </div>
               <Btn variant="soft" onClick={() => setCatModalOpen(true)} title={t('prod.newCategory')} className="!px-3 shrink-0">
                 <Plus size={16} />
@@ -452,7 +557,7 @@ export default function AdminProducts() {
           {editing && (
             <div className="grid grid-cols-2 gap-3">
               <Field label={t('prod.quantity')} hint={t('prod.stockIn') + ' / ' + t('prod.stockOut')}>
-                <TextInput value={String(editing.quantity)} disabled className="!bg-[#F9FAFB]" />
+                <TextInput value={String(editing.quantity)} disabled className="!bg-[var(--psa-hover)]" />
               </Field>
               <Field label={t('prod.box')}>
                 <TextInput value={form.boxNumber} onChange={(e) => setForm({ ...form, boxNumber: e.target.value })} />
@@ -537,8 +642,8 @@ export default function AdminProducts() {
         }
       >
         <div className="space-y-3.5">
-          <div className="text-xs text-[#6B7280] bg-[#F9FAFB] rounded-lg p-3">
-            {t('prod.quantity')}: <b className="text-[#1F2937]">{stockModal?.product.quantity}</b>
+          <div className="text-xs text-[var(--psa-muted)] bg-[var(--psa-hover)] rounded-lg p-3">
+            {t('prod.quantity')}: <b className="text-[var(--psa-ink)]">{stockModal?.product.quantity}</b>
           </div>
           <Field label={t('prod.qty')}>
             <TextInput type="number" min="1" value={stockQty} onChange={(e) => setStockQty(e.target.value)} autoFocus />
@@ -568,7 +673,7 @@ export default function AdminProducts() {
           </>
         }
       >
-        <p className="text-sm text-[#374151]">
+        <p className="text-sm text-[var(--psa-sub)]">
           <b>{deleting?.name}</b> — {t('prod.deleteNote')}
         </p>
       </Modal>

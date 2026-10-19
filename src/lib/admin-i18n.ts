@@ -166,6 +166,49 @@ const D: Record<string, Entry> = {
   'sync.shop': { bn: 'দোকানের নাম', en: 'Shop name', hi: 'दुकान का नाम' },
   'sync.autoNote': { bn: 'সংযুক্ত থাকলে প্রতিটি পরিবর্তন ~১ সেকেন্ডে ক্লাউডে চলে যায়, অন্য ডিভাইস সর্বোচ্চ ১২ সেকেন্ডে পায়।', en: 'When connected, every change reaches the cloud in ~1s; other devices get it within 12s.', hi: 'जुड़े होने पर हर बदलाव ~1s में क्लाउड तक पहुंचता है; दूसरे डिवाइस 12s में पाते हैं।' },
 
+  // ── theme (dark / light) ─────────────────────────────────────
+  'theme.toDark': { bn: 'ডার্ক মোড', en: 'Dark mode', hi: 'डार्क मोड' },
+  'theme.toLight': { bn: 'লাইট মোড', en: 'Light mode', hi: 'लाइट मोड' },
+
+  // ── quick sell ───────────────────────────────────────────────
+  'shell.quickSell': { bn: 'কুইক সেল', en: 'Quick Sell', hi: 'क्विक सेल' },
+  'qsell.pickProduct': { bn: 'যে প্রোডাক্ট বিক্রি হবে সেটি বাছুন', en: 'Pick the product to sell', hi: 'बिक्री के लिए प्रोडक्ट चुनें' },
+  'qsell.searchProduct': { bn: 'প্রোডাক্ট খুঁজুন…', en: 'Search product…', hi: 'प्रोडक्ट खोजें…' },
+  'qsell.noProduct': { bn: 'কোনো প্রোডাক্ট মেলেনি', en: 'No product matched', hi: 'कोई प्रोडक्ट नहीं मिला' },
+  'qsell.saleDetails': { bn: 'বিক্রির বিবরণ', en: 'Sale details', hi: 'बिक्री विवरण' },
+  'qsell.customer': { bn: 'কাস্টমারের নাম (ঐচ্ছিক)', en: 'Customer name (optional)', hi: 'ग्राहक का नाम (वैकल्पिक)' },
+  'qsell.mobile': { bn: 'মোবাইল (ঐচ্ছিক)', en: 'Mobile (optional)', hi: 'मोबाइल (वैकल्पिक)' },
+  'qsell.note': { bn: 'নোট (ঐচ্ছিক)', en: 'Note (optional)', hi: 'नोट (वैकल्पिक)' },
+  'qsell.complete': { bn: 'বিক্রি সম্পন্ন করুন', en: 'Complete sale', hi: 'बिक्री पूरी करें' },
+  'qsell.done': { bn: 'বিক্রি হয়ে গেছে', en: 'Sale completed', hi: 'बिक्री पूरी हुई' },
+  'qsell.doneDesc': { bn: 'বিল তৈরি হয়েছে এবং "বিল / বিক্রি" তালিকায় যোগ হয়েছে।', en: 'The bill was created and added to the Bills / Sales list.', hi: 'बिल बन गया और "बिल / बिक्री" सूची में जुड़ गया।' },
+  'qsell.printReceipt': { bn: 'রিসিট প্রিন্ট', en: 'Print receipt', hi: 'रसीद प्रिंट' },
+  'qsell.sellAgain': { bn: 'নতুন বিক্রি', en: 'New sale', hi: 'नई बिक्री' },
+  'qsell.viewBills': { bn: 'বিল দেখুন', en: 'View bills', hi: 'बिल देखें' },
+  'qsell.stockLeft': { bn: 'স্টকে', en: 'in stock', hi: 'स्टॉक में' },
+  'qsell.outOfStock': { bn: 'স্টক নেই', en: 'Out of stock', hi: 'स्टॉक नहीं' },
+  'qsell.errStock': { bn: 'স্টকে যথেষ্ট নেই', en: 'Not enough stock', hi: 'पर्याप्त स्टॉक नहीं' },
+  'qsell.dueNote': { bn: 'পেমেন্ট "বাকি" হলে বিলটি বাকির খাতায়ও যোগ হবে।', en: 'Choosing "Due" also adds the bill to the Due Book.', hi: '"बाकी" चुनने पर बिल बाकी खाते में भी जुड़ जाएगा।' },
+
+  // ── category suggestions ─────────────────────────────────────
+  'cat.searchOrCreate': { bn: 'ক্যাটাগরি খুঁজুন বা নতুন লিখুন…', en: 'Search or type a new category…', hi: 'श्रेणी खोजें या नई लिखें…' },
+  'cat.create': { bn: 'নতুন ক্যাটাগরি বানান', en: 'Create new category', hi: 'नई श्रेणी बनाएं' },
+  'cat.none': { bn: 'কোনো ক্যাটাগরি নেই — নাম লিখে নতুন বানান', en: 'No categories yet — type a name to create one', hi: 'कोई श्रेणी नहीं — नाम लिखकर बनाएं' },
+
+  // ── print / PDF ──────────────────────────────────────────────
+  'bills.print': { bn: 'প্রিন্ট / PDF', en: 'Print / PDF', hi: 'प्रिंट / PDF' },
+  'bills.soldReport': { bn: 'বিক্রি হওয়া প্রোডাক্টের রিপোর্ট', en: 'Sold Products Report', hi: 'बिक्री प्रोडक्ट रिपोर्ट' },
+  'bills.noBillsPrint': { bn: 'প্রিন্ট করার মতো কোনো বিল নেই', en: 'No bills to print', hi: 'प्रिंट के लिए कोई बिल नहीं' },
+  'bills.qtySold': { bn: 'বিক্রি সংখ্যা', en: 'Qty sold', hi: 'बिक्री संख्या' },
+  'bills.grandTotal': { bn: 'সর্বমোট', en: 'Grand total', hi: 'कुल योग' },
+  'print.productSummary': { bn: 'প্রোডাক্ট সারসংক্ষেপ', en: 'Product summary', hi: 'प्रोडक्ट सारांश' },
+  'print.detailList': { bn: 'বিস্তারিত তালিকা', en: 'Detailed list', hi: 'विस्तृत सूची' },
+  'print.generated': { bn: 'তৈরি হয়েছে', en: 'Generated', hi: 'निर्मित' },
+  'print.signature': { bn: 'স্বাক্ষর', en: 'Signature', hi: 'हस्ताक्षर' },
+  'print.totalPaid': { bn: 'মোট জমা', en: 'Total paid', hi: 'कुल भुगतान' },
+  'print.totalDue': { bn: 'মোট বাকি', en: 'Total due', hi: 'कुल बाकी' },
+  'print.thankyou': { bn: 'কেনাকাটার জন্য ধন্যবাদ!', en: 'Thank you for your purchase!', hi: 'खरीदारी के लिए धन्यवाद!' },
+
   // ── common ───────────────────────────────────────────────────
   'c.save': { bn: 'সেভ', en: 'Save', hi: 'सेव' },
   'c.add': { bn: 'যোগ করুন', en: 'Add', hi: 'जोड़ें' },

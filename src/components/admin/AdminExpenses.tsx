@@ -171,7 +171,7 @@ export default function AdminExpenses() {
         ) : (
           <div className="overflow-x-auto max-h-[62vh] overflow-y-auto">
             <table className="w-full min-w-[560px]">
-              <thead className="bg-[#FAFAFB] sticky top-0 z-10">
+              <thead className="bg-[var(--psa-hover)] sticky top-0 z-10">
                 <tr>
                   <Th>{t('exp.date')}</Th>
                   <Th>{t('exp.category')}</Th>
@@ -182,25 +182,25 @@ export default function AdminExpenses() {
               </thead>
               <tbody>
                 {expenses.map((e) => (
-                  <tr key={e.id} className="hover:bg-[#FFFBF9] transition-colors">
-                    <Td className="text-[#6B7280] whitespace-nowrap">{fmtDate(e.date)}</Td>
+                  <tr key={e.id} className="hover:bg-[var(--psa-row-hover)] transition-colors">
+                    <Td className="text-[var(--psa-muted)] whitespace-nowrap">{fmtDate(e.date)}</Td>
                     <Td>
                       <Badge tone="orange">{e.category || '—'}</Badge>
                     </Td>
-                    <Td className="text-[#374151] max-w-60 truncate">{e.description || '—'}</Td>
+                    <Td className="text-[var(--psa-sub)] max-w-60 truncate">{e.description || '—'}</Td>
                     <Td className="text-right tabular-nums font-semibold text-[#DC2626]">− {fmtMoney(e.amount)}</Td>
                     <Td>
                       <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => openEdit(e)}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-[#6B7280] hover:bg-[#F3F4F6]"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--psa-muted)] hover:bg-[var(--psa-hover2)]"
                           title={t('c.edit')}
                         >
                           <Pencil size={14} />
                         </button>
                         <button
                           onClick={() => setDeleting(e)}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-[#DC2626] hover:bg-[#FEF2F2]"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-[#DC2626] hover:bg-[var(--psa-soft-red)]"
                           title={t('c.delete')}
                         >
                           <Trash2 size={14} />
@@ -254,8 +254,8 @@ export default function AdminExpenses() {
                   onClick={() => setForm({ ...form, category: k })}
                   className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
                     form.category === k
-                      ? 'bg-[#FFF1EB] border-[#FA6E41] text-[#E8552C]'
-                      : 'bg-white border-[#E1E4E8] text-[#6B7280] hover:border-[#FA6E41]/50'
+                      ? 'bg-[var(--psa-soft-orange)] border-[#FA6E41] text-[#E8552C]'
+                      : 'bg-[var(--psa-card)] border-[var(--psa-field-border)] text-[var(--psa-muted)] hover:border-[#FA6E41]/50'
                   }`}
                 >
                   {catLabel(k, lang)}
@@ -288,7 +288,7 @@ export default function AdminExpenses() {
           </>
         }
       >
-        <p className="text-sm text-[#374151]">
+        <p className="text-sm text-[var(--psa-sub)]">
           {fmtDate(deleting?.date)} — <b>{fmtMoney(deleting?.amount || 0)}</b>
         </p>
       </Modal>
