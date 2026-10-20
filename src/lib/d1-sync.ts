@@ -143,6 +143,18 @@ interface D1ResponseShape {
   errors?: { code?: number; message?: string }[];
 }
 
+/**
+ * True when the compiled-in secrets are the ensure-secrets.mjs TEMPLATE
+ * placeholders (PASTE_YOUR_*) — i.e. a build made without the git-ignored
+ * d1-secrets.ts (every Vercel build). Relaying placeholders to the proxy used
+ * to make Cloudflare answer "Could not route to /accounts/PASTE_YOUR_ACCOUNT_ID/…"
+ * ("সংযোগ ব্যর্থ হয়েছে") because non-empty body fields beat the env fallback.
+ * Template build → send EMPTY creds instead, so the proxy falls back to the
+ * deployment's own CLOUDFLARE_* environment variables (server-managed mode).
+ * Real-value builds (sandbox preview, self-hosted) relay the constants as before.
+ */
+const templateSecrets = /PASTE_YOUR/i.test(`${D1_ACCOUNT_ID} ${D1_DATABASE_ID} ${D1_API_TOKEN}`);
+
 /** Cached native-runtime probe (CapacitorHttp patches fetch → CORS-free). */
 let nativeRt: boolean | null = null;
 async function isNativeRuntime(): Promise<boolean> {
@@ -185,10 +197,13 @@ async function d1Query<T = Row>(sql: string, params: unknown[] = []): Promise<T[
       : await fetch('/api/cloud/d1', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          // Template build (Vercel): empty creds → proxy env fallback.
+          // Real build: relay the compiled-in keys (self-hosted hosting
+          // without CLOUDFLARE_* env vars keeps working).
           body: JSON.stringify({
-            accountId: D1_ACCOUNT_ID,
-            databaseId: D1_DATABASE_ID,
-            apiToken: D1_API_TOKEN,
+            accountId: templateSecrets ? '' : D1_ACCOUNT_ID,
+            databaseId: templateSecrets ? '' : D1_DATABASE_ID,
+            apiToken: templateSecrets ? '' : D1_API_TOKEN,
             sql,
             params,
           }),

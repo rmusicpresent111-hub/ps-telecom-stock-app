@@ -180,13 +180,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // The client sends empty strings when it has no locally saved keys (the
   // "server-managed" mode); per-field fallback keeps manual keys working even
   // alongside env vars (e.g. a personal token overriding the shared one).
+  //
+  // Placeholder junk (ensure-secrets.mjs template values like PASTE_YOUR_*
+  // relayed by an old build, or pasted by mistake into the manual form)
+  // counts as "not provided" so the env fallback can rescue the request
+  // instead of Cloudflare answering "Could not route to /accounts/PASTE_YOUR_…".
+  const isPlaceholderJunk = (v: string): boolean => /paste[_\s-]?your/i.test(v);
+  const bodyAccountId = (body.accountId || '').trim();
+  const bodyDatabaseId = (body.databaseId || '').trim();
+  const bodyApiToken = (body.apiToken || '').trim();
+
   const envAccountId = (process.env.CLOUDFLARE_ACCOUNT_ID || '').trim();
   const envDatabaseId = (process.env.CLOUDFLARE_D1_DATABASE_ID || '').trim();
   const envApiToken = (process.env.CLOUDFLARE_D1_API_TOKEN || '').trim();
 
-  const accountId = ((body.accountId || '').trim() || envAccountId);
-  const databaseId = ((body.databaseId || '').trim() || envDatabaseId);
-  const apiToken = ((body.apiToken || '').trim() || envApiToken);
+  const accountId = (bodyAccountId && !isPlaceholderJunk(bodyAccountId) ? bodyAccountId : '') || envAccountId;
+  const databaseId = (bodyDatabaseId && !isPlaceholderJunk(bodyDatabaseId) ? bodyDatabaseId : '') || envDatabaseId;
+  const apiToken = (bodyApiToken && !isPlaceholderJunk(bodyApiToken) ? bodyApiToken : '') || envApiToken;
   const sql = (body.sql || '').trim();
   const params = Array.isArray(body.params) ? body.params : undefined;
 
