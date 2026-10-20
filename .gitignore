@@ -93,3 +93,4 @@ firebase-debug.*.log
 
 # Cloudflare D1 secrets (never commit real tokens — GitHub Push Protection blocks them)
 src/lib/d1-secrets.ts
+.vercel

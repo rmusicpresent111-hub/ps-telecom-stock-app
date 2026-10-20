@@ -1667,3 +1667,23 @@ Stage Summary:
 - Repo is one-click Vercel-ready: import on vercel.com, paste the 3 CLOUDFLARE_* env vars, deploy — cloud sync works out of the box via server-managed proxy mode (browser never sees the token)
 - Bonus: sandbox preview cloud sync restored (was silently dead since the Oct 20 restore)
 - GitHub Pages mirror untouched (still the dormant-sync fallback)
+
+---
+Task ID: 51
+Agent: Z.ai Code (main thread)
+Task: "vercel token dilam vcp_..." — full Vercel production deployment via CLI using the user's token
+
+Work Log:
+- Token verified: whoami = rmusicpresent111-8539 (team ratri-devis-projects, Hobby plan)
+- Wrote .vercelignore (APKs 15MB, .next 334M, db/, logs, worklog, android etc. excluded from upload) + gitignored .vercel/
+- vercel link --project ps-telecom-stock-app → prj_CHVj0rNz1MEXo4ySdyTAa5QF1hZy
+- Env vars set (stored as Secrets): CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_D1_DATABASE_ID / CLOUDFLARE_D1_API_TOKEN on production ✓; preview env-add blocked by an interactive "Git branch?" prompt in CLI 64.7.0 (skipped — production is what matters)
+- Production deploy: vercel --prod → build 29s, Ready 45s → aliased https://ps-telecom-stock-app.vercel.app
+- "Deployment Protection (Vercel Authentication)" warning turned out to apply to PREVIEW deployments only — production alias is public (curl 200)
+- VERIFIED LIVE: / = 200, /admin/ = 200, and the golden test — POST /api/cloud/d1 with EMPTY credentials → {"ok":true,"rows":[{"n":103}]} proving server-managed env-cred mode works on Vercel (token never reaches the browser)
+
+Stage Summary:
+- LIVE: https://ps-telecom-stock-app.vercel.app (root) · https://ps-telecom-stock-app.vercel.app/admin (admin panel)
+- Cloud sync works out of the box via server-managed proxy mode; user just connects with their existing Sync ID + PIN — same D1 as the APK
+- Deploy is CLI-based (not GitHub-connected); future updates = rerun vercel --prod with the token (user can ask me anytime)
+- .vercelignore + .gitignore committed; deployment protection API body quirk noted (invalid_sso_protection) but unnecessary
