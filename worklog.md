@@ -1747,3 +1747,23 @@ Stage Summary:
 - Cloud credentials now configured on EVERY Vercel environment (production + preview + development) — future git preview builds and production builds all get server-managed D1
 - Admin panel shows actionable Bangla guidance if ever opened on an un-configured link, pointing to the production URL
 - v2.11.2 live everywhere via the user's own git-connected pipeline; production alias verified end-to-end
+
+---
+Task ID: 55
+Agent: Z.ai Code (main thread)
+Task: "eki categoryr product same name e eki product jeno 2bar add nahoy eta fix koro ar test korar somoy amar detabase e sample product add korbena" — duplicate product guard + zero-sample-data testing
+
+Work Log:
+- GAP ANALYSIS: the mobile app's AddProductScreen already pre-checked duplicates on ADD only (localized toast existed), but (a) the ADMIN panel saveForm had NO duplicate check at all, (b) the EDIT path (rename/move) was unchecked everywhere, (c) the check lived only in one UI form — every other entry point bypassed it
+- SERVICE-LEVEL GUARD (src/lib/offline-service.ts): exported DuplicateProductError (code DUPLICATE_PRODUCT); findDuplicateProduct/assertNoDuplicateProduct helpers — one name per category, trimmed + case-insensitive, excludeId exempts the row being edited; wired into createProductOffline AND updateProductOffline (name change OR category move), so app, admin panel and any future importer share one enforcement point
+- IndexedDB HAZARD avoided: the update guard runs BEFORE the readwrite transaction opens (an IDB tx auto-commits when idle — awaiting another store query inside it would throw TransactionInactiveError on the allow path); update now does a Phase-1 read + guard, then the original Phase-2 readwrite tx unchanged
+- ADMIN UX (AdminProducts.tsx): saveForm pre-checks the in-memory products list (instant, no extra IO) and shows prod.duplicate toast before any write is attempted; the service throw remains the backstop and surfaces via the existing catch
+- i18n: admin-i18n 'prod.duplicate' × bn/en/hi ('এই নামের প্রোডাক্ট এই ক্যাটেগরিতে আগেই আছে!'); app i18n duplicateProduct key already existed — AddProductScreen catch now maps DUPLICATE_PRODUCT to it (covers the previously unchecked edit path)
+- ZERO-SAMPLE-DATA TESTING (user's explicit requirement): fresh agent-browser profile, confirmed Cloud Sync page shows NO connected account (sandbox-local only, nothing can reach D1); read-only curl baseline: sync_data products = 11; E2E on sandbox /admin: created local-only ZZDupTest (proves allow path works with new code), then ADD "zzduptest" same category → BLOCKED with toast "এই নামের প্রোডাক্ট এই ক্যাটেগরিতে আগেই আছে!" (screenshot) + modal stays open + count stays 1 (case-insensitivity proven); EDIT AlphaTest → rename to "zzduptest" → BLOCKED same toast (screenshot) + cancel; cleanup: both test products deleted locally (count 0); post-test D1 curl: products = 11 — IDENTICAL to baseline, user's real database provably untouched; zero page errors
+- v2.11.3 (package.json + AdminShell footer); lint + tsc clean; main e602a5f pushed
+- DEPLOYED: Vercel git-integration auto-built production 69x8j4fxq (Ready 41s) — production alias /admin verified via agent-browser: PIN gate → unlock → footer v2.11.3 → zero errors; gh-pages mirror redeployed (branch 9e43605) — mirror chunk 2b8b1dd6f227fa64.js confirmed live containing prod.duplicate + v2.11.3
+
+Stage Summary:
+- Same-category duplicate products are now impossible: blocked on ADD and EDIT (rename + category move) across the app and the admin panel, enforced in the service layer with localized bn/en/hi feedback
+- Testing honored the no-sample-data rule: all test rows were sandbox-browser-local, deleted afterwards, and the D1 product count stayed 11 throughout (read-only verification)
+- All three platforms on v2.11.3 and verified live (Vercel prod auto-build, gh-pages mirror, sandbox preview)
