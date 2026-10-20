@@ -23,6 +23,7 @@ import {
   Trash2,
   ImageUp,
   Loader2,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   getBillingSettingsOffline,
@@ -35,6 +36,7 @@ import { fileToResizedDataUrl } from '@/lib/image-utils';
 import { useAdminStore } from '@/store/adminStore';
 import { ta } from '@/lib/admin-i18n';
 import type { Bill, BillingSettings } from '@/lib/types';
+import { normalizeAdminPin, DEFAULT_ADMIN_PIN } from '@/lib/admin-pin';
 import { useAdminDataTick } from './useAdminData';
 import { buildBillReceiptHtml, printHtml } from './print';
 import A4Preview from './A4Preview';
@@ -291,6 +293,7 @@ export default function AdminBillSettings() {
         qrCodeDataUrl: form.qrCodeDataUrl,
         thankYouNote: form.thankYouNote,
         termsText: form.termsText,
+        adminPin: normalizeAdminPin(form.adminPin ?? '') || DEFAULT_ADMIN_PIN,
       });
       setDirty(false);
       adminToast(t('bset.savedNote'));
@@ -538,6 +541,27 @@ export default function AdminBillSettings() {
               value={form.termsText}
               onChange={(e) => set('termsText', e.target.value)}
               placeholder={'1. Goods once sold will not be taken back\n2. Warranty as per manufacturer only\n3. Subject to local jurisdiction'}
+            />
+          </Field>
+        </AdminCard>
+
+        {/* Security — admin panel PIN */}
+        <AdminCard
+          title={
+            <span className="flex items-center gap-2">
+              <ShieldCheck size={16} className="text-[#FA6E41]" /> {t('bset.security')}
+            </span>
+          }
+          className="lg:col-span-2"
+        >
+          <Field label={t('bset.pin')} hint={t('bset.pinHint')}>
+            <TextInput
+              value={form.adminPin ?? ''}
+              onChange={(e) => set('adminPin', normalizeAdminPin(e.target.value))}
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder={DEFAULT_ADMIN_PIN}
+              className="max-w-[240px] tracking-[0.3em] font-bold"
             />
           </Field>
         </AdminCard>

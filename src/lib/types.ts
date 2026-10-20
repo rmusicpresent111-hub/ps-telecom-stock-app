@@ -192,5 +192,6 @@ export interface BillingSettings {
   billPrefix: string;       // e.g. 'PS'
   thankYouNote: string;
   termsText: string;
+  adminPin: string;         // admin panel security PIN ('' → DEFAULT_ADMIN_PIN)
   updatedAt: string;
 }

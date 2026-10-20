@@ -1369,6 +1369,7 @@ export const DEFAULT_BILLING_SETTINGS: Omit<BillingSettings, 'userId' | 'updated
   billPrefix: 'PS',
   thankYouNote: 'Thank you for your business!',
   termsText: '',
+  adminPin: '9732881732', // admin panel security PIN (change in Bill Settings)
 };
 
 export async function getBillingSettingsOffline(userId: string): Promise<BillingSettings> {
@@ -1391,6 +1392,7 @@ export async function saveBillingSettingsOffline(userId: string, updates: Partia
     shopName: (updates.shopName ?? current.shopName).trim() || DEFAULT_BILLING_SETTINGS.shopName,
     gstRate: clampNumber(updates.gstRate ?? current.gstRate, 0, 100),
     defaultDiscountPercent: clampNumber(updates.defaultDiscountPercent ?? current.defaultDiscountPercent, 0, 100),
+    adminPin: (updates.adminPin ?? current.adminPin ?? '').replace(/\D/g, '').slice(0, 12) || '9732881732',
     userId,
     updatedAt: new Date().toISOString(),
   };

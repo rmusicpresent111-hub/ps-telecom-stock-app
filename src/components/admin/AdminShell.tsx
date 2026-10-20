@@ -28,6 +28,7 @@ import {
   Sun,
   Moon,
   Zap,
+  Lock,
 } from 'lucide-react';
 import { ensureDefaultUser } from '@/lib/local-auth';
 import { startD1Sync, getD1SyncStatus, subscribeD1Status } from '@/lib/d1-sync';
@@ -45,6 +46,7 @@ import AdminStaffPayments from './AdminStaffPayments';
 import AdminReports from './AdminReports';
 import AdminBillSettings from './AdminBillSettings';
 import AdminSync from './AdminSync';
+import AdminPinGate, { lockAdminPanel } from './AdminPinGate';
 
 const NAV: { key: AdminSection; icon: React.ComponentType<{ size?: number | string }>; navKey: string }[] = [
   { key: 'dashboard', icon: LayoutDashboard, navKey: 'nav.dashboard' },
@@ -202,6 +204,16 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
         <div className="flex items-center justify-between px-1">
           <LangSwitch />
         </div>
+        <button
+          onClick={() => {
+            lockAdminPanel(); // clear the unlock flag…
+            if (typeof window !== 'undefined') window.location.reload(); // …the gate then takes over
+          }}
+          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold text-[var(--psa-muted)] hover:bg-[var(--psa-hover2)] transition-colors"
+        >
+          <Lock size={17} />
+          {ta('lock.relock', lang)}
+        </button>
         <a
           href="./"
           className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold text-[var(--psa-muted)] hover:bg-[var(--psa-hover2)] transition-colors"
@@ -214,7 +226,7 @@ function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-export default function AdminShell() {
+function AdminShellInner() {
   const section = useAdminStore((s) => s.section);
   const setSection = useAdminStore((s) => s.setSection);
   const drawerOpen = useAdminStore((s) => s.drawerOpen);
@@ -330,7 +342,7 @@ export default function AdminShell() {
         {/* footer (sticky bottom, Vyapar-style strip) */}
         <footer className="mt-auto hidden lg:block border-t border-[var(--psa-border)] bg-[var(--psa-card)]">
           <div className="max-w-[1200px] mx-auto px-6 py-3 flex items-center justify-between text-[11px] text-[var(--psa-faint)]">
-            <span>PS TELECOM {ta('shell.title', lang)} · v2.10.0</span>
+            <span>PS TELECOM {ta('shell.title', lang)} · v2.11.0</span>
             <span className="flex items-center gap-2">
               <Badge tone="orange">Web Admin</Badge>
               <Badge tone="green">D1 encrypted</Badge>
@@ -384,5 +396,19 @@ export default function AdminShell() {
         }}
       />
     </div>
+  );
+}
+
+/**
+ * Exported shell = the PIN gate wrapping the real console.
+ * While locked, NOTHING below the gate mounts — AdminShellInner's boot
+ * effects (default profile + D1 sync) only run after a successful unlock,
+ * so a stranger's device never receives shop data.
+ */
+export default function AdminShell() {
+  return (
+    <AdminPinGate>
+      <AdminShellInner />
+    </AdminPinGate>
   );
 }

@@ -293,6 +293,45 @@ const D: Record<string, Entry> = {
     en: 'Bill settings saved — the app gets the update too',
     hi: 'बिल सेटिंग्स सेव हुईं — ऐप को भी अपडेट मिलेगा',
   },
+
+  // ---- Admin panel PIN gate ----
+  'lock.subtitle': {
+    bn: 'অ্যাডমিন প্যানেল খুলতে নিরাপত্তা PIN দিন',
+    en: 'Enter the security PIN to open the admin panel',
+    hi: 'एडमिन पैनल खोलने के लिए सुरक्षा PIN दें',
+  },
+  'lock.pin': { bn: 'নিরাপত্তা PIN', en: 'Security PIN', hi: 'सुरक्षा PIN' },
+  'lock.unlock': { bn: 'খুলুন', en: 'Unlock', hi: 'अनलॉक करें' },
+  'lock.unlocking': { bn: 'যাচাই হচ্ছে…', en: 'Verifying…', hi: 'जाँच हो रही है…' },
+  'lock.wrong': {
+    bn: 'ভুল PIN — আবার চেষ্টা করুন',
+    en: 'Wrong PIN — try again',
+    hi: 'गलत PIN — फिर कोशिश करें',
+  },
+  'lock.tryIn': {
+    bn: 'অনেক ভুল হয়েছে — {s} সেকেন্ড পরে চেষ্টা করুন',
+    en: 'Too many tries — retry in {s}s',
+    hi: 'बहुत गलत प्रयास — {s} सेकंड में कोशिश करें',
+  },
+  'lock.relock': { bn: 'অ্যাডমিন লক করুন', en: 'Lock panel', hi: 'पैनल लॉक करें' },
+  'lock.hint': {
+    bn: 'PIN ভুলে গেছেন? যেকোনো খোলা ডিভাইসের বিল সেটিংসে নতুন PIN সেট করুন — sync হয়ে সব ডিভাইসে চলে আসবে।',
+    en: 'Forgot the PIN? Set a new one in Bill Settings from any unlocked device — it syncs everywhere.',
+    hi: 'PIN भूल गए? किसी खुले डिवाइस की बिल सेटिंग्स में नया PIN सेट करें — सब डिवाइस पर सिंक होगा।',
+  },
+  'lock.show': { bn: 'PIN দেখুন', en: 'Show PIN', hi: 'PIN दिखाएँ' },
+  'lock.hide': { bn: 'PIN লুকান', en: 'Hide PIN', hi: 'PIN छिपाएँ' },
+  'bset.security': {
+    bn: 'নিরাপত্তা — অ্যাডমিন PIN',
+    en: 'Security — Admin PIN',
+    hi: 'सुरक्षा — एडमिन PIN',
+  },
+  'bset.pin': { bn: 'অ্যাডমিন প্যানেলের PIN', en: 'Admin panel PIN', hi: 'एडमिन पैनल का PIN' },
+  'bset.pinHint': {
+    bn: 'এই PIN ছাড়া /admin প্যানেল কেউ খুলতে পারবে না — খালি রাখলে ডিফল্ট 9732881732 কাজ করবে',
+    en: 'Nobody can open /admin without this PIN — empty falls back to the default 9732881732',
+    hi: 'इस PIN के बिना /admin पैनल कोई नहीं खोल सकता — खाली छोड़ने पर डिफ़ॉल्ट 9732881732',
+  },
   'bset.preview': { bn: 'A4 প্রিভিউ', en: 'A4 Preview', hi: 'A4 प्रीव्यू' },
   'bset.previewTitle': { bn: 'বিলের A4 প্রিভিউ', en: 'Bill A4 Preview', hi: 'बिल A4 प्रीव्यू' },
   'bset.sampleNote': {
