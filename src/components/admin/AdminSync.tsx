@@ -117,6 +117,7 @@ export default function AdminSync() {
           'wrong-pin': 'sync.errWrongPin',
           offline: 'sync.errOffline',
           'static-host': 'sync.errStatic',
+          'no-server-cloud': 'sync.errNoServerCloud',
           fail: 'sync.errFail',
         };
         const msg = keyMap[res.error || 'fail'] ? t(keyMap[res.error || 'fail']) : t('sync.errFail');

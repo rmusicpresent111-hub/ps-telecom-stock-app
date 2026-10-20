@@ -444,7 +444,13 @@ export async function connectSync(
   } catch (err) {
     const msg = (err as Error)?.message || 'connect failed';
     setStatus({ state: isNetworkError(msg) ? 'offline' : 'error', lastError: msg });
-    return { ok: false, error: isNetworkError(msg) ? 'offline' : 'fail' };
+    if (isNetworkError(msg)) return { ok: false, error: 'offline' };
+    // Deployment has no cloud credentials at all (preview URL / local clone
+    // without CLOUDFLARE_* env vars — the proxy answers "Missing accountId,
+    // databaseId or apiToken (and no server-managed cloud is configured)").
+    // Distinct, actionable code instead of a generic "fail".
+    if (/missing accountId|server-managed cloud/i.test(msg)) return { ok: false, error: 'no-server-cloud' };
+    return { ok: false, error: 'fail' };
   }
 }
 

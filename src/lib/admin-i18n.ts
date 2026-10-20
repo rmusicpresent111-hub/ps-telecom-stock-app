@@ -155,6 +155,7 @@ const D: Record<string, Entry> = {
   'sync.errBadPin': { bn: 'PIN ছোট হয়ে গেছে', en: 'PIN too short', hi: 'PIN बहुत छोटा' },
   'sync.errTaken': { bn: 'এই Sync ID আগে থেকেই আছে', en: 'This Sync ID already exists', hi: 'यह Sync ID पहले से है' },
   'sync.errNotFound': { bn: 'এই Sync ID খুঁজে পাওয়া যায়নি', en: 'Sync ID not found', hi: 'Sync ID नहीं मिला' },
+  'sync.errNoServerCloud': { bn: 'এই লিংকে ক্লাউড সেটআপ নেই — অ্যাডমিন প্যানেল খুলুন https://ps-telecom-stock-app.vercel.app ঠিকানা থেকে', en: 'Cloud is not configured on this deployment link — open the admin panel from https://ps-telecom-stock-app.vercel.app', hi: 'इस लिंक पर क्लाउड सेटअप नहीं है — एडमिन पैनल https://ps-telecom-stock-app.vercel.app से खोलें' },
   'sync.errWrongPin': { bn: 'PIN ভুল', en: 'Wrong PIN', hi: 'PIN गलत' },
   'sync.errOffline': { bn: 'ইন্টারনেট নেই', en: 'No internet', hi: 'इंटरनेट नहीं' },
   'sync.errFail': { bn: 'সংযোগ ব্যর্থ হয়েছে', en: 'Connection failed', hi: 'कनेक्शन विफल' },
