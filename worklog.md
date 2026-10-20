@@ -1687,3 +1687,24 @@ Stage Summary:
 - Cloud sync works out of the box via server-managed proxy mode; user just connects with their existing Sync ID + PIN — same D1 as the APK
 - Deploy is CLI-based (not GitHub-connected); future updates = rerun vercel --prod with the token (user can ask me anytime)
 - .vercelignore + .gitignore committed; deployment protection API body quirk noted (invalid_sso_protection) but unnecessary
+
+---
+Task ID: 52
+Agent: Z.ai Code (main thread)
+Task: "admin panel e entry neoyar jonnyo security pin used koro 9732881732 pin enter korle admin panel open hobe" — PIN gate on the /admin console
+
+Work Log:
+- NEW src/lib/admin-pin.ts: DEFAULT_ADMIN_PIN '9732881732', unlock-flag helpers (localStorage ps-admin-unlocked-v1), normalize/resolve (legacy rows without adminPin -> factory default)
+- types.ts BillingSettings += adminPin; offline-service DEFAULT_BILLING_SETTINGS += '9732881732' and save() sanitizes digits-only/12-cap with blank -> default fallback
+- NEW AdminPinGate.tsx (module-scope LockScreen — Task 47 remount lesson): full-screen lock card (PS monogram, lock icon, PIN input with show/hide eye, digits-only, Enter submit), wrong-PIN error, 3 consecutive misses -> 30s cooldown countdown (taf {s}), hint about Bill Settings; exported lockAdminPanel()
+- Gate = useSyncExternalStore(no-op subscribe, localStorage snapshot, server 'checking') -> hydration-safe splash, no mismatch, no set-state-in-effect lint error
+- AdminShell split into AdminShellInner + default export wrapping it in AdminPinGate: while locked NOTHING mounts — boot effects (default profile + startD1Sync) only run after unlock, so strangers' devices never receive shop data; Lock panel button added to sidebar footer (desktop + mobile drawer) = clear flag + reload; footer version v2.11.0
+- AdminBillSettings: Security card (ShieldCheck) with digits-only PIN input (placeholder = default) + hint; save includes sanitized adminPin
+- i18n: 13 keys x bn/en/hi (lock.* + bset.security/pin/pinHint); package.json 2.11.0
+- E2E (agent-browser, preview /admin): lock screen renders (bn, lang switch, disabled btn); wrong PIN -> 'ভুল PIN'; 2 more wrong -> 'অনেক ভুল হয়েছে — 30 সেকেন্ড পরে চেষ্টা করুন' cooldown; correct 9732881732 -> dashboard; reload stays unlocked (flag=1); Lock button -> locked again; Bill Settings Security card shows 9732881732; changed PIN 555555 -> save toast -> lock -> old PIN rejected, new opens; restored 9732881732 -> works; mobile 390px lock+admin+dark lock screen zero overflow; zero page errors; root / unaffected; tsc 0, eslint clean
+- Deployed everywhere: main 61db36c pushed; gh-pages mirror redeployed via scripts/deploy-web-pages.sh (GITHUB_TOKEN env); Vercel --prod redeployed (CLI) — LIVE VERIFIED: vercel /admin shows lock screen and 9732881732 unlocks to dashboard; gh-pages admin 200
+
+Stage Summary:
+- /admin (Vercel + preview + mirror + future APK builds) now asks for the security PIN before rendering anything: factory PIN 9732881732, owner-changeable in Bill Settings -> Settings sync encrypted via D1 to every connected device
+- Remember-device until 'Lock panel' pressed; 3 wrong tries = 30s cooldown
+- All three platforms updated and verified live: vercel + github pages mirror + preview
