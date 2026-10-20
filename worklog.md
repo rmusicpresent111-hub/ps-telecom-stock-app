@@ -1729,3 +1729,21 @@ Stage Summary:
 - Admin panel D1 connect FIXED on Vercel: template builds now use the deployment's env credentials via the proxy fallback; even old clients relaying placeholders are healed server-side by the junk filter
 - All three platforms on v2.11.1 and verified live: Vercel (connect restored), GitHub Pages mirror, sandbox preview
 - Lesson recorded: any future compile-time-secret consumer must handle the PASTE_YOUR template case (build-apk.js precedent now followed by d1-sync.ts)
+
+---
+Task ID: 54
+Agent: Z.ai Code (main thread)
+Task: "EKHON EI ERROR ASCHE FIX KORO সংযোগ ব্যর্থ হয়েছে — D1: Missing accountId, databaseId or apiToken (and no server-managed cloud is configured)" — missing_creds after Task 53 fix
+
+Work Log:
+- Diagnosis: production alias itself was healthy (curl empty-creds → ok:true) and Task 53's fix was live, but `vercel ls` showed the USER had connected the GitHub repo to the Vercel project (git-main domain appeared, 9m-ago git production build fbwhxvotg + an errored preview build) and the three CLOUDFLARE_* env vars existed ONLY on the Production environment — Preview/Development had none; a preview deployment URL (or a local clone run) therefore serves a template build (client sends empty creds) whose proxy has no env fallback → missing_creds
+- FIX A (infra): upserted CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_D1_DATABASE_ID / CLOUDFLARE_D1_API_TOKEN to target ["production","preview","development"] via REST API POST /v10/projects/ps-telecom-stock-app/env?upsert=true (skips the CLI's interactive preview prompt that blocked Task 51); verified env ls shows all three on Production+Preview+Development
+- FIX B (UX, v2.11.2): d1-sync connectSync now maps the proxy's missing-creds message to a distinct 'no-server-cloud' code; AdminSync keyMap += no-server-cloud; admin-i18n new key sync.errNoServerCloud (bn: 'এই লিংকে ক্লাউড সেটআপ নেই — অ্যাডমিন প্যানেল খুলুন https://ps-telecom-stock-app.vercel.app ঠিকানা থেকে' / en / hi) so a wrong-link visit self-explains instead of a raw English error; version 2.11.2 (package.json + AdminShell footer)
+- Pushed main b4a8b1f → Vercel git integration AUTO-BUILT production 8ed9ooffl (Ready, 36s) — first git-source production build, healthy: / 200, /admin/ 200, empty-creds → {"ok":true,"rows":[{"n":79}]}, placeholder-creds → ok (double-healed)
+- agent-browser production E2E: PIN gate renders → 9732881732 unlocks → footer v2.11.2 live → Sync page: syncPage=true, connFail=false, pasteYour=false, missingCreds=false, zero page errors
+- Note: production deployment unique URLs + git-main branch domain are behind Vercel Authentication (owner SSO); the clean public entry is the production alias https://ps-telecom-stock-app.vercel.app — guidance included in the new error message
+
+Stage Summary:
+- Cloud credentials now configured on EVERY Vercel environment (production + preview + development) — future git preview builds and production builds all get server-managed D1
+- Admin panel shows actionable Bangla guidance if ever opened on an un-configured link, pointing to the production URL
+- v2.11.2 live everywhere via the user's own git-connected pipeline; production alias verified end-to-end
