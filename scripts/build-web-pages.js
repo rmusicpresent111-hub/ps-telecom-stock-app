@@ -39,7 +39,23 @@ console.log(`\n🌐 PS TELECOM ${version} — GitHub Pages web mirror build (bas
 
 const movedApi = fs.existsSync(API_DIR);
 const realSecrets = fs.existsSync(SECRETS) ? fs.readFileSync(SECRETS, 'utf8') : null;
-const realIsTemplate = realSecrets !== null && realSecrets.includes('PASTE_YOUR_');
+
+/**
+ * Value-based real-credential detection — the decision must never depend on
+ * comments or other prose in the file (a comment containing the placeholder
+ * wording once made the whole swap+scan pipeline skip and the REAL token
+ * reached the export). Only the actual `export const` VALUES count, and a
+ * value counts as real only when it is not the placeholder itself.
+ */
+const readSecretValue = (name) => {
+  if (realSecrets === null) return null;
+  const m = realSecrets.match(new RegExp(`(?:^|\\n)\\s*export const ${name}\\s*=\\s*['"]([^'"]+)['"]`, 'm'));
+  return m ? m[1] : null;
+};
+const secretValues = ['D1_ACCOUNT_ID', 'D1_DATABASE_ID', 'D1_API_TOKEN'].map(readSecretValue);
+const isPlaceholder = (v) => !v || /PASTE.YOUR/i.test(v) || v.length < 8;
+const hasRealValues = secretValues.every((v) => !isPlaceholder(v));
+const realIsTemplate = realSecrets !== null && !hasRealValues;
 
 const restore = () => {
   try {
@@ -63,6 +79,13 @@ async function main() {
       fs.copyFileSync(EXAMPLE, SECRETS);
       console.log('• d1-secrets.ts → safe template for this public build (real file restored after)');
     }
+    // Turbopack's persistent cache is shared between `next dev` and
+    // `next build` — a dev session that compiled REAL d1-secrets.ts can hand
+    // the export a stale compilation carrying the real token even though the
+    // file on disk is now the template (observed in practice). The public
+    // mirror build is one-shot, so purge ALL artifacts unconditionally.
+    fs.rmSync(path.join(ROOT, '.next'), { recursive: true, force: true });
+    console.log('• .next build artifacts purged (export recompiles from the template)');
 
     // 1. move API routes aside
     if (movedApi) fs.renameSync(API_DIR, TEMP_API);
@@ -82,6 +105,35 @@ async function main() {
 
     // 5. GitHub Pages glue
     if (fs.existsSync(path.join(OUT, 'index.html'))) {
+      // 5b. LEAK SCAN — hard-fail if any real credential reached the public
+      // export. Runs on EVERY export (not only when the local file currently
+      // holds real values — a stale cache can leak an OLDER credential).
+      //   needles: the actual secret VALUES from the local file (when real)
+      //            + a generic Cloudflare API-token shape (cfut_…)
+      const needles = secretValues.filter((v) => !isPlaceholder(v));
+      const genericToken = /cfut_[A-Za-z0-9]{16,}/;
+      let leaked = false;
+      const walk = (dir) => {
+        for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+          const p = path.join(dir, e.name);
+          if (e.isDirectory()) {
+            walk(p);
+          } else {
+            const text = fs.readFileSync(p, 'utf8');
+            if (needles.some((s) => text.includes(s)) || genericToken.test(text)) {
+              console.error(`❌ SECRET LEAK in public export: ${p} — deploy aborted.`);
+              leaked = true;
+            }
+          }
+        }
+      };
+      walk(OUT);
+      if (leaked) {
+        process.exitCode = 1;
+        return;
+      }
+      console.log('• leak scan clean — no real credentials in out/');
+
       fs.writeFileSync(path.join(OUT, '.nojekyll'), '');
       fs.copyFileSync(path.join(OUT, 'index.html'), path.join(OUT, '404.html'));
       const index = fs.readFileSync(path.join(OUT, 'index.html'), 'utf8');
