@@ -2,7 +2,10 @@
 
 /**
  * Quick Sell — one dialog to sell a product in seconds (Vyapar-style):
- *   step 1: pick product (searchable, stock + price visible)
+ *   step 0: pick a CATEGORY first (required — products of only that
+ *           category are offered afterwards)
+ *   step 1: pick product inside the chosen category (searchable,
+ *           stock + price visible)
  *   step 2: qty / rate / customer / payment → SELL transaction + bill
  *   step 3: done — receipt print, sell again, or jump to Bills.
  *
@@ -11,9 +14,10 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Zap, CheckCircle2, Printer, RotateCcw, ReceiptText, AlertTriangle } from 'lucide-react';
+import { Search, Zap, CheckCircle2, Printer, RotateCcw, ReceiptText, AlertTriangle, FolderOpen, ArrowLeft } from 'lucide-react';
 import {
   getProductsOffline,
+  getCategoriesOffline,
   createTransactionOffline,
   createBillOffline,
   getBillingSettingsOffline,
@@ -23,7 +27,7 @@ import { useAdminStore } from '@/store/adminStore';
 import { ta, taf } from '@/lib/admin-i18n';
 import { Badge, Btn, Field, Modal, TextInput, adminToast, fmtMoney } from './admin-ui';
 import { printBillReceipt } from './print';
-import type { Bill, BillingSettings, PaymentMethod, Product } from '@/lib/types';
+import type { Bill, BillingSettings, Category, PaymentMethod, Product } from '@/lib/types';
 
 const METHODS: PaymentMethod[] = ['cash', 'upi', 'card', 'due'];
 
@@ -43,8 +47,12 @@ export default function QuickSellModal({
   const t = (k: string) => ta(k, lang);
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const [catSearch, setCatSearch] = useState('');
+  /** Chosen category — MUST be set before any product can be picked. */
+  const [categoryId, setCategoryId] = useState<string | null>(null);
 
   const [selected, setSelected] = useState<Product | null>(null);
   const [qty, setQty] = useState('1');
@@ -62,9 +70,12 @@ export default function QuickSellModal({
     if (!open) return;
     let alive = true;
     setLoading(true);
-    getProductsOffline(DEFAULT_USER_ID)
-      .then((ps) => {
-        if (alive) setProducts(ps);
+    Promise.all([getProductsOffline(DEFAULT_USER_ID), getCategoriesOffline(DEFAULT_USER_ID)])
+      .then(([ps, cs]) => {
+        if (alive) {
+          setProducts(ps);
+          setCategories(cs);
+        }
       })
       .catch(() => undefined)
       .finally(() => {
@@ -85,6 +96,8 @@ export default function QuickSellModal({
     if (!open) return;
     setDone(null);
     setSearch('');
+    setCatSearch('');
+    setCategoryId(null);
     setQty('1');
     setRate('');
     setCustomerName('');
@@ -95,18 +108,34 @@ export default function QuickSellModal({
     if (prefill) setRate(String(prefill.sellingPrice || ''));
   }, [open, prefill]);
 
+  /** Category rows for step 0 — alphabetical, each with its product count. */
+  const catFiltered = useMemo(() => {
+    const q = catSearch.trim().toLowerCase();
+    const counts = new Map<string, number>();
+    for (const p of products) counts.set(p.categoryId, (counts.get(p.categoryId) || 0) + 1);
+    return categories
+      .filter((c) => !q || c.name.toLowerCase().includes(q))
+      .map((c) => ({ id: c.id, name: c.name, count: counts.get(c.id) || 0 }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [categories, products, catSearch]);
+
+  /** Only the chosen category's products reach the picker. */
   const filtered = useMemo(() => {
+    if (!categoryId) return [];
     const q = search.trim().toLowerCase();
+    const inCat = products.filter((p) => p.categoryId === categoryId);
     const list = q
-      ? products.filter((p) => p.name.toLowerCase().includes(q) || (p.boxNumber || '').toLowerCase().includes(q))
-      : products;
+      ? inCat.filter((p) => p.name.toLowerCase().includes(q) || (p.boxNumber || '').toLowerCase().includes(q))
+      : inCat;
     return [...list].sort((a, b) => {
       const ao = a.quantity <= 0 ? 1 : 0;
       const bo = b.quantity <= 0 ? 1 : 0;
       if (ao !== bo) return ao - bo;
       return a.name.localeCompare(b.name);
     });
-  }, [products, search]);
+  }, [products, search, categoryId]);
+
+  const activeCat = categories.find((c) => c.id === categoryId) || null;
 
   const qtyNum = Math.max(0, Math.floor(Number(qty) || 0));
   const rateNum = Math.max(0, Number(rate) || 0);
@@ -163,6 +192,8 @@ export default function QuickSellModal({
     setDone(null);
     setSelected(null);
     setSearch('');
+    setCatSearch('');
+    setCategoryId(null);
     setQty('1');
     setRate('');
     setCustomerName('');
@@ -178,6 +209,8 @@ export default function QuickSellModal({
       setDone(null);
       setSelected(null);
       setSearch('');
+      setCatSearch('');
+      setCategoryId(null);
     }, 50);
   };
 
@@ -248,12 +281,72 @@ export default function QuickSellModal({
           </Btn>
         }
       >
-        <Field label={t('qsell.pickProduct')}>
-          <div className="relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--psa-faint)]" />
-            <TextInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('qsell.searchProduct')} className="!pl-9" autoFocus />
-          </div>
-        </Field>
+        {!activeCat ? (
+          <>
+            <Field label={t('qsell.pickCategory')}>
+              <div className="relative">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--psa-faint)]" />
+                <TextInput
+                  value={catSearch}
+                  onChange={(e) => setCatSearch(e.target.value)}
+                  placeholder={t('qsell.searchCategory')}
+                  className="!pl-9"
+                  autoFocus
+                />
+              </div>
+            </Field>
+
+            <div className="mt-3 max-h-80 overflow-y-auto rounded-xl border border-[var(--psa-border)] divide-y divide-[var(--psa-line)]">
+              {loading ? (
+                <p className="text-sm text-[var(--psa-muted)] text-center py-6">{t('c.loading')}</p>
+              ) : catFiltered.length === 0 ? (
+                <p className="text-sm text-[var(--psa-muted)] text-center py-6">{t('qsell.noCategory')}</p>
+              ) : (
+                catFiltered.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => {
+                      setCategoryId(c.id);
+                      setSearch('');
+                    }}
+                    className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-[var(--psa-row-hover)] transition-colors"
+                  >
+                    <span className="min-w-0 flex items-center gap-2.5">
+                      <span className="shrink-0 w-8 h-8 rounded-lg bg-[var(--psa-soft-orange)] flex items-center justify-center">
+                        <FolderOpen size={15} className="text-[#E8552C]" />
+                      </span>
+                      <span className="block text-sm font-semibold text-[var(--psa-ink)] truncate">{c.name}</span>
+                    </span>
+                    <Badge tone={c.count > 0 ? 'slate' : 'amber'}>{taf('qsell.catItems', lang, { n: c.count })}</Badge>
+                  </button>
+                ))
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            {/* chosen-category chip — tap to go back and change it */}
+            <button
+              type="button"
+              onClick={() => {
+                setCategoryId(null);
+                setSearch('');
+              }}
+              className="w-full flex items-center gap-2 rounded-xl bg-[var(--psa-soft-orange)] px-3 py-2.5 text-left transition-colors hover:bg-[var(--psa-hover)]"
+            >
+              <ArrowLeft size={14} className="text-[#E8552C] shrink-0" />
+              <FolderOpen size={14} className="text-[#E8552C] shrink-0" />
+              <span className="text-sm font-semibold text-[var(--psa-ink)] truncate flex-1">{activeCat.name}</span>
+              <span className="text-[11px] font-semibold text-[#E8552C] shrink-0">{t('qsell.changeCategory')}</span>
+            </button>
+
+            <Field label={t('qsell.pickProduct')}>
+              <div className="relative">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--psa-faint)]" />
+                <TextInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('qsell.searchProduct')} className="!pl-9" autoFocus />
+              </div>
+            </Field>
 
         <div className="mt-3 max-h-80 overflow-y-auto rounded-xl border border-[var(--psa-border)] divide-y divide-[var(--psa-line)]">
           {loading ? (
@@ -292,6 +385,8 @@ export default function QuickSellModal({
             })
           )}
         </div>
+          </>
+        )}
       </Modal>
     );
   }

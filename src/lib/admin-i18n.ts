@@ -191,6 +191,11 @@ const D: Record<string, Entry> = {
   'qsell.outOfStock': { bn: 'স্টক নেই', en: 'Out of stock', hi: 'स्टॉक नहीं' },
   'qsell.errStock': { bn: 'স্টকে যথেষ্ট নেই', en: 'Not enough stock', hi: 'पर्याप्त स्टॉक नहीं' },
   'qsell.dueNote': { bn: 'পেমেন্ট "বাকি" হলে বিলটি বাকির খাতায়ও যোগ হবে।', en: 'Choosing "Due" also adds the bill to the Due Book.', hi: '"बाकी" चुनने पर बिल बाकी खाते में भी जुड़ जाएगा।' },
+  'qsell.pickCategory': { bn: 'প্রথমে ক্যাটাগরি বাছুন', en: 'Pick a category first', hi: 'पहले श्रेणी चुनें' },
+  'qsell.searchCategory': { bn: 'ক্যাটাগরি খুঁজুন…', en: 'Search category…', hi: 'श्रेणी खोजें…' },
+  'qsell.changeCategory': { bn: 'বদলান', en: 'Change', hi: 'बदलें' },
+  'qsell.noCategory': { bn: 'কোনো ক্যাটাগরি নেই — প্রোডাক্ট পেজ থেকে যোগ করুন', en: 'No categories yet — add one in Products', hi: 'कोई श्रेणी नहीं — प्रोडक्ट पेज में जोड़ें' },
+  'qsell.catItems': { bn: '{n} টি প্রোডাক্ট', en: '{n} products', hi: '{n} प्रोडक्ट' },
 
   // ── category suggestions ─────────────────────────────────────
   'cat.searchOrCreate': { bn: 'ক্যাটাগরি খুঁজুন বা নতুন লিখুন…', en: 'Search or type a new category…', hi: 'श्रेणी खोजें या नई लिखें…' },
