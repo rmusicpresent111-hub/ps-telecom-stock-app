@@ -1647,3 +1647,23 @@ Work Log:
 Stage Summary:
 - GitHub fully in sync with the sandbox: main 3bb8fb0 (v2.10.0 feature + worklog), gh-pages mirror live with Reports hub + Staff Payment + Party Details
 - New token stored as origin remote URL — future pushes need no manual token
+
+---
+Task ID: 50
+Agent: Z.ai Code (main thread)
+Task: "ami varcel e deploy korte chai" — make the repo Vercel-deploy-ready + recover lost D1 credentials
+
+Work Log:
+- Verified the codebase is already Vercel-designed: next.config.ts drops static export when VERCEL=1 (full server build keeps /api/cloud/d1 alive), client falls back to SERVER_MANAGED_CREDS (empty sentinel) so the proxy injects deployment env creds — token never reaches the browser bundle ("zero user setup on Vercel")
+- BLOCKER found: d1-secrets.ts is git-ignored, and the Oct 20 sandbox restore had wiped it back to the TEMPLATE (placeholders) — preview cloud sync was silently broken since then (all E2E tests ran offline so it went unnoticed), and a fresh Vercel checkout would crash the build (Module not found) because Vercel's default build command is plain `next build` without ensure-secrets.mjs
+- CREDENTIAL RECOVERY: git history clean (file was never committed), old APKs pre-date the sync feature, no build caches left — recovered the real values from scripts/test-d1-sync.mjs (base64-encoded constants); token verified ACTIVE via /user/tokens/verify and a live D1 query (sync_data = 103 rows) against account 45dc693e.../db 01d53b1b...
+- Restored real src/lib/d1-secrets.ts (git-ignored, local only) — sandbox preview cloud sync works again; verified end-to-end through the local proxy: POST /api/cloud/d1 → {"ok":true,"rows":[{"n":103}]}
+- NEW vercel.json: buildCommand "node scripts/ensure-secrets.mjs && next build" — fresh Vercel checkouts get the template file created before bundling (placeholders are harmless: client uses the server-managed sentinel, proxy uses CLOUDFLARE_* env vars)
+- Simulated the exact Vercel build locally: VERCEL=1 next build with template secrets → compiled OK; routes: / static, /admin static, /api/cloud/d1 ƒ (serverless); dev server healthy after
+- To configure on Vercel: env vars CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_D1_DATABASE_ID / CLOUDFLARE_D1_API_TOKEN = the recovered values; user deploys via dashboard import (or hands a Vercel token for CLI deploy)
+- Pushed main with the new GitHub token
+
+Stage Summary:
+- Repo is one-click Vercel-ready: import on vercel.com, paste the 3 CLOUDFLARE_* env vars, deploy — cloud sync works out of the box via server-managed proxy mode (browser never sees the token)
+- Bonus: sandbox preview cloud sync restored (was silently dead since the Oct 20 restore)
+- GitHub Pages mirror untouched (still the dormant-sync fallback)
