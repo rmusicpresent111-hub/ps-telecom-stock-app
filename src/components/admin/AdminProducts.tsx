@@ -281,6 +281,18 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
       adminToast(t('prod.addCategoryFirst'), 'err');
       return;
     }
+    // Duplicate guard — the same name must not exist twice inside ONE
+    // category (trimmed + case-insensitive). Editing exempts its own row.
+    // The service layer enforces this too — this pre-check just gives an
+    // instant, localized toast before any write is attempted.
+    const needle = form.name.trim().toLowerCase();
+    const isDuplicate = products.some(
+      (p) => p.id !== editing?.id && p.categoryId === form.categoryId && p.name.trim().toLowerCase() === needle
+    );
+    if (isDuplicate) {
+      adminToast(t('prod.duplicate'), 'err');
+      return;
+    }
     setBusy(true);
     try {
       const payload = {

@@ -321,6 +321,45 @@ export async function getProductsOffline(userId: string, options?: { categoryId?
   return localProducts.map(p => stripSync<Product>(p));
 }
 
+/**
+ * Thrown when a product with the same (trimmed, case-insensitive) name
+ * already exists in the same category. UI layers map `code` to a localized
+ * message; the raw message is a readable English fallback.
+ */
+export class DuplicateProductError extends Error {
+  code = 'DUPLICATE_PRODUCT';
+  constructor(name: string) {
+    super(`A product named "${name}" already exists in this category`);
+    this.name = 'DuplicateProductError';
+  }
+}
+
+/**
+ * Duplicate guard — one name per category (trimmed + case-insensitive).
+ * `excludeId` lets edits keep their own row. Returns the conflicting row.
+ */
+async function findDuplicateProduct(
+  userId: string,
+  categoryId: string,
+  name: string,
+  excludeId?: string
+): Promise<OfflineDBSchema['products']['value'] | null> {
+  const needle = name.trim().toLowerCase();
+  if (!needle) return null;
+  const rows = await offlineProducts.getByCategory(userId, categoryId);
+  return rows.find((r) => r.id !== excludeId && r.name.trim().toLowerCase() === needle) || null;
+}
+
+async function assertNoDuplicateProduct(
+  userId: string,
+  categoryId: string,
+  name: string,
+  excludeId?: string
+): Promise<void> {
+  const dup = await findDuplicateProduct(userId, categoryId, name, excludeId);
+  if (dup) throw new DuplicateProductError(dup.name);
+}
+
 export async function createProductOffline(productData: {
   name: string;
   categoryId: string;
@@ -332,6 +371,11 @@ export async function createProductOffline(productData: {
   userId: string;
 }): Promise<{ product: Product }> {
   if (!productData.name.trim()) throw new Error('Product name is required');
+
+  // Duplicate guard — the same name must never appear twice inside ONE
+  // category. Enforced at the service level so every entry point (app,
+  // admin panel, future importers) is protected, not just one UI form.
+  await assertNoDuplicateProduct(productData.userId, productData.categoryId, productData.name);
 
   const quantity = Math.max(0, Math.floor(Number(productData.quantity ?? 0)) || 0);
   const purchasePrice = Math.max(0, Number(productData.purchasePrice ?? 0)) || 0;
@@ -427,6 +471,22 @@ function applyProductUpdates(
 
 export async function updateProductOffline(id: string, updates: Partial<Product> & { userId: string }): Promise<{ product: Product }> {
   const db = await getOfflineDB();
+
+  // Phase 1 — duplicate guard BEFORE the readwrite transaction opens: an
+  // IndexedDB tx auto-commits the moment it idles, so it must never sit
+  // waiting on another store query. (Read current row first to know the
+  // effective next name/category.)
+  {
+    const current = await db.transaction('products').objectStore('products').get(id);
+    if (!current || current.userId !== updates.userId) throw new Error('Product not found');
+    const nextName = updates.name !== undefined ? String(updates.name).trim() || current.name : current.name;
+    const nextCategoryId = updates.categoryId !== undefined ? updates.categoryId : current.categoryId;
+    const changing = nextName.trim().toLowerCase() !== String(current.name).trim().toLowerCase() || nextCategoryId !== current.categoryId;
+    if (changing) {
+      await assertNoDuplicateProduct(updates.userId, nextCategoryId, nextName, id);
+    }
+  }
+
   const tx = db.transaction(['products', 'transactions'], 'readwrite');
   const product = await tx.objectStore('products').get(id);
   if (!product || product.userId !== updates.userId) throw new Error('Product not found');

@@ -125,7 +125,13 @@ export default function AddProductScreen() {
       setSelectedProductId(null);
       goBack();
     } catch (error) {
-      toast.error((error as Error).message || t('error', language));
+      // Service-level duplicate guard (also covers the edit path, which has
+      // no UI pre-check) → show the localized duplicate message.
+      if ((error as { code?: string } | null)?.code === 'DUPLICATE_PRODUCT') {
+        toast.error(t('duplicateProduct', language));
+      } else {
+        toast.error((error as Error).message || t('error', language));
+      }
     } finally {
       setLoading(false);
     }

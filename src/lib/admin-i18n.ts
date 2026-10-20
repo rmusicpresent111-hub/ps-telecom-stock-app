@@ -64,6 +64,7 @@ const D: Record<string, Entry> = {
   'prod.stockIn': { bn: 'স্টক ইন', en: 'Stock In', hi: 'स्टॉक इन' },
   'prod.stockOut': { bn: 'স্টক আউট', en: 'Stock Out', hi: 'स्टॉक आउट' },
   'prod.addCategoryFirst': { bn: 'প্রথমে অ্যাপে একটি ক্যাটাগরি যোগ করুন', en: 'Add a category in the app first', hi: 'पहले ऐप में एक श्रेणी जोड़ें' },
+  'prod.duplicate': { bn: 'এই নামের প্রোডাক্ট এই ক্যাটেগরিতে আগেই আছে!', en: 'A product with this name already exists in this category!', hi: 'इस नाम का प्रोडक्ट इस कैटेगरी में पहले से मौजूद है!' },
   'prod.confirmDelete': { bn: 'প্রোডাক্টটি মুছে ফেলবেন?', en: 'Delete this product?', hi: 'यह प्रोडक्ट हटाएं?' },
   'prod.deleteNote': { bn: 'পুরোনো বিক্রির ইতিহাস রিপোর্টে রেকর্ড থাকবে (স্ন্যাপশটসহ)।', en: 'Past sales history is kept and still counts in reports.', hi: 'पुराना बिक्री इतिहास रिपोर्ट में रहेगा।' },
   'prod.qty': { bn: 'পরিমাণ', en: 'Qty', hi: 'मात्रा' },
