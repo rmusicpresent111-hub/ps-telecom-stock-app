@@ -1632,3 +1632,18 @@ Stage Summary:
 - Reports page is now a full report hub: category report, category-wise quantity, category-wise profit, low stock summary, recent purchases, expense report and staff payment report — all printable/PDF-able with the shop's A4 header
 - New sections: Staff Payment (records synced to D1 like expenses → reach the APK when it ships this store) and Party Details (every customer auto-saved from sales with mobile, purchased categories and date-wise purchase history + WhatsApp/call + statement print)
 - Links unchanged: preview <preview>/admin (live sync) · https://rmusicpresent111-hub.github.io/ps-telecom-stock-app/admin/
+
+---
+Task ID: 49
+Agent: Z.ai Code (main thread)
+Task: "ghp_yLD... git push koro" — new GitHub token supplied; ensure all Task 48 work is on GitHub
+
+Work Log:
+- Investigated: Task 48 (main b84affe + gh-pages 8e6571f v2.10.0) was ALREADY pushed — earlier session's local origin refs were just stale; fetch confirmed both remote branches up to date
+- Sandbox auto-checkpoint 8170e59 sat on top (skills/web-reader+web-search deletions + dev.pid + worklog Task 48 entry) — reset dance applied: git reset b84affe, skills/ restored from HEAD, worklog.md committed alone as 3bb8fb0
+- Remote URL updated with the NEW token; push origin main -> b84affe..3bb8fb0 OK (token verified working)
+- Verified: origin/main = 3bb8fb0, origin/gh-pages = 8e6571f, gh-pages tree contains v2.10.0 in admin chunk 3c3307d0fb0d0319.js; dev server healthy (root 200, admin 200)
+
+Stage Summary:
+- GitHub fully in sync with the sandbox: main 3bb8fb0 (v2.10.0 feature + worklog), gh-pages mirror live with Reports hub + Staff Payment + Party Details
+- New token stored as origin remote URL — future pushes need no manual token
