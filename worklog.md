@@ -1708,3 +1708,24 @@ Stage Summary:
 - /admin (Vercel + preview + mirror + future APK builds) now asks for the security PIN before rendering anything: factory PIN 9732881732, owner-changeable in Bill Settings -> Settings sync encrypted via D1 to every connected device
 - Remember-device until 'Lock panel' pressed; 3 wrong tries = 30s cooldown
 - All three platforms updated and verified live: vercel + github pages mirror + preview
+
+---
+Task ID: 53
+Agent: Z.ai Code (main thread)
+Task: "ADMIN PANEL ER SATHE connect hochhena ei error asche সংযোগ ব্যর্থ হয়েছে — D1: Account ID or Database ID is wrong (Could not route to /client/v4/accounts/PASTE_YOUR_ACCOUNT_ID/d1/database/PASTE_YOUR_DATABASE_ID/query)" — admin panel D1 connect broken on Vercel
+
+Work Log:
+- ROOT CAUSE: src/lib/d1-sync.ts (admin sync engine) relayed the COMPILE-TIME constants D1_ACCOUNT_ID/D1_DATABASE_ID/D1_API_TOKEN from git-ignored d1-secrets.ts to the /api/cloud/d1 proxy on the browser path; on Vercel every build runs scripts/ensure-secrets.mjs which recreates d1-secrets.ts as the PASTE_YOUR_* TEMPLATE (real file never enters git), so the proxy received non-empty placeholder fields which beat the env fallback (body-first resolution) and Cloudflare answered 404 "Could not route to /accounts/PASTE_YOUR_ACCOUNT_ID/…" → AdminSync showed sync.errFail "সংযোগ ব্যর্থ হয়েছে"; sandbox preview always worked because its local d1-secrets.ts has the real values — that's why earlier E2E missed it
+- FIX 1 (src/lib/d1-sync.ts): module-scope templateSecrets = /PASTE_YOUR/i.test of the three constants; browser proxy branch now sends EMPTY creds when the build is a template build → proxy falls back to CLOUDFLARE_* env vars (server-managed mode); real-value builds (sandbox preview / self-hosted next start) keep relaying the compiled keys so hosting without env vars still works; native APK path untouched (build-apk.js already hard-fails template builds)
+- FIX 2 (src/app/api/cloud/d1/route.ts defense in depth): isPlaceholderJunk(/paste[_\s-]?your/i) — placeholder-junk body fields now count as "not provided" BEFORE the per-field env fallback, healing any old cached client or manual-form paste of template values
+- .env.local += CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_D1_DATABASE_ID / CLOUDFLARE_D1_API_TOKEN (git-ignored) so the sandbox fully replicates Vercel server-managed mode; dev server restarted with it
+- Verified locally (curl -L): placeholder creds → {"ok":true,rows:[{n:79}]}; empty creds → ok; partial junk (junk accountId + real token) → ok — 3/3
+- E2E (agent-browser, sandbox /admin): PIN gate 9732881732 unlocks → Cloud Sync page → fake connect attempt PS-TEST-0000 fired REAL D1 queries through the proxy (ensureSchema 3 stmts + account SELECT, all 200) and returned the mapped "এই Sync ID খুঁজে পাওয়া যায়নি" (not-found) — NOT the old "সংযোগ ব্যর্থ/Could not route"; zero page errors; user's real D1 untouched (lookup-only, no test account created)
+- v2.11.1 (package.json + AdminShell footer); main 2473ba7 pushed
+- Vercel --prod redeployed (CLI, 2m build) — PRODUCTION VERIFIED: / and /admin/ 200; POST /api/cloud/d1 with PASTE_YOUR placeholder creds → {"ok":true,"rows":[{"n":79}]} (the exact user bug, healed); empty creds → ok; agent-browser on https://ps-telecom-stock-app.vercel.app/admin: PIN gate renders, 9732881732 unlocks, v2.11.1 footer live, Sync page renders with hasConnFail=false hasPlaceholder=false, zero errors
+- gh-pages mirror redeployed (scripts/deploy-web-pages.sh, commit e8ba704) — admin 200, v2.11.1 chunk d9ab16d40165f490.js confirmed on the branch (mirror keeps sync dormant by design, updated for version parity)
+
+Stage Summary:
+- Admin panel D1 connect FIXED on Vercel: template builds now use the deployment's env credentials via the proxy fallback; even old clients relaying placeholders are healed server-side by the junk filter
+- All three platforms on v2.11.1 and verified live: Vercel (connect restored), GitHub Pages mirror, sandbox preview
+- Lesson recorded: any future compile-time-secret consumer must handle the PASTE_YOUR template case (build-apk.js precedent now followed by d1-sync.ts)
