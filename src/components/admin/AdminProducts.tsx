@@ -53,6 +53,7 @@ type FormState = {
   categoryId: string;
   quantity: string;
   boxNumber: string;
+  serialNumber: string;
   purchasePrice: string;
   sellingPrice: string;
   lowStockThreshold: string;
@@ -63,10 +64,29 @@ const EMPTY_FORM: FormState = {
   categoryId: '',
   quantity: '',
   boxNumber: '',
+  serialNumber: '',
   purchasePrice: '',
   sellingPrice: '',
   lowStockThreshold: '3',
 };
+
+/** Serial numbers are a phone-only concept — the input appears just for
+ *  phone categories. EXACT name match (case-insensitive, trimmed) so seeded
+ *  accessory categories like "Mobile Stand" never get the field. Covers the
+ *  seeded "Mobile" category plus common Bengali/English variants. */
+const MOBILE_CATEGORY_NAMES = new Set([
+  'mobile',
+  'mobiles',
+  'mobile phone',
+  'mobile phones',
+  'মোবাইল',
+  'মোবাইল ফোন',
+]);
+
+function isMobileCategory(name: string | undefined): boolean {
+  if (!name) return false;
+  return MOBILE_CATEGORY_NAMES.has(name.trim().toLowerCase());
+}
 
 /** Default category tile (orange gradient + first letter) for admin-created categories. */
 function categoryImageFor(name: string): string {
@@ -211,11 +231,20 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
 
   const catNameMap = useMemo(() => new Map(categories.map((c) => [c.id, c.name])), [categories]);
 
+  // Serial input shows only when the picked category is a phone category.
+  const serialVisible = isMobileCategory(categories.find((c) => c.id === form.categoryId)?.name);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return products.filter((p) => {
       if (catFilter && p.categoryId !== catFilter) return false;
-      if (q && !p.name.toLowerCase().includes(q) && !p.boxNumber.toLowerCase().includes(q)) return false;
+      if (
+        q &&
+        !p.name.toLowerCase().includes(q) &&
+        !p.boxNumber.toLowerCase().includes(q) &&
+        !(p.serialNumber || '').toLowerCase().includes(q)
+      )
+        return false;
       return true;
     });
   }, [products, search, catFilter]);
@@ -265,6 +294,7 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
       categoryId: p.categoryId,
       quantity: String(p.quantity),
       boxNumber: p.boxNumber || '',
+      serialNumber: p.serialNumber || '',
       purchasePrice: String(p.purchasePrice),
       sellingPrice: String(p.sellingPrice),
       lowStockThreshold: String(p.lowStockThreshold),
@@ -295,11 +325,16 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
     }
     setBusy(true);
     try {
+      // Serial number is a mobile-category-only field: it is captured when
+      // the picked category is a phone category and CLEARED when the product
+      // lives in any other category (moving a phone out of Mobile drops its
+      // serial with it — the field is hidden there anyway).
       const payload = {
         userId: DEFAULT_USER_ID,
         name: form.name.trim(),
         categoryId: form.categoryId,
         boxNumber: form.boxNumber.trim(),
+        serialNumber: serialVisible ? form.serialNumber.trim() : '',
         purchasePrice: Math.max(0, Number(form.purchasePrice) || 0),
         sellingPrice: Math.max(0, Number(form.sellingPrice) || 0),
         lowStockThreshold: Math.max(0, Math.floor(Number(form.lowStockThreshold) || 0)),
@@ -445,6 +480,9 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
                   <tr key={p.id} className="hover:bg-[var(--psa-row-hover)] transition-colors">
                     <Td>
                       <span className="font-semibold">{p.name}</span>
+                      {p.serialNumber ? (
+                        <div className="mt-0.5 text-xs text-[var(--psa-muted)] font-mono tracking-tight">S/N: {p.serialNumber}</div>
+                      ) : null}
                       <div className="sm:hidden mt-1">{statusBadge(p)}</div>
                     </Td>
                     <Td className="hidden sm:table-cell">
@@ -551,6 +589,15 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
               </Btn>
             </div>
           </Field>
+          {serialVisible && (
+            <Field label={t('prod.serial')} hint={t('prod.serialHint')}>
+              <TextInput
+                value={form.serialNumber}
+                onChange={(e) => setForm({ ...form, serialNumber: e.target.value })}
+                placeholder="IMEI / S/N"
+              />
+            </Field>
+          )}
           {!editing && (
             <div className="grid grid-cols-2 gap-3">
               <Field label={t('prod.quantity')}>

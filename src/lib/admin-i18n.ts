@@ -53,6 +53,8 @@ const D: Record<string, Entry> = {
   'prod.category': { bn: 'ক্যাটাগরি', en: 'Category', hi: 'श्रेणी' },
   'prod.quantity': { bn: 'স্টক (পরিমাণ)', en: 'Quantity', hi: 'मात्रा' },
   'prod.box': { bn: 'বক্স নম্বর', en: 'Box number', hi: 'बॉक्स नंबर' },
+  'prod.serial': { bn: 'সিরিয়াল নম্বর', en: 'Serial number', hi: 'सीरियल नंबर' },
+  'prod.serialHint': { bn: 'শুধু মোবাইল ক্যাটাগরির জন্য — IMEI/সিরিয়াল', en: 'Mobile category only — IMEI/serial', hi: 'केवल मोबाइल कैटेगरी के लिए — IMEI/सीरियल' },
   'prod.purchasePrice': { bn: 'কেনা দাম', en: 'Purchase price', hi: 'खरीद मूल्य' },
   'prod.sellingPrice': { bn: 'বিক্রির দাম', en: 'Selling price', hi: 'बिक्री मूल्य' },
   'prod.lowThreshold': { bn: 'কম স্টক সতর্কতা (সংখ্যা)', en: 'Low stock alert level', hi: 'कम स्टॉक स्तर' },

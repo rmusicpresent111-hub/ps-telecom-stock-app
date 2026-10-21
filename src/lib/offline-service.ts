@@ -365,6 +365,7 @@ export async function createProductOffline(productData: {
   categoryId: string;
   quantity?: number;
   boxNumber?: string;
+  serialNumber?: string;
   purchasePrice?: number;
   sellingPrice?: number;
   lowStockThreshold?: number;
@@ -389,6 +390,7 @@ export async function createProductOffline(productData: {
     categoryId: productData.categoryId,
     quantity,
     boxNumber: productData.boxNumber ?? '',
+    serialNumber: (productData.serialNumber ?? '').trim(),
     purchasePrice,
     sellingPrice,
     lowStockThreshold,
@@ -454,6 +456,7 @@ function applyProductUpdates(
   }
   if (updates.categoryId !== undefined) next.categoryId = updates.categoryId;
   if (updates.boxNumber !== undefined) next.boxNumber = updates.boxNumber;
+  if (updates.serialNumber !== undefined) next.serialNumber = String(updates.serialNumber).trim();
   if (updates.quantity !== undefined) {
     next.quantity = Math.max(0, Math.floor(Number(updates.quantity)) || 0);
   }

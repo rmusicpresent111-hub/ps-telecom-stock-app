@@ -43,6 +43,8 @@ export interface Product {
   category?: Category;
   quantity: number;
   boxNumber: string;
+  /** Phone serial/IMEI — captured only for mobile-category products (admin panel). */
+  serialNumber?: string;
   purchasePrice: number;
   sellingPrice: number;
   lowStockThreshold: number;
