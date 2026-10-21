@@ -1851,3 +1851,25 @@ Stage Summary:
 - artechnologyapp.com/admin fully functional on the canonical project: v2.11.4, PIN gate, working Cloud Sync (user connects their existing Sync ID + PIN to pull data)
 - Account hygiene note stands: both Vercel tokens shared in chat should be rotated when convenient
 - Lesson: when consolidating projects, move domains BEFORE deleting the old host, and verify the destination project's env vars first
+
+---
+Task ID: 60
+Agent: Z.ai Code (main thread)
+Task: "admin panel e product add e mobile category te sirial number input korar option add koro sudhumatro mobile category te" — serial number field for Mobile-category products in the admin panel
+
+Work Log:
+- DATA MODEL: Product type += optional serialNumber (src/lib/types.ts + OfflineDBSchema products value in offline-db.ts) — IndexedDB is schemaless beyond keys, so no migration needed; D1 sync carries whole rows so the field propagates automatically
+- SERVICE (offline-service.ts): createProductOffline accepts/stores trimmed serialNumber; applyProductUpdates maps updates.serialNumber (trim) — the same enforcement point every entry point shares
+- ADMIN UI (AdminProducts.tsx): FormState/EMPTY_FORM/openEdit carry serialNumber; module-scope isMobileCategory() — EXACT name match (trimmed, case-insensitive) against {mobile, mobiles, mobile phone(s), মোবাইল, মোবাইল ফোন} — exactness is deliberate because the seeded category list also contains "Mobile Stand" (a contains-match would wrongly show the field there); the input renders between category and quantity ONLY when the picked category is a phone category (add AND edit); saveForm sends serialVisible ? value : '' so moving a product out of Mobile clears its serial; product list shows "S/N: <value>" under the name when present; the search box now also matches serialNumber
+- i18n: admin-i18n 'prod.serial' + 'prod.serialHint' × bn/en/hi; v2.11.5 (package.json + AdminShell footer); tsc + eslint clean
+- E2E (agent-browser, sandbox /admin, fresh profile → sync OFF, all data local-only): created "Mobile" via the combobox create-row → serial field appeared INSTANTLY with bn hint; saved ZZSerialTest (S/N SN-TEST-12345, qty 2) → list cell shows "S/N: SN-TEST-12345"; created "Other" → serial field HIDDEN for OtherProd; serial search "sn-test" filters correctly; EDIT prefill shows the stored serial; changed it to IMEI-999-XYZ → persisted; switched category Mobile→Other in edit → field hid → save → IndexedDB ground truth shows serialNumber:"" + category=Other (clear-on-move verified)
+- AUTOMATION WAR STORY (for future E2E on this admin): three failed "category change" attempts were NOT app bugs — (1) rg 'option "Other"' matched the PAGE FILTER <select>'s hidden option (no box model → CDP error) instead of the combobox's <button> items, (2) some clicks landed on the modal backdrop / stale refs after combobox re-renders (modal closes via Escape/backdrop without saving), (3) agent-browser `type` appends (no clear) — use fill on the combobox. The accessibility snapshot shows the table BEHIND the open modal, so rg-filtered snapshots mislead — always check for the modal's বাতিল/সেভ buttons to know its true state
+- Cleanup: both test products deleted via the UI (মোট আইটেম 0); the two local categories (Mobile/Other) remain sandbox-profile-local like Task 56
+- DEPLOYED: main 877449f pushed → Vercel git auto-build dpl_9skskUSniK3BkhiL6ZVyAqWdMibM READY → artechnologyapp.com AND ps-telecom-stock-app.vercel.app serve the IDENTICAL build (QOhTqLn127w5eutBvV_nJ) with v2.11.5 confirmed in the served chunk; production read-only agent-browser check: PIN unlock → Products page renders → footer v2.11.5 → zero errors (no data ops on production — the origin has no sync connection in a fresh browser by design)
+- gh-pages mirror redeployed (GITHUB_TOKEN from remote URL) → branch 370476e → chunk b040d0bfcd437ff1.js contains BOTH "সিরিয়াল নম্বর" and "v2.11.5" (mirror stores chunks at _next/ root, admin/ is just the route index — lesson for future branch greps)
+- D1 read-only counts drifted during the session (products 128→129, transactions 156→157, categories 100→80, _tomb 54→74) — the USER's own connected devices actively syncing live shop data; the E2E wrote nothing to D1 (fresh profile, sync OFF)
+
+Stage Summary:
+- Admin panel now captures a serial/IMEI number for phone products: the input appears ONLY when the selected category is a phone category (exact-name match incl. Bengali variants), persists through sync, shows as "S/N:" under the product name, is searchable, and clears itself if the product moves out of Mobile
+- v2.11.5 live and verified on all three platforms (Vercel prod identical-build on the custom domain + alias, gh-pages mirror 370476e, sandbox preview)
+- User's real D1 untouched by testing; their devices' live sync activity observed (read-only counts)
