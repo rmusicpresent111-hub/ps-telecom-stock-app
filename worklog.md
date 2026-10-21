@@ -1788,3 +1788,24 @@ Stage Summary:
 - Public mirror pipeline is now structurally incapable of shipping credentials (value-based detection + unconditional purge + pre-push leak scan), incident never reached the public branch
 - All three platforms on v2.11.4: Vercel prod (git auto-build, READY + E2E), gh-pages mirror (9f0b9bb, secret-free), sandbox preview
 - Lesson recorded: never grep whole-file for a placeholder marker to make security decisions; Turbopack's shared dev/build cache must be purged when switching compiled secret values
+
+---
+Task ID: 57
+Agent: Z.ai Code (main thread)
+Task: "amar ei domin take varcel e live korao ami jeno eta theke admin panel access korte pari artechnologyapp.com" — custom domain audit on Vercel
+
+Work Log:
+- DNS already pointed to Vercel BEFORE this session: apex A 216.198.79.1, www CNAME 192264fc550052b8.vercel-dns-017.com, NS = Google Cloud DNS — the user evidently added the domain via the Vercel dashboard themselves between sessions
+- ALREADY LIVE: https://artechnologyapp.com 200 (server: Vercel), /admin/ 200, titles "PS TELECOM - Stock Management" + "PS TELECOM — Admin Panel", HTTP→HTTPS 308 on apex and www
+- TRAP FOUND: /_next asset refs are IDENTICAL on both hosts (Turbopack content-addressed chunk hashes from the same main commit) BUT build IDs DIFFER (7ANH6_pMxAQ_3fcwWWNVq vs jUmCwo4uvmRLlTg2lIKoH) and API behavior DIFFERS: vercel.app POST /api/cloud/d1 (trailing slash, trailingSlash:true config) → {"error":"Missing sql"} (healthy — env creds bound) vs artechnologyapp.com → {"ok":false,"errorCode":"missing_creds"} → the custom domain is served by a DIFFERENT Vercel project building the same repo with NO CLOUDFLARE_* env vars (same-project impossible: every deploy since Task 51 had production env vars)
+- Consequence on the domain: admin + PIN gate work, but Cloud Sync fails and the origin's IndexedDB is empty → no shop data until sync works; the UI at least self-explains via Task 54's sync.errNoServerCloud guidance pointing to the vercel.app URL
+- E2E (agent-browser, https://artechnologyapp.com/admin): PIN gate renders bn → 9732881732 unlocks → dashboard all ₹0/0 (empty origin, as predicted) → Cloud Sync page → fake connect PS-TEST-0000 (lookup-only, no account created) → POST /api/cloud/d1 200 ×2 → red error + toast + yellow debug box all show "এই লিংকে ক্লাউড সেটআপ নেই — অ্যাডমিন প্যানেল খুলুন https://ps-telecom-stock-app.vercel.app ঠিকানা থেকে" (screenshot /tmp/artech_toast1.png); zero page errors
+- www HTTPS still 000 (curl exit 60, TLS handshake) while HTTP 308 works — TLS cert for www not yet issued by Vercel (async provisioning can take a while; apex cert is fine)
+- Vercel token NOT recoverable on disk: only the redacted "vcp_..." quote in worklog; .env.local, ~/.vercel, CLI auth, bash history all clean → the fix requires the token again OR user dashboard action
+- FIX PLAN given to the user (Banglish): Option A — paste the vcp_ token again → agent adds CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_D1_DATABASE_ID / CLOUDFLARE_D1_API_TOKEN to the mystery project (values already available locally in d1-secrets.ts / scripts/test-d1-sync.mjs) and triggers a redeploy, or moves the domain to ps-telecom-stock-app (prj_CHVj0rNz1MEXo4ySdyTAa5QF1hZy; apex A record unchanged, www CNAME re-targeted per Vercel's dialog); Option B — manual dashboard steps (env vars on the new project + redeploy, or domain move)
+- No code changes → no version bump; v2.11.4 remains current everywhere
+
+Stage Summary:
+- artechnologyapp.com is ALREADY live on Vercel serving the latest v2.11.4 build with a working PIN-gated admin panel — but it is attached to a different project that lacks the Cloudflare env vars, so cloud sync (and therefore shop data) fails there with the actionable "সেটআপ নেই" guidance
+- Full diagnosis + live E2E evidence collected; waiting on the user's Vercel token (or a manual dashboard fix) to either attach the 3 env vars to that project or move the domain to ps-telecom-stock-app
+- Lesson: identical static chunks do NOT prove same deployment — always compare build IDs and probe a server route when auditing domain wiring
