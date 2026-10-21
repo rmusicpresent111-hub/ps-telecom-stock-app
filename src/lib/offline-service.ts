@@ -360,12 +360,33 @@ async function assertNoDuplicateProduct(
   if (dup) throw new DuplicateProductError(dup.name);
 }
 
+/**
+ * Per-unit serial list cleaner — trims, drops empties and de-duplicates
+ * (case-insensitive: an IMEI typed twice with different casing is still one
+ * phone). Order is preserved — array position = stock entry order.
+ */
+export function normalizeSerialList(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of input) {
+    const s = String(raw ?? '').trim();
+    if (!s) continue;
+    const key = s.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(s);
+  }
+  return out;
+}
+
 export async function createProductOffline(productData: {
   name: string;
   categoryId: string;
   quantity?: number;
   boxNumber?: string;
   serialNumber?: string;
+  serialNumbers?: string[];
   purchasePrice?: number;
   sellingPrice?: number;
   lowStockThreshold?: number;
@@ -384,13 +405,18 @@ export async function createProductOffline(productData: {
   const lowStockThreshold = Math.max(0, Math.floor(Number(productData.lowStockThreshold ?? 5)) || 0);
 
   const now = new Date().toISOString();
+  // Per-unit serials (mobile products): one S/N per physical unit. The legacy
+  // single `serialNumber` stays in sync as the FIRST serial so v2.11.5 builds
+  // and old search paths keep reading something meaningful.
+  const serialNumbers = normalizeSerialList(productData.serialNumbers);
   const product = {
     id: generateRecordId(),
     name: productData.name.trim(),
     categoryId: productData.categoryId,
     quantity,
     boxNumber: productData.boxNumber ?? '',
-    serialNumber: (productData.serialNumber ?? '').trim(),
+    serialNumber: serialNumbers[0] ?? (productData.serialNumber ?? '').trim(),
+    serialNumbers,
     purchasePrice,
     sellingPrice,
     lowStockThreshold,
@@ -457,6 +483,11 @@ function applyProductUpdates(
   if (updates.categoryId !== undefined) next.categoryId = updates.categoryId;
   if (updates.boxNumber !== undefined) next.boxNumber = updates.boxNumber;
   if (updates.serialNumber !== undefined) next.serialNumber = String(updates.serialNumber).trim();
+  if (updates.serialNumbers !== undefined) {
+    next.serialNumbers = normalizeSerialList(updates.serialNumbers);
+    // legacy mirror: first serial keeps older builds/search functional
+    next.serialNumber = next.serialNumbers[0] ?? '';
+  }
   if (updates.quantity !== undefined) {
     next.quantity = Math.max(0, Math.floor(Number(updates.quantity)) || 0);
   }
@@ -582,6 +613,10 @@ export async function createTransactionOffline(transactionData: {
   unitPrice?: number;
   totalAmount?: number;
   date?: string;
+  /** For serialized (mobile) stock going OUT: exactly these per-unit serials
+   *  leave the inventory — each is removed from the product's serial list.
+   *  Validated against the product INSIDE the atomic transaction. */
+  soldSerials?: string[];
   userId: string;
 }): Promise<{ transaction: Transaction }> {
   const quantity = Math.floor(Number(transactionData.quantity));
@@ -615,6 +650,25 @@ export async function createTransactionOffline(transactionData: {
   const isOut = transactionData.type === 'STOCK_OUT' || transactionData.type === 'SELL';
   if (isOut && product.quantity < quantity) {
     throw new Error(`Insufficient stock — only ${product.quantity} left`);
+  }
+
+  // ---- per-unit serial bookkeeping (mobile products) ----
+  // Every requested serial must physically exist in the product's stock list —
+  // a sell can never remove a serial that isn't there (data integrity).
+  let soldSerials: string[] = [];
+  if (isOut && transactionData.soldSerials?.length) {
+    const inStock = normalizeSerialList(product.serialNumbers);
+    const requested = normalizeSerialList(transactionData.soldSerials);
+    const stockSet = new Set(inStock.map((s) => s.toLowerCase()));
+    for (const s of requested) {
+      if (!stockSet.has(s.toLowerCase())) {
+        throw new Error(`Serial "${s}" is not in stock for this product`);
+      }
+    }
+    if (requested.length > quantity) {
+      throw new Error('More serials selected than units sold');
+    }
+    soldSerials = requested;
   }
 
   // ---- FIFO cost basis (oldest purchase lots first, then last price) ----
@@ -663,10 +717,18 @@ export async function createTransactionOffline(transactionData: {
   };
 
   await transactionsStore.put(row);
+  // a sold unit's serial leaves the stock list — that phone is gone.
+  // Legacy single-serial mirror stays = first remaining serial (or '').
+  const remainingSerials = soldSerials.length
+    ? normalizeSerialList(product.serialNumbers).filter(
+        (s) => !soldSerials.some((x) => x.toLowerCase() === s.toLowerCase())
+      )
+    : normalizeSerialList(product.serialNumbers);
   await productsStore.put({
     ...product,
     quantity: product.quantity + quantityChange,
     purchasePrice: lastPurchasePrice,
+    ...(soldSerials.length ? { serialNumbers: remainingSerials, serialNumber: remainingSerials[0] ?? '' } : {}),
     updatedAt: now,
   });
 
@@ -1511,6 +1573,8 @@ export async function createBillOffline(data: {
   productName: string;
   quantity: number;
   unitPrice: number;
+  /** Serial(s) the customer bought — printed on the receipt under the item. */
+  soldSerials?: string[];
   customerName?: string;
   customerMobile?: string;
   discountType?: 'amount' | 'percent';
@@ -1578,6 +1642,7 @@ export async function createBillOffline(data: {
         quantity: qty,
         unitPrice,
         total: subtotal,
+        ...(data.soldSerials?.length ? { serialNumbers: normalizeSerialList(data.soldSerials) } : {}),
       },
     ],
     subtotal,

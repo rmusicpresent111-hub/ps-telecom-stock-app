@@ -51,6 +51,7 @@ export interface OfflineDBSchema {
       quantity: number;
       boxNumber: string;
       serialNumber?: string;
+      serialNumbers?: string[];
       purchasePrice: number;
       sellingPrice: number;
       lowStockThreshold: number;

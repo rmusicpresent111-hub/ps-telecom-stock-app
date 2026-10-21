@@ -43,8 +43,12 @@ export interface Product {
   category?: Category;
   quantity: number;
   boxNumber: string;
-  /** Phone serial/IMEI — captured only for mobile-category products (admin panel). */
+  /** LEGACY single serial (v2.11.5) — kept as a mirror of serialNumbers[0]
+   *  so older builds/search keep working. New code reads serialNumbers. */
   serialNumber?: string;
+  /** Phone serials/IMEIs — ONE PER UNIT, only for mobile-category products.
+   *  Selling a unit removes its serial from this array (per-unit tracking). */
+  serialNumbers?: string[];
   purchasePrice: number;
   sellingPrice: number;
   lowStockThreshold: number;
@@ -150,6 +154,8 @@ export interface BillItem {
   quantity: number;
   unitPrice: number;
   total: number;
+  /** The serial(s) the customer bought — shown on the receipt. */
+  serialNumbers?: string[];
 }
 
 export interface Bill {

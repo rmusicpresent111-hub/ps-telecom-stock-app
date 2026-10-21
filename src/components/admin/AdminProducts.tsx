@@ -16,6 +16,7 @@ import {
   PackageX,
   Zap,
   Check,
+  X,
 } from 'lucide-react';
 import {
   getProductsOffline,
@@ -25,6 +26,7 @@ import {
   deleteProductOffline,
   createTransactionOffline,
   createCategoryOffline,
+  normalizeSerialList,
 } from '@/lib/offline-service';
 import { DEFAULT_USER_ID } from '@/lib/local-auth';
 import { useAdminStore } from '@/store/adminStore';
@@ -41,6 +43,7 @@ import {
   SelectInput,
   StatCard,
   Td,
+  TextArea,
   TextInput,
   Th,
   adminToast,
@@ -53,7 +56,8 @@ type FormState = {
   categoryId: string;
   quantity: string;
   boxNumber: string;
-  serialNumber: string;
+  /** ONE slot per unit — a mobile product with qty 3 has three S/N inputs. */
+  serialNumbers: string[];
   purchasePrice: string;
   sellingPrice: string;
   lowStockThreshold: string;
@@ -64,11 +68,15 @@ const EMPTY_FORM: FormState = {
   categoryId: '',
   quantity: '',
   boxNumber: '',
-  serialNumber: '',
+  serialNumbers: [],
   purchasePrice: '',
   sellingPrice: '',
   lowStockThreshold: '3',
 };
+
+/** Add-form ceiling: beyond 50 units the per-unit inputs stop scaling
+ *  (typing 500 serials in a modal is not a phone shop, it's a warehouse). */
+const MAX_SERIAL_INPUTS = 50;
 
 /** Serial numbers are a phone-only concept — the input appears just for
  *  phone categories. EXACT name match (case-insensitive, trimmed) so seeded
@@ -207,6 +215,10 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
   const [stockModal, setStockModal] = useState<{ product: Product; type: 'STOCK_IN' | 'STOCK_OUT' } | null>(null);
   const [stockQty, setStockQty] = useState('');
   const [stockRate, setStockRate] = useState('');
+  /** STOCK_OUT of serialized stock: exactly which units leave. */
+  const [stockOutSerials, setStockOutSerials] = useState<string[]>([]);
+  /** STOCK_IN of serialized stock: new S/N list, one per line (optional). */
+  const [stockInSerials, setStockInSerials] = useState('');
 
   const [catModalOpen, setCatModalOpen] = useState(false);
   const [newCatName, setNewCatName] = useState('');
@@ -234,6 +246,21 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
   // Serial input shows only when the picked category is a phone category.
   const serialVisible = isMobileCategory(categories.find((c) => c.id === form.categoryId)?.name);
 
+  // Add mode: quantity N → N serial inputs (one per unit).
+  const addQtyN = Math.max(0, Math.min(MAX_SERIAL_INPUTS, Math.floor(Number(form.quantity) || 0) || 0));
+
+  // Keep the serial slots in sync with the quantity: growing the quantity
+  // appends empty slots, shrinking trims the tail (values are plain inputs).
+  useEffect(() => {
+    if (!formOpen || editing || !serialVisible) return;
+    setForm((f) => {
+      if (f.serialNumbers.length === addQtyN) return f;
+      const next = f.serialNumbers.slice(0, addQtyN);
+      while (next.length < addQtyN) next.push('');
+      return { ...f, serialNumbers: next };
+    });
+  }, [formOpen, editing, serialVisible, addQtyN]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return products.filter((p) => {
@@ -242,6 +269,7 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
         q &&
         !p.name.toLowerCase().includes(q) &&
         !p.boxNumber.toLowerCase().includes(q) &&
+        !(p.serialNumbers || []).some((s) => s.toLowerCase().includes(q)) &&
         !(p.serialNumber || '').toLowerCase().includes(q)
       )
         return false;
@@ -294,7 +322,9 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
       categoryId: p.categoryId,
       quantity: String(p.quantity),
       boxNumber: p.boxNumber || '',
-      serialNumber: p.serialNumber || '',
+      // legacy v2.11.5 rows carry one serialNumber string — lift it into the
+      // per-unit list so the edit form always works with serialNumbers
+      serialNumbers: normalizeSerialList(p.serialNumbers?.length ? p.serialNumbers : [p.serialNumber || '']),
       purchasePrice: String(p.purchasePrice),
       sellingPrice: String(p.sellingPrice),
       lowStockThreshold: String(p.lowStockThreshold),
@@ -323,18 +353,35 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
       adminToast(t('prod.duplicate'), 'err');
       return;
     }
+    // Per-unit serial validation (mobile products only):
+    //  add  → every unit needs its S/N (quantity N → N serials, no dupes)
+    //  edit → blank slots are dropped, duplicates are rejected
+    let serials: string[] = [];
+    if (serialVisible) {
+      const raw = editing ? form.serialNumbers : form.serialNumbers.slice(0, addQtyN);
+      serials = normalizeSerialList(raw);
+      const filled = raw.map((s) => s.trim()).filter(Boolean);
+      if (filled.length !== serials.length) {
+        adminToast(t('prod.serialsDup'), 'err');
+        return;
+      }
+      if (!editing && serials.length < addQtyN) {
+        adminToast(t('prod.serialsRequired'), 'err');
+        return;
+      }
+    }
     setBusy(true);
     try {
-      // Serial number is a mobile-category-only field: it is captured when
-      // the picked category is a phone category and CLEARED when the product
+      // Serial numbers are a mobile-category-only field: captured when the
+      // picked category is a phone category and CLEARED when the product
       // lives in any other category (moving a phone out of Mobile drops its
-      // serial with it — the field is hidden there anyway).
+      // serials with it — the field is hidden there anyway).
       const payload = {
         userId: DEFAULT_USER_ID,
         name: form.name.trim(),
         categoryId: form.categoryId,
         boxNumber: form.boxNumber.trim(),
-        serialNumber: serialVisible ? form.serialNumber.trim() : '',
+        serialNumbers: serialVisible ? serials : [],
         purchasePrice: Math.max(0, Number(form.purchasePrice) || 0),
         sellingPrice: Math.max(0, Number(form.sellingPrice) || 0),
         lowStockThreshold: Math.max(0, Math.floor(Number(form.lowStockThreshold) || 0)),
@@ -361,6 +408,21 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
       adminToast(t('c.required'), 'err');
       return;
     }
+    // Serialized stock going out: the exact units must be identified —
+    // pick min(qty, available serials) serials before confirming.
+    const availableSerials = normalizeSerialList(stockModal.product.serialNumbers);
+    let soldSerials: string[] = [];
+    if (stockModal.type === 'STOCK_OUT' && availableSerials.length > 0) {
+      const need = Math.min(qty, availableSerials.length);
+      if (stockOutSerials.length !== need) {
+        adminToast(t('qsell.pickSerial'), 'err');
+        return;
+      }
+      soldSerials = stockOutSerials;
+    }
+    // Serialized stock coming in: optional new S/N list (one per line) that
+    // merges into the product's per-unit list — new phones get their IMEIs.
+    const newSerials = normalizeSerialList(stockInSerials.split('\n'));
     setBusy(true);
     try {
       if (stockModal.type === 'STOCK_IN') {
@@ -374,6 +436,12 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
           totalAmount: qty * unitPrice,
           userId: DEFAULT_USER_ID,
         });
+        if (newSerials.length > 0) {
+          await updateProductOffline(stockModal.product.id, {
+            userId: DEFAULT_USER_ID,
+            serialNumbers: [...availableSerials, ...newSerials],
+          });
+        }
       } else {
         const rate = Number(stockRate);
         const unitPrice = Number.isFinite(rate) && rate > 0 ? rate : stockModal.product.sellingPrice;
@@ -383,6 +451,7 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
           quantity: qty,
           unitPrice,
           totalAmount: qty * unitPrice,
+          soldSerials,
           userId: DEFAULT_USER_ID,
         });
       }
@@ -390,6 +459,8 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
       setStockModal(null);
       setStockQty('');
       setStockRate('');
+      setStockOutSerials([]);
+      setStockInSerials('');
     } catch (err) {
       adminToast((err as Error)?.message || t('c.error'), 'err');
     } finally {
@@ -419,6 +490,18 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
     ) : (
       <Badge tone="green">{p.quantity}</Badge>
     );
+
+  /** Per-unit serials of a product — legacy single-string rows are lifted
+   *  into a one-element list so every view below works with arrays only. */
+  const serialsOf = (p: Product): string[] =>
+    normalizeSerialList(p.serialNumbers?.length ? p.serialNumbers : [p.serialNumber || '']);
+
+  // ── stock-modal serial helpers ──
+  const stockSerialList = stockModal ? serialsOf(stockModal.product) : [];
+  const stockQtyNum = Math.max(0, Math.floor(Number(stockQty) || 0));
+  const stockNeed = stockModal?.type === 'STOCK_OUT' ? Math.min(stockQtyNum, stockSerialList.length) : 0;
+  const stockIsMobile =
+    !!stockModal && (stockSerialList.length > 0 || isMobileCategory(catNameMap.get(stockModal.product.categoryId)));
 
   return (
     <div>
@@ -480,9 +563,12 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
                   <tr key={p.id} className="hover:bg-[var(--psa-row-hover)] transition-colors">
                     <Td>
                       <span className="font-semibold">{p.name}</span>
-                      {p.serialNumber ? (
-                        <div className="mt-0.5 text-xs text-[var(--psa-muted)] font-mono tracking-tight">S/N: {p.serialNumber}</div>
-                      ) : null}
+                      {serialsOf(p).length > 0 && (
+                        <div className="mt-0.5 text-xs text-[var(--psa-muted)] font-mono tracking-tight">
+                          S/N: {serialsOf(p).slice(0, 2).join(', ')}
+                          {serialsOf(p).length > 2 ? ` +${serialsOf(p).length - 2}` : ''}
+                        </div>
+                      )}
                       <div className="sm:hidden mt-1">{statusBadge(p)}</div>
                     </Td>
                     <Td className="hidden sm:table-cell">
@@ -510,6 +596,8 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
                             setStockModal({ product: p, type: 'STOCK_IN' });
                             setStockQty('');
                             setStockRate('');
+                            setStockOutSerials([]);
+                            setStockInSerials('');
                           }}
                           title={t('prod.stockIn')}
                           className="w-8 h-8 rounded-lg flex items-center justify-center text-[#16A34A] hover:bg-[var(--psa-soft-green)]"
@@ -521,6 +609,8 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
                             setStockModal({ product: p, type: 'STOCK_OUT' });
                             setStockQty('');
                             setStockRate(String(p.sellingPrice));
+                            setStockOutSerials([]);
+                            setStockInSerials('');
                           }}
                           title={t('prod.stockOut')}
                           className="w-8 h-8 rounded-lg flex items-center justify-center text-[#DC2626] hover:bg-[var(--psa-soft-red)]"
@@ -589,15 +679,6 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
               </Btn>
             </div>
           </Field>
-          {serialVisible && (
-            <Field label={t('prod.serial')} hint={t('prod.serialHint')}>
-              <TextInput
-                value={form.serialNumber}
-                onChange={(e) => setForm({ ...form, serialNumber: e.target.value })}
-                placeholder="IMEI / S/N"
-              />
-            </Field>
-          )}
           {!editing && (
             <div className="grid grid-cols-2 gap-3">
               <Field label={t('prod.quantity')}>
@@ -622,6 +703,69 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
                 <TextInput value={form.boxNumber} onChange={(e) => setForm({ ...form, boxNumber: e.target.value })} />
               </Field>
             </div>
+          )}
+          {/* ── per-unit serials — MOBILE CATEGORY ONLY ──
+              add:  quantity N → exactly N S/N inputs (one per unit)
+              edit: editable list + add/remove slots within stock */}
+          {serialVisible && !editing && addQtyN > 0 && (
+            <Field label={`${t('prod.serials')} — ${addQtyN}`} hint={t('prod.serialsHint')}>
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {form.serialNumbers.slice(0, addQtyN).map((sn, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="w-10 shrink-0 text-[11px] font-bold text-[var(--psa-muted)] tabular-nums">#{i + 1}</span>
+                    <TextInput
+                      value={sn}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setForm((f) => {
+                          const next = [...f.serialNumbers];
+                          while (next.length <= i) next.push('');
+                          next[i] = v;
+                          return { ...f, serialNumbers: next };
+                        });
+                      }}
+                      placeholder={`IMEI / S/N ${i + 1}`}
+                    />
+                  </div>
+                ))}
+              </div>
+            </Field>
+          )}
+          {serialVisible && editing && (
+            <Field label={`${t('prod.serials')} — ${form.serialNumbers.filter((s) => s.trim()).length}`} hint={t('prod.serialsHintEdit')}>
+              <div className="space-y-2">
+                {form.serialNumbers.map((sn, i) => (
+                  <div key={i} className="flex items-center gap-1.5">
+                    <span className="w-10 shrink-0 text-[11px] font-bold text-[var(--psa-muted)] tabular-nums">#{i + 1}</span>
+                    <TextInput
+                      value={sn}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setForm((f) => {
+                          const next = [...f.serialNumbers];
+                          next[i] = v;
+                          return { ...f, serialNumbers: next };
+                        });
+                      }}
+                      placeholder="IMEI / S/N"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, serialNumbers: f.serialNumbers.filter((_, j) => j !== i) }))}
+                      title={t('c.delete')}
+                      className="w-9 h-9 shrink-0 rounded-lg flex items-center justify-center text-[#DC2626] hover:bg-[var(--psa-soft-red)]"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+                {form.serialNumbers.length < editing.quantity && (
+                  <Btn variant="soft" size="sm" onClick={() => setForm((f) => ({ ...f, serialNumbers: [...f.serialNumbers, ''] }))}>
+                    <Plus size={14} /> {t('prod.serialAdd')}
+                  </Btn>
+                )}
+              </div>
+            </Field>
           )}
           <div className="grid grid-cols-2 gap-3">
             <Field label={t('prod.purchasePrice')}>
@@ -694,7 +838,11 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
             <Btn variant="outline" onClick={() => setStockModal(null)}>
               {t('c.cancel')}
             </Btn>
-            <Btn variant={stockModal?.type === 'STOCK_IN' ? 'green' : 'primary'} onClick={saveStock} disabled={busy}>
+            <Btn
+              variant={stockModal?.type === 'STOCK_IN' ? 'green' : 'primary'}
+              onClick={saveStock}
+              disabled={busy || (stockModal?.type === 'STOCK_OUT' && stockSerialList.length > 0 && stockOutSerials.length !== stockNeed)}
+            >
               {t('c.confirm')}
             </Btn>
           </>
@@ -705,7 +853,12 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
             {t('prod.quantity')}: <b className="text-[var(--psa-ink)]">{stockModal?.product.quantity}</b>
           </div>
           <Field label={t('prod.qty')}>
-            <TextInput type="number" min="1" value={stockQty} onChange={(e) => setStockQty(e.target.value)} autoFocus />
+            <TextInput type="number" min="1" value={stockQty} onChange={(e) => {
+              setStockQty(e.target.value);
+              // quantity shrank → trim over-picked serials
+              const n = Math.max(0, Math.floor(Number(e.target.value) || 0));
+              setStockOutSerials((prev) => prev.slice(0, Math.min(n, stockSerialList.length)));
+            }} autoFocus />
           </Field>
           <Field
             label={stockModal?.type === 'STOCK_IN' ? t('prod.rate') + ' — ' + t('prod.purchasePrice') : t('prod.rate') + ' — ' + t('prod.sellingPrice')}
@@ -713,6 +866,51 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
           >
             <TextInput type="number" min="0" value={stockRate} onChange={(e) => setStockRate(e.target.value)} />
           </Field>
+
+          {/* STOCK_OUT of serialized stock — pick exactly which units leave */}
+          {stockModal?.type === 'STOCK_OUT' && stockSerialList.length > 0 && (
+            <Field label={`${t('qsell.pickSerial')} — ${stockOutSerials.length}/${stockNeed}`}>
+              <div className="max-h-44 overflow-y-auto rounded-xl border border-[var(--psa-border)] divide-y divide-[var(--psa-line)]">
+                {stockSerialList.map((sn) => {
+                  const picked = stockOutSerials.some((x) => x.toLowerCase() === sn.toLowerCase());
+                  return (
+                    <button
+                      key={sn}
+                      type="button"
+                      onClick={() =>
+                        setStockOutSerials((prev) =>
+                          prev.some((x) => x.toLowerCase() === sn.toLowerCase())
+                            ? prev.filter((x) => x.toLowerCase() !== sn.toLowerCase())
+                            : prev.length < stockNeed
+                              ? [...prev, sn]
+                              : prev
+                        )
+                      }
+                      className={`w-full flex items-center justify-between gap-2 px-3.5 py-2 text-left text-sm transition-colors ${
+                        picked ? 'bg-[var(--psa-soft-orange)]' : 'hover:bg-[var(--psa-row-hover)]'
+                      }`}
+                    >
+                      <span className="font-mono text-[13px] text-[var(--psa-ink)] truncate">{sn}</span>
+                      {picked && <Check size={14} className="text-[#E8552C] shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+          )}
+
+          {/* STOCK_IN of mobile stock — optional new S/N list, one per line */}
+          {stockModal?.type === 'STOCK_IN' && stockIsMobile && (
+            <Field label={t('prod.serialsAdd')} hint={t('prod.serialsInHint')}>
+              <TextArea
+                value={stockInSerials}
+                onChange={(e) => setStockInSerials(e.target.value)}
+                rows={3}
+                placeholder={'IMEI1\nIMEI2\nIMEI3'}
+                className="font-mono text-[13px]"
+              />
+            </Field>
+          )}
         </div>
       </Modal>
 

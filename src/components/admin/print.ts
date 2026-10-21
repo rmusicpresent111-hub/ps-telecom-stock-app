@@ -211,6 +211,8 @@ th.r, td.r { text-align:right; }
 td { padding:6px 8px; border:1px solid #E8EAED; vertical-align:top; }
 tbody tr:nth-child(even) td { background:#FAFBFC; }
 .tot td { font-weight:700; background:#FFF7F3; }
+/* per-unit serials under the item name (mobile products) */
+.sn { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10px; color:#6B7280; margin-top:2px; letter-spacing:.02em; }
 
 /* totals stack */
 .totals { margin-top:10px; margin-left:auto; width:68%; min-width:250px; }
@@ -283,12 +285,16 @@ export function buildBillReceiptHtml(bill: Bill, lang: AdminLang, settings?: Bil
   ].join('');
 
   const itemRows = (bill.items || [])
-    .map(
-      (it, i) =>
-        `<tr><td>${i + 1}</td><td>${esc(it.name)}</td><td class="r">${it.quantity}</td><td class="r">${money(
+    .map((it, i) => {
+      const sns = (it.serialNumbers || []).filter(Boolean);
+      return (
+        `<tr><td>${i + 1}</td><td>${esc(it.name)}${
+          sns.length ? `<div class="sn">S/N: ${sns.map((s) => esc(s)).join(', ')}</div>` : ''
+        }</td><td class="r">${it.quantity}</td><td class="r">${money(
           it.unitPrice
         )}</td><td class="r">${money(it.total)}</td></tr>`
-    )
+      );
+    })
     .join('');
 
   const totalsRows = [

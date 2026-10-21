@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Zap, CheckCircle2, Printer, RotateCcw, ReceiptText, AlertTriangle, FolderOpen, ArrowLeft } from 'lucide-react';
+import { Search, Zap, CheckCircle2, Printer, RotateCcw, ReceiptText, AlertTriangle, FolderOpen, ArrowLeft, Check, Hash } from 'lucide-react';
 import {
   getProductsOffline,
   getCategoriesOffline,
@@ -57,12 +57,14 @@ export default function QuickSellModal({
   const [selected, setSelected] = useState<Product | null>(null);
   const [qty, setQty] = useState('1');
   const [rate, setRate] = useState('');
+  /** Serialized (mobile) product: exactly which S/N units the customer buys. */
+  const [pickedSerials, setPickedSerials] = useState<string[]>([]);
   const [customerName, setCustomerName] = useState('');
   const [customerMobile, setCustomerMobile] = useState('');
   const [method, setMethod] = useState<PaymentMethod>('cash');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState<{ bill: Bill; productName: string } | null>(null);
+  const [done, setDone] = useState<{ bill: Bill; productName: string; serials: string[] } | null>(null);
   const [billSettings, setBillSettings] = useState<BillingSettings | null>(null);
 
   // load products each time the dialog opens
@@ -100,6 +102,7 @@ export default function QuickSellModal({
     setCategoryId(null);
     setQty('1');
     setRate('');
+    setPickedSerials([]);
     setCustomerName('');
     setCustomerMobile('');
     setMethod('cash');
@@ -124,8 +127,16 @@ export default function QuickSellModal({
     if (!categoryId) return [];
     const q = search.trim().toLowerCase();
     const inCat = products.filter((p) => p.categoryId === categoryId);
+    // search matches the model name, box number AND any per-unit serial —
+    // typing an IMEI finds the phone that carries it
     const list = q
-      ? inCat.filter((p) => p.name.toLowerCase().includes(q) || (p.boxNumber || '').toLowerCase().includes(q))
+      ? inCat.filter(
+          (p) =>
+            p.name.toLowerCase().includes(q) ||
+            (p.boxNumber || '').toLowerCase().includes(q) ||
+            (p.serialNumbers || []).some((s) => s.toLowerCase().includes(q)) ||
+            (p.serialNumber || '').toLowerCase().includes(q)
+        )
       : inCat;
     return [...list].sort((a, b) => {
       const ao = a.quantity <= 0 ? 1 : 0;
@@ -142,6 +153,22 @@ export default function QuickSellModal({
   const total = qtyNum * rateNum;
   const overStock = !!selected && qtyNum > selected.quantity;
 
+  /** Available per-unit serials of the product being sold. */
+  const availableSerials = useMemo(
+    () =>
+      selected
+        ? (selected.serialNumbers?.length
+            ? selected.serialNumbers
+            : selected.serialNumber
+              ? [selected.serialNumber]
+            : []
+          ).map((s) => String(s).trim()).filter(Boolean)
+        : [],
+    [selected]
+  );
+  /** Every serialized unit being sold must be identified. */
+  const serialsNeeded = Math.min(qtyNum, availableSerials.length);
+
   // mirror createBillOffline's GST rule so the shown total == the bill total
   const gstOn = !!billSettings?.gstEnabled && !!billSettings?.gstNumber.trim() && (billSettings?.gstRate || 0) > 0;
   const gstAmt = gstOn ? Math.round(((total * (billSettings?.gstRate || 0)) / 100) * 100) / 100 : 0;
@@ -157,6 +184,11 @@ export default function QuickSellModal({
       adminToast(`${t('qsell.errStock')} (${selected.quantity})`, 'err');
       return;
     }
+    // serialized product: the customer's chosen unit(s) must be picked
+    if (availableSerials.length > 0 && pickedSerials.length !== serialsNeeded) {
+      adminToast(t('qsell.pickSerial'), 'err');
+      return;
+    }
     setBusy(true);
     try {
       const { transaction } = await createTransactionOffline({
@@ -165,6 +197,7 @@ export default function QuickSellModal({
         quantity: qtyNum,
         unitPrice: rateNum,
         totalAmount: Number(total.toFixed(2)),
+        soldSerials: pickedSerials,
         userId: DEFAULT_USER_ID,
       });
       const { bill } = await createBillOffline({
@@ -174,12 +207,13 @@ export default function QuickSellModal({
         productName: selected.name,
         quantity: qtyNum,
         unitPrice: rateNum,
+        soldSerials: pickedSerials,
         customerName,
         customerMobile,
         paymentMethod: method,
         note,
       });
-      setDone({ bill, productName: selected.name });
+      setDone({ bill, productName: selected.name, serials: pickedSerials });
       adminToast(`${t('qsell.done')} · ${bill.billNumber}`);
     } catch (err) {
       adminToast((err as Error)?.message || t('c.error'), 'err');
@@ -191,6 +225,7 @@ export default function QuickSellModal({
   const resetToPicker = () => {
     setDone(null);
     setSelected(null);
+    setPickedSerials([]);
     setSearch('');
     setCatSearch('');
     setCategoryId(null);
@@ -208,6 +243,7 @@ export default function QuickSellModal({
     window.setTimeout(() => {
       setDone(null);
       setSelected(null);
+      setPickedSerials([]);
       setSearch('');
       setCatSearch('');
       setCategoryId(null);
@@ -246,7 +282,7 @@ export default function QuickSellModal({
           </div>
           <p className="text-lg font-bold text-[var(--psa-ink)]">{done.productName}</p>
           <p className="text-2xl font-black text-[#E8552C] tabular-nums mt-1">{fmtMoney(b.total)}</p>
-          <div className="flex items-center justify-center gap-2 mt-2">
+          <div className="flex items-center justify-center gap-2 mt-2 flex-wrap">
             <Badge tone="slate">
               {t('bills.billNo')}: {b.billNumber}
             </Badge>
@@ -255,6 +291,15 @@ export default function QuickSellModal({
             </Badge>
             {b.customerName && b.customerName !== 'Walk-in Customer' && <Badge tone="orange">{b.customerName}</Badge>}
           </div>
+          {done.serials.length > 0 && (
+            <div className="mt-2 flex items-center justify-center gap-1.5 flex-wrap">
+              {done.serials.map((sn) => (
+                <span key={sn} className="inline-flex items-center gap-1 rounded-lg bg-[var(--psa-hover)] border border-[var(--psa-border)] px-2 py-1 text-[11px] font-mono text-[var(--psa-ink)]">
+                  <Hash size={11} className="text-[#E8552C]" /> {sn}
+                </span>
+              ))}
+            </div>
+          )}
           <p className="text-xs text-[var(--psa-muted)] mt-3">{t('qsell.doneDesc')}</p>
           <Btn size="sm" variant="ghost" className="mt-2" onClick={() => { close(); onGoBills(); }}>
             <ReceiptText size={14} /> {t('qsell.viewBills')}
@@ -356,6 +401,7 @@ export default function QuickSellModal({
           ) : (
             filtered.map((p) => {
               const out = p.quantity <= 0;
+              const pSerials = (p.serialNumbers?.length ? p.serialNumbers : p.serialNumber ? [p.serialNumber] : []).filter(Boolean);
               return (
                 <button
                   key={p.id}
@@ -364,6 +410,7 @@ export default function QuickSellModal({
                     setSelected(p);
                     setRate(String(p.sellingPrice || ''));
                     setQty('1');
+                    setPickedSerials([]);
                   }}
                   className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-[var(--psa-row-hover)] transition-colors"
                 >
@@ -378,6 +425,11 @@ export default function QuickSellModal({
                         `${t('qsell.stockLeft')}: ${p.quantity}`
                       )}
                     </span>
+                    {pSerials.length > 0 && !out && (
+                      <span className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-[#E8552C]">
+                        <Hash size={11} /> S/N: {pSerials.length}
+                      </span>
+                    )}
                   </span>
                   <span className="text-sm font-bold text-[var(--psa-ink)] tabular-nums shrink-0">{fmtMoney(p.sellingPrice)}</span>
                 </button>
@@ -406,7 +458,15 @@ export default function QuickSellModal({
           <Btn variant="outline" onClick={() => setSelected(null)}>
             {t('c.cancel')}
           </Btn>
-          <Btn onClick={confirmSale} disabled={busy || qtyNum <= 0 || overStock}>
+          <Btn
+            onClick={confirmSale}
+            disabled={
+              busy ||
+              qtyNum <= 0 ||
+              overStock ||
+              (availableSerials.length > 0 && pickedSerials.length !== serialsNeeded)
+            }
+          >
             <CheckCircle2 size={15} /> {t('qsell.complete')} · {fmtMoney(grand)}
           </Btn>
         </>
@@ -431,7 +491,12 @@ export default function QuickSellModal({
               min="1"
               max={selected.quantity}
               value={qty}
-              onChange={(e) => setQty(e.target.value)}
+              onChange={(e) => {
+                setQty(e.target.value);
+                // quantity shrank → trim over-picked serials
+                const n = Math.max(0, Math.floor(Number(e.target.value) || 0));
+                setPickedSerials((prev) => prev.slice(0, Math.min(n, availableSerials.length)));
+              }}
               autoFocus
             />
           </Field>
@@ -439,6 +504,39 @@ export default function QuickSellModal({
             <TextInput type="number" min="0" value={rate} onChange={(e) => setRate(e.target.value)} />
           </Field>
         </div>
+
+        {/* ── serial picker — the customer's exact unit(s) ──
+            every S/N of this model is listed; pick min(qty, available) */}
+        {availableSerials.length > 0 && (
+          <Field label={`${t('qsell.pickSerial')} — ${pickedSerials.length}/${serialsNeeded}`} hint={t('qsell.pickSerialHint')}>
+            <div className="max-h-44 overflow-y-auto rounded-xl border border-[var(--psa-border)] divide-y divide-[var(--psa-line)]">
+              {availableSerials.map((sn) => {
+                const picked = pickedSerials.some((x) => x.toLowerCase() === sn.toLowerCase());
+                return (
+                  <button
+                    key={sn}
+                    type="button"
+                    onClick={() =>
+                      setPickedSerials((prev) =>
+                        prev.some((x) => x.toLowerCase() === sn.toLowerCase())
+                          ? prev.filter((x) => x.toLowerCase() !== sn.toLowerCase())
+                          : prev.length < serialsNeeded
+                            ? [...prev, sn]
+                            : prev
+                      )
+                    }
+                    className={`w-full flex items-center justify-between gap-2 px-3.5 py-2 text-left text-sm transition-colors ${
+                      picked ? 'bg-[var(--psa-soft-orange)]' : 'hover:bg-[var(--psa-row-hover)]'
+                    }`}
+                  >
+                    <span className="font-mono text-[13px] text-[var(--psa-ink)] truncate">{sn}</span>
+                    {picked && <Check size={14} className="text-[#E8552C] shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <Field label={t('qsell.customer')}>
