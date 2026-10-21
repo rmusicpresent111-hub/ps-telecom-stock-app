@@ -1832,3 +1832,22 @@ Stage Summary:
 - User's single remaining step: /admin → Cloud Sync → "পুরোনো অ্যাকাউন্টে ঢুকুন" → existing Sync ID + PIN → all shop data pulls into the domain's browser origin
 - Account hygiene flagged for the user: 3 duplicate projects exist (5nf5 + kni9 are idle and safe to delete to save Hobby build minutes; 4mf5 now hosts the custom domain — optional rename to "artechnologyapp" for clarity); both Vercel tokens shared in chat should be rotated when convenient
 - Lessons: /v13/deployments gitSource requires type "github" + project "name" (not projectId); scripts/test-d1-sync.mjs remains the durable local secret vault for checkpoint recovery (base64 TOK)
+
+---
+Task ID: 59
+Agent: Z.ai Code (main thread)
+Task: "main project rekhe bakigulo delete kore dao" — consolidate Vercel account to the single original project
+
+Work Log:
+- Safety check first: ORIGINAL ps-telecom-stock-app (prj_CHVj0rNz1MEXo4ySdyTAa5QF1hZy) already had all 3 CLOUDFLARE_* vars on production+preview+development (Task 54) plus harmless legacy VITE_* vars; domain snapshot showed artechnologyapp.com + www still on 4mf5
+- DOMAIN MOVE executed before any deletion (deleting 4mf5 first would have killed the custom domain): DELETE both domains from 4mf5 (HTTP 200 ×2) → POST artechnologyapp.com to ORIGINAL (verified:true instantly) → POST www.artechnologyapp.com to ORIGINAL with redirect=artechnologyapp.com 308 (verified:true); ZERO downtime — first curl poll already returned admin:200
+- VERIFIED after move: POST /api/cloud/d1/ {} → {"ok":false,"error":"Missing sql"} (healthy); build IDs now IDENTICAL on artechnologyapp.com and ps-telecom-stock-app.vercel.app (jfV5RQ50bgGxHR6D4PdqZ — one deployment, one source of truth); www → HTTP/2 308 → apex with valid TLS
+- PROJECTS DELETED: ps-telecom-stock-app-4mf5, ps-telecom-stock-app-5nf5, ps-telecom-stock-app-kni9 — all DELETE /v9/projects/{id} → 204; project list now shows exactly ONE project (ps-telecom-stock-app) → per-push duplicate builds eliminated
+- Final E2E (agent-browser, fresh profile, https://artechnologyapp.com/admin): PIN gate → 9732881732 unlocks → Cloud Sync → fake connect PS-TEST-0000 (lookup-only) → "এই Sync ID খুঁজে পাওয়া যায়নি" toast + inline (D1 reached; no "সেটআপ নেই" error) — screenshot /tmp/final_move.png; zero page errors
+- No code changes → no version bump (v2.11.4); D1 read-only counts unchanged by the tests (products 128, bills 7)
+
+Stage Summary:
+- Vercel account is now CLEAN: a single project (ps-telecom-stock-app, prj_CHVj0rNz1MEXo4ySdyTAa5QF1hZy) serves ps-telecom-stock-app.vercel.app + artechnologyapp.com + www redirect, carries all Cloudflare env vars on every environment, and auto-builds on every push to main — no more duplicate builds
+- artechnologyapp.com/admin fully functional on the canonical project: v2.11.4, PIN gate, working Cloud Sync (user connects their existing Sync ID + PIN to pull data)
+- Account hygiene note stands: both Vercel tokens shared in chat should be rotated when convenient
+- Lesson: when consolidating projects, move domains BEFORE deleting the old host, and verify the destination project's env vars first
