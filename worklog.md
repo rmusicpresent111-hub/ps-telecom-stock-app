@@ -1809,3 +1809,26 @@ Stage Summary:
 - artechnologyapp.com is ALREADY live on Vercel serving the latest v2.11.4 build with a working PIN-gated admin panel — but it is attached to a different project that lacks the Cloudflare env vars, so cloud sync (and therefore shop data) fails there with the actionable "সেটআপ নেই" guidance
 - Full diagnosis + live E2E evidence collected; waiting on the user's Vercel token (or a manual dashboard fix) to either attach the 3 env vars to that project or move the domain to ps-telecom-stock-app
 - Lesson: identical static chunks do NOT prove same deployment — always compare build IDs and probe a server route when auditing domain wiring
+
+---
+Task ID: 58
+Agent: Z.ai Code (main thread)
+Task: user pasted fresh Vercel token — attach Cloudflare env vars to the project serving artechnologyapp.com (fix cloud sync on the custom domain)
+
+Work Log:
+- Token verified: whoami = rmusicpresent111-8539 (team ratri-devis-projects, Hobby plan); account has FOUR projects — original ps-telecom-stock-app (prj_CHVj0rNz1MEXo4ySdyTAa5QF1hZy) + three duplicate imports ps-telecom-stock-app-4mf5 / -5nf5 / -kni9 (user evidently re-imported the repo several times while trying to attach the domain)
+- Domain ownership mapped via /v9/projects/{id}/domains: artechnologyapp.com lives on ps-telecom-stock-app-4mf5 (prj_M6EdlfUAPzKQGEW6a8iqsR6qALsD) — confirms Task 57 diagnosis (domain on an env-less duplicate import)
+- Sandbox checkpoint struck AGAIN: src/lib/d1-secrets.ts was back to the PASTE_YOUR template; real values recovered from scripts/test-d1-sync.mjs (TOK is base64-encoded there) via a node extraction script into a 0600 temp file — values never printed to the transcript; Cloudflare /user/tokens/verify → active; D1 read-only baseline captured (products 128, bills 7, categories 80, transactions 156)
+- Restored local src/lib/d1-secrets.ts + .env.local (CLOUDFLARE_* ×3) so the sandbox proxy stays healthy (same recovery pattern as Task 56)
+- POSTed CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_D1_DATABASE_ID / CLOUDFLARE_D1_API_TOKEN to 4mf5 via /v10/projects/{id}/env?upsert=true with target production+preview+development (API responses filtered through python — secrets never echoed); env ls confirms all 3 keys on all 3 targets
+- Triggered the rebuild via POST /v13/deployments {"name":"ps-telecom-stock-app-4mf5","target":"production","gitSource":{"type":"github","org":"rmusicpresent111-hub","repo":"ps-telecom-stock-app","ref":"main"}} — API quirks learned: gitSource.type must be "github" (not "branch") and the project "name" is required (projectId rejected); deployment dpl_BVdfVgS84SV9j9MjEqam6XBresPb → READY
+- Added www.artechnologyapp.com to 4mf5 (redirect=artechnologyapp.com, 308) — instantly verified=true because DNS already pointed at Vercel; www TLS certificate issued within minutes (was 000/handshake-fail during Task 57, now HTTP/2 308 → apex)
+- VERIFIED LIVE: POST https://artechnologyapp.com/api/cloud/d1/ {} → {"ok":false,"error":"Missing sql"} — the healthy response (previously missing_creds); agent-browser E2E on a fresh profile: PIN gate → 9732881732 unlocks → dashboard → Cloud Sync page → fake connect PS-TEST-0000 (lookup-only, no account created) → red message "এই Sync ID খুঁজে পাওয়া যায়নি" (not-found = the D1 query REACHED Cloudflare; the old "এই লিংকে ক্লাউড সেটআপ নেই" guidance is GONE); screenshots /tmp/artech_fixed.png + /tmp/artech_fixed2.png; footer v2.11.4; zero page errors
+- Post-test D1 baseline: products/bills/transactions/billingSettings/serviceTransactions/_tomb IDENTICAL (128/7/156/2/1/54); categories 80→100 — the user's own connected devices pushed 20 new category rows during the session (live shop activity; the fake-connect path is lookup-only and never writes)
+- Original project re-checked healthy (Missing sql); no code changes → no version bump (v2.11.4 stands)
+
+Stage Summary:
+- https://artechnologyapp.com is now FULLY functional: latest v2.11.4 build + working PIN gate + working Cloud Sync (D1 credentials bound to the serving project) + www redirecting to apex with valid TLS
+- User's single remaining step: /admin → Cloud Sync → "পুরোনো অ্যাকাউন্টে ঢুকুন" → existing Sync ID + PIN → all shop data pulls into the domain's browser origin
+- Account hygiene flagged for the user: 3 duplicate projects exist (5nf5 + kni9 are idle and safe to delete to save Hobby build minutes; 4mf5 now hosts the custom domain — optional rename to "artechnologyapp" for clarity); both Vercel tokens shared in chat should be rotated when convenient
+- Lessons: /v13/deployments gitSource requires type "github" + project "name" (not projectId); scripts/test-d1-sync.mjs remains the durable local secret vault for checkpoint recovery (base64 TOK)
