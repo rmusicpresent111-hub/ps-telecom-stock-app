@@ -158,6 +158,11 @@ export interface BillItem {
   serialNumbers?: string[];
 }
 
+/** How GST relates to the entered price — set once in Bill Settings.
+ *  inclusive: the entered amount IS the final amount (tax carved out of it)
+ *  exclusive: tax is added on top of the entered amount (legacy). */
+export type GstMode = 'inclusive' | 'exclusive';
+
 export interface Bill {
   id: string;
   userId: string;
@@ -172,6 +177,13 @@ export interface Bill {
   gstEnabled: boolean;
   gstRate: number;
   gstAmount: number;
+  /** GST mode this bill was computed with — undefined on pre-2.13 bills (legacy exclusive). */
+  gstMode?: GstMode;
+  /** Inclusive-mode breakdown (taxable + CGST + SGST == total exactly).
+   *  Undefined on legacy exclusive bills — they print the old "+ GST" row. */
+  taxableValue?: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
   total: number;
   paymentMethod: PaymentMethod;
   paidAmount: number;
@@ -192,7 +204,8 @@ export interface BillingSettings {
   shopPhone: string;
   gstNumber: string;
   gstEnabled: boolean;
-  gstRate: number;         // percent, e.g. 18
+  gstRate: number;         // percent, e.g. 18 → 9% CGST + 9% SGST
+  gstMode: GstMode;        // inclusive (default v2.13): entered amount is final
   defaultDiscountPercent: number;
   upiId: string;
   signatureDataUrl: string; // dataURL image, '' when unset

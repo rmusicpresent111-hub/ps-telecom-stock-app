@@ -34,9 +34,10 @@ import {
 import { DEFAULT_USER_ID } from '@/lib/local-auth';
 import { fileToResizedDataUrl } from '@/lib/image-utils';
 import { useAdminStore } from '@/store/adminStore';
-import { ta } from '@/lib/admin-i18n';
+import { ta, taf } from '@/lib/admin-i18n';
 import type { Bill, BillingSettings } from '@/lib/types';
 import { normalizeAdminPin, DEFAULT_ADMIN_PIN } from '@/lib/admin-pin';
+import { computeGst, normalizeGstMode, halfRate } from '@/lib/gst';
 import { useAdminDataTick } from './useAdminData';
 import { buildBillReceiptHtml, printHtml } from './print';
 import A4Preview from './A4Preview';
@@ -60,8 +61,8 @@ function sampleBill(form: BillingSettings): Bill {
   const discountAmount = 0;
   const gstEnabled = !!form.gstEnabled && form.gstNumber.trim().length > 0 && form.gstRate > 0;
   const gstRate = gstEnabled ? form.gstRate : 0;
-  const gstAmount = gstEnabled ? Math.round(((subtotal - discountAmount) * gstRate) / 100 * 100) / 100 : 0;
-  const total = Math.round((subtotal - discountAmount + gstAmount) * 100) / 100;
+  const gstMode = normalizeGstMode(form.gstMode);
+  const breakup = gstEnabled ? computeGst(subtotal - discountAmount, gstRate, gstMode) : null;
   const now = new Date();
   const ym = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}`;
   return {
@@ -77,10 +78,11 @@ function sampleBill(form: BillingSettings): Bill {
     discountAmount,
     gstEnabled,
     gstRate,
-    gstAmount,
-    total,
+    gstAmount: breakup ? breakup.gstAmount : 0,
+    ...(breakup ? { gstMode, taxableValue: breakup.taxable, cgstAmount: breakup.cgst, sgstAmount: breakup.sgst } : {}),
+    total: breakup ? breakup.total : subtotal - discountAmount,
     paymentMethod: 'cash',
-    paidAmount: total,
+    paidAmount: breakup ? breakup.total : subtotal - discountAmount,
     dueAmount: 0,
     note: '',
     transactionId: '',
@@ -286,6 +288,7 @@ export default function AdminBillSettings() {
         gstNumber: form.gstNumber,
         gstEnabled: form.gstEnabled,
         gstRate: Number(form.gstRate) || 0,
+        gstMode: normalizeGstMode(form.gstMode),
         defaultDiscountPercent: Number(form.defaultDiscountPercent) || 0,
         billPrefix: form.billPrefix,
         upiId: form.upiId,
@@ -442,6 +445,48 @@ export default function AdminBillSettings() {
                 />
               </Field>
             </div>
+            {form.gstEnabled && (
+              <>
+                <Field label={t('bset.gstMode')}>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(['inclusive', 'exclusive'] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => set('gstMode', m)}
+                        className={`px-3 py-2.5 rounded-lg text-xs font-semibold border transition-colors text-left ${
+                          normalizeGstMode(form.gstMode) === m
+                            ? 'bg-[var(--psa-soft-orange)] border-[#FA6E41] text-[#E8552C]'
+                            : 'bg-[var(--psa-card)] border-[var(--psa-field-border)] text-[var(--psa-muted)] hover:border-[#FA6E41]/50'
+                        }`}
+                      >
+                        {m === 'inclusive' ? t('bset.gstInclusive') : t('bset.gstExclusive')}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
+                {(() => {
+                  const rate = Number(form.gstRate) || 0;
+                  if (rate <= 0) return null;
+                  const mode = normalizeGstMode(form.gstMode);
+                  const b = computeGst(100, rate, mode);
+                  return (
+                    <p className="text-[11px] text-[var(--psa-muted)] bg-[var(--psa-hover)] rounded-lg p-2.5 leading-snug">
+                      {mode === 'inclusive'
+                        ? taf('bset.gstInExample', lang, {
+                            rate,
+                            half: halfRate(rate),
+                            taxable: b.taxable.toFixed(2),
+                            cgst: b.cgst.toFixed(2),
+                            sgst: b.sgst.toFixed(2),
+                            total: b.total.toFixed(2),
+                          })
+                        : taf('bset.gstExExample', lang, { rate, gst: b.gstAmount.toFixed(2), total: b.total.toFixed(2) })}
+                    </p>
+                  );
+                })()}
+              </>
+            )}
             <Field label={t('bset.discount')}>
               <TextInput
                 type="number"

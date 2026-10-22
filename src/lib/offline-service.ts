@@ -27,6 +27,7 @@ import {
 import { getLocalUser, updateLocalUser } from './local-auth';
 import { generateRecordId } from './id';
 import { notifyLocalDataChanged, notifyLocalWipe } from './sync-events';
+import { computeGst, normalizeGstMode, round2 } from './gst';
 import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillingSettings, PaymentMethod, StaffPayment, StaffPaymentKind } from './types';
 
 // ============ DATE HELPERS (local timezone — never use UTC for business days) ============
@@ -1487,6 +1488,7 @@ export const DEFAULT_BILLING_SETTINGS: Omit<BillingSettings, 'userId' | 'updated
   gstNumber: '',
   gstEnabled: false,
   gstRate: 18,
+  gstMode: 'inclusive', // entered amount = final amount (shop owner's requested behaviour)
   defaultDiscountPercent: 0,
   upiId: '',
   signatureDataUrl: '',
@@ -1500,7 +1502,7 @@ export const DEFAULT_BILLING_SETTINGS: Omit<BillingSettings, 'userId' | 'updated
 export async function getBillingSettingsOffline(userId: string): Promise<BillingSettings> {
   const db = await getOfflineDB();
   const existing = await db.get('billingSettings', userId);
-  if (existing) return existing;
+  if (existing) return { ...existing, gstMode: normalizeGstMode(existing.gstMode) };
   return {
     ...DEFAULT_BILLING_SETTINGS,
     userId,
@@ -1516,6 +1518,7 @@ export async function saveBillingSettingsOffline(userId: string, updates: Partia
     // Never allow blank shop name — bill header must always render
     shopName: (updates.shopName ?? current.shopName).trim() || DEFAULT_BILLING_SETTINGS.shopName,
     gstRate: clampNumber(updates.gstRate ?? current.gstRate, 0, 100),
+    gstMode: normalizeGstMode(updates.gstMode ?? current.gstMode),
     defaultDiscountPercent: clampNumber(updates.defaultDiscountPercent ?? current.defaultDiscountPercent, 0, 100),
     adminPin: (updates.adminPin ?? current.adminPin ?? '').replace(/\D/g, '').slice(0, 12) || '9732881732',
     userId,
@@ -1604,8 +1607,12 @@ export async function createBillOffline(data: {
   }
 
   const gstEnabled = !!settings.gstEnabled && !!settings.gstNumber.trim() && settings.gstRate > 0;
-  const gstAmount = gstEnabled ? round2(((subtotal - discountAmount) * settings.gstRate) / 100) : 0;
-  const total = round2(subtotal - discountAmount + gstAmount);
+  const gstMode = normalizeGstMode(settings.gstMode);
+  const afterDiscount = round2(subtotal - discountAmount);
+  const breakup = gstEnabled
+    ? computeGst(afterDiscount, settings.gstRate, gstMode)
+    : { taxable: afterDiscount, gstAmount: 0, cgst: 0, sgst: 0, total: afterDiscount };
+  const total = breakup.total;
 
   const paymentMethod: PaymentMethod = data.paymentMethod ?? 'cash';
   let paidAmount = data.paidAmount === undefined ? total : Math.max(0, Number(data.paidAmount) || 0);
@@ -1651,7 +1658,10 @@ export async function createBillOffline(data: {
     discountAmount,
     gstEnabled,
     gstRate: gstEnabled ? settings.gstRate : 0,
-    gstAmount,
+    gstAmount: breakup.gstAmount,
+    ...(gstEnabled
+      ? { gstMode, taxableValue: breakup.taxable, cgstAmount: breakup.cgst, sgstAmount: breakup.sgst }
+      : {}),
     total,
     paymentMethod,
     paidAmount,
@@ -1675,10 +1685,6 @@ export async function createBillOffline(data: {
 
   notifyLocalDataChanged(data.userId);
   return { bill: bill as unknown as Bill };
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
 }
 
 export async function getBillsOffline(userId: string, options?: { from?: string; to?: string; search?: string }): Promise<Bill[]> {
@@ -1921,6 +1927,9 @@ export async function importBackupOffline(userId: string, backupData: {
       discountAmount: 'num',
       gstRate: 'num',
       gstAmount: 'num',
+      taxableValue: 'num',
+      cgstAmount: 'num',
+      sgstAmount: 'num',
       total: 'num',
       paidAmount: 'num',
       dueAmount: 'num',

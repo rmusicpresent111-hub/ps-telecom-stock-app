@@ -23,6 +23,7 @@ import {
   getBillingSettingsOffline,
 } from '@/lib/offline-service';
 import { DEFAULT_USER_ID } from '@/lib/local-auth';
+import { computeGst, normalizeGstMode, halfRate } from '@/lib/gst';
 import { useAdminStore } from '@/store/adminStore';
 import { ta, taf } from '@/lib/admin-i18n';
 import { Badge, Btn, Field, Modal, TextInput, adminToast, fmtMoney } from './admin-ui';
@@ -171,8 +172,10 @@ export default function QuickSellModal({
 
   // mirror createBillOffline's GST rule so the shown total == the bill total
   const gstOn = !!billSettings?.gstEnabled && !!billSettings?.gstNumber.trim() && (billSettings?.gstRate || 0) > 0;
-  const gstAmt = gstOn ? Math.round(((total * (billSettings?.gstRate || 0)) / 100) * 100) / 100 : 0;
-  const grand = Math.round((total + gstAmt) * 100) / 100;
+  const gstMode = normalizeGstMode(billSettings?.gstMode);
+  const breakup = gstOn && total > 0 ? computeGst(total, billSettings?.gstRate || 0, gstMode) : null;
+  const gstAmt = breakup ? breakup.gstAmount : 0;
+  const grand = breakup ? breakup.total : total;
 
   const confirmSale = async () => {
     if (!selected) return;
@@ -581,9 +584,18 @@ export default function QuickSellModal({
           </span>
           <span className="text-xl font-black text-[#E8552C] tabular-nums">{fmtMoney(grand)}</span>
         </div>
-        {gstOn && total > 0 && (
+        {gstOn && breakup && total > 0 && (
           <p className="text-[11px] text-[var(--psa-muted)] bg-[var(--psa-hover)] rounded-lg px-2.5 py-1.5">
-            {taf('qsell.gstNote', lang, { rate: billSettings?.gstRate || 0, gst: fmtMoney(gstAmt), grand: fmtMoney(grand) })}
+            {gstMode === 'inclusive'
+              ? taf('qsell.gstNoteIn', lang, {
+                  rate: billSettings?.gstRate || 0,
+                  half: halfRate(billSettings?.gstRate || 0),
+                  taxable: fmtMoney(breakup.taxable),
+                  cgst: fmtMoney(breakup.cgst),
+                  sgst: fmtMoney(breakup.sgst),
+                  grand: fmtMoney(grand),
+                })
+              : taf('qsell.gstNote', lang, { rate: billSettings?.gstRate || 0, gst: fmtMoney(gstAmt), grand: fmtMoney(grand) })}
           </p>
         )}
       </div>

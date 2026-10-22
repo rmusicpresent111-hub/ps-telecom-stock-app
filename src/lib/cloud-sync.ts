@@ -26,6 +26,7 @@ import {
   backupToD1,
   buildInsertStatements,
   d1Query,
+  ensureGstColumns,
   getD1Credentials,
   getEffectiveD1Credentials,
   readCloudMeta,
@@ -210,6 +211,11 @@ export async function runCloudSync(userId: string): Promise<SyncResult> {
   try {
     const dirty = getDirty(userId);
     const meta = await readCloudMeta(creds);
+
+    // Old cloud databases lack the v2.13 GST columns (gst_mode / taxable_value /
+    // cgst_amount / sgst_amount) — make sure they exist before a bill or the
+    // billing settings row rides up. Cached per session after first success.
+    await ensureGstColumns(creds);
 
     // No backup yet (or a table overflowed) → full backup covers everything.
     if (!meta || dirty.fullResync.length > 0) {

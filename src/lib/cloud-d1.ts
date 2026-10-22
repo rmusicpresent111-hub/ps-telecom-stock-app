@@ -681,6 +681,10 @@ export const D1_SCHEMA_STATEMENTS: string[] = [
     gst_enabled INTEGER DEFAULT 0,
     gst_rate REAL DEFAULT 0,
     gst_amount REAL DEFAULT 0,
+    gst_mode TEXT DEFAULT '',
+    taxable_value REAL DEFAULT 0,
+    cgst_amount REAL DEFAULT 0,
+    sgst_amount REAL DEFAULT 0,
     total REAL DEFAULT 0,
     payment_method TEXT DEFAULT 'cash',
     paid_amount REAL DEFAULT 0,
@@ -713,6 +717,7 @@ export const D1_SCHEMA_STATEMENTS: string[] = [
     gst_number TEXT DEFAULT '',
     gst_enabled INTEGER DEFAULT 0,
     gst_rate REAL DEFAULT 0,
+    gst_mode TEXT DEFAULT '',
     default_discount_percent REAL DEFAULT 0,
     upi_id TEXT DEFAULT '',
     signature_data_url TEXT DEFAULT '',
@@ -762,6 +767,31 @@ async function ensureProductColumn(creds: D1Credentials): Promise<void> {
   if (res.ok || /duplicate column/i.test(res.error || '')) {
     productColumnVerified = true;
   }
+}
+
+/**
+ * v2.13.0 GST mode columns. Old cloud databases predate them the same way
+ * they predate ps_transactions.product — CREATE TABLE IF NOT EXISTS cannot
+ * add columns, so each ALTER is attempted separately and "duplicate column"
+ * failures simply mean the column already exists. Remembered per session so
+ * a sync does not burn doomed queries every run.
+ */
+let gstColumnsVerified = false;
+export async function ensureGstColumns(creds: D1Credentials): Promise<void> {
+  if (gstColumnsVerified) return;
+  const alters = [
+    `ALTER TABLE ps_bills ADD COLUMN gst_mode TEXT DEFAULT ''`,
+    `ALTER TABLE ps_bills ADD COLUMN taxable_value REAL DEFAULT 0`,
+    `ALTER TABLE ps_bills ADD COLUMN cgst_amount REAL DEFAULT 0`,
+    `ALTER TABLE ps_bills ADD COLUMN sgst_amount REAL DEFAULT 0`,
+    `ALTER TABLE ps_billing_settings ADD COLUMN gst_mode TEXT DEFAULT ''`,
+  ];
+  let allSettled = true;
+  for (const sql of alters) {
+    const res = await d1Query(creds, sql);
+    if (!(res.ok || /duplicate column/i.test(res.error || ''))) allSettled = false;
+  }
+  if (allSettled) gstColumnsVerified = true;
 }
 
 // ============ TABLE MAPPINGS (camelCase local ↔ snake_case cloud) ============
@@ -895,6 +925,10 @@ export const CLOUD_TABLES: CloudTable[] = [
       ['gstEnabled', 'gst_enabled'],
       ['gstRate', 'gst_rate'],
       ['gstAmount', 'gst_amount'],
+      ['gstMode', 'gst_mode'],
+      ['taxableValue', 'taxable_value'],
+      ['cgstAmount', 'cgst_amount'],
+      ['sgstAmount', 'sgst_amount'],
       ['total', 'total'],
       ['paymentMethod', 'payment_method'],
       ['paidAmount', 'paid_amount'],
@@ -932,7 +966,7 @@ export function toRow(table: CloudTable, record: Record<string, unknown>): unkno
     const v = record[camel];
     if (v === undefined) {
       if (table.jsonKeys?.includes(camel)) return jsonDefault(camel);
-      if (camel === 'gstEnabled' || camel === 'gstRate') return 0;
+      if (camel === 'gstEnabled' || camel === 'gstRate' || camel === 'taxableValue' || camel === 'cgstAmount' || camel === 'sgstAmount') return 0;
       return '';
     }
     return v;
@@ -972,6 +1006,7 @@ export const BILLING_SETTINGS_COLUMNS: [string, string][] = [
   ['gstNumber', 'gst_number'],
   ['gstEnabled', 'gst_enabled'],
   ['gstRate', 'gst_rate'],
+  ['gstMode', 'gst_mode'],
   ['defaultDiscountPercent', 'default_discount_percent'],
   ['upiId', 'upi_id'],
   ['signatureDataUrl', 'signature_data_url'],
@@ -1066,10 +1101,11 @@ export async function backupToD1(
     counts.categories + counts.products + counts.transactions + counts.expenses +
     counts.cashEntries + counts.serviceTransactions + counts.bills;
 
-  // 2. Make sure tables exist (idempotent, cheap) + legacy column migration
+  // 2. Make sure tables exist (idempotent, cheap) + legacy column migrations
   const schema = await ensureD1Schema(creds);
   if (!schema.ok) return { ok: false, error: schema.error };
   await ensureProductColumn(creds);
+  await ensureGstColumns(creds);
 
   // 3. Flag the backup as IN PROGRESS *before* any destructive step. If this
   //    process dies mid-way, the meta row keeps "_incomplete": true and

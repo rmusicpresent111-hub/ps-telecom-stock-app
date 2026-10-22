@@ -100,6 +100,7 @@ const D: Record<string, Entry> = {
   'bills.subtotal': { bn: 'সাবটোটাল', en: 'Subtotal', hi: 'सबटोटल' },
   'bills.discount': { bn: 'ডিস্কাউন্ট', en: 'Discount', hi: 'छूट' },
   'bills.gst': { bn: 'জিএসটি', en: 'GST', hi: 'जीएसटी' },
+  'bills.taxable': { bn: 'ট্যাক্সেবল মূল্য', en: 'Taxable Value', hi: 'टैक्सेबल मूल्य' },
   'bills.note': { bn: 'নোট', en: 'Note', hi: 'नोट' },
   'bills.noBills': { bn: 'এখনও কোনো বিল নেই', en: 'No bills yet', hi: 'अभी कोई बिल नहीं' },
   'bills.allTime': { bn: 'সব সময়', en: 'All time', hi: 'सभी समय' },
@@ -269,9 +270,34 @@ const D: Record<string, Entry> = {
   'bset.gstToggle': { bn: 'বিলে GST যোগ করুন', en: 'Add GST on bills', hi: 'बिल में GST जोड़ें' },
   'bset.gstRate': { bn: 'শতকরা হার (GST %)', en: 'GST Percent (%)', hi: 'GST प्रतिशत (%)' },
   'bset.gstHint': {
-    bn: 'GSTIN দেওয়া থাকলে ও GST চালু থাকলে নতুন বিলে এই % হারে GST যোগ হয়ে মোট দেখাবে',
-    en: 'New bills add GST at this % only when a GSTIN is filled and this switch is on',
-    hi: 'GSTIN भरा होने और यह चालू होने पर नए बिल में GST (%) जुड़ेगा',
+    bn: 'GSTIN দেওয়া থাকলে ও GST চালু থাকলে নতুন বিলে এই % হারে GST কাটা/যোগ হবে — নিচের ধরন থেকে বাছুন',
+    en: 'New bills apply this GST % only when a GSTIN is filled and the switch is on — pick the mode below',
+    hi: 'GSTIN भरा होने और चालू होने पर नए बिल में यह GST (%) लगेगा — नीचे से मोड चुनें',
+  },
+  'bset.gstMode': {
+    bn: 'GST হিসাবের ধরন',
+    en: 'GST Calculation Mode',
+    hi: 'GST गणना मोड',
+  },
+  'bset.gstInclusive': {
+    bn: 'দামের ভিতরে — যত লিখবেন সেটাই ফাইনাল',
+    en: 'Inclusive — the amount you enter is the final total',
+    hi: 'दाम के अंदर — जो अंकित करेंगे वही फाइनल',
+  },
+  'bset.gstExclusive': {
+    bn: 'দামের উপরে আলাদা যোগ হবে',
+    en: 'Exclusive — GST is added on top of the amount',
+    hi: 'दाम के ऊपर अलग से जुड़ेगा',
+  },
+  'bset.gstInExample': {
+    bn: 'উদাহরণ: ₹{total}-এর বিল → পণ্যের দাম ₹{taxable} + CGST {half}% ₹{cgst} + SGST {half}% ₹{sgst} = মোট ₹{total}',
+    en: 'Example: a ₹{total} bill → product ₹{taxable} + CGST {half}% ₹{cgst} + SGST {half}% ₹{sgst} = total ₹{total}',
+    hi: 'उदाहरण: ₹{total} के बिल → प्रोडक्ट ₹{taxable} + CGST {half}% ₹{cgst} + SGST {half}% ₹{sgst} = कुल ₹{total}',
+  },
+  'bset.gstExExample': {
+    bn: 'উদাহরণ: পণ্য ₹100 + GST ₹{gst} = মোট ₹{total}',
+    en: 'Example: product ₹100 + GST ₹{gst} = total ₹{total}',
+    hi: 'उदाहरण: प्रोडक्ट ₹100 + GST ₹{gst} = कुल ₹{total}',
   },
   'bset.discount': { bn: 'ডিফল্ট ডিসকাউন্ট (%)', en: 'Default Discount (%)', hi: 'डिफ़ॉल्ट छूट (%)' },
   'bset.billPrint': { bn: 'বিল নম্বর ও প্রিন্ট', en: 'Bill Number & Print', hi: 'बिल नंबर और प्रिंट' },
@@ -376,6 +402,11 @@ const D: Record<string, Entry> = {
     bn: 'বিলে GST ({rate}%) যোগ হবে: +{gst} · সর্বমোট {grand}',
     en: 'GST ({rate}%) will be added to the bill: +{gst} · Grand total {grand}',
     hi: 'बिल में GST ({rate}%) जुड़ेगा: +{gst} · कुल {grand}',
+  },
+  'qsell.gstNoteIn': {
+    bn: 'দাম {grand}-এর মধ্যেই GST ({rate}%) আছে — ট্যাক্সেবল {taxable} + CGST {cgst} + SGST {sgst}',
+    en: 'GST ({rate}%) is inside {grand} — taxable {taxable} + CGST {cgst} + SGST {sgst}',
+    hi: '{grand} के अंदर ही GST ({rate}%) है — टैक्सेबल {taxable} + CGST {cgst} + SGST {sgst}',
   },
 
   // ── Reports hub (Task 48) ───────────────────────────────────

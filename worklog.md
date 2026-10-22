@@ -1873,3 +1873,44 @@ Stage Summary:
 - Admin panel now captures a serial/IMEI number for phone products: the input appears ONLY when the selected category is a phone category (exact-name match incl. Bengali variants), persists through sync, shows as "S/N:" under the product name, is searchable, and clears itself if the product moves out of Mobile
 - v2.11.5 live and verified on all three platforms (Vercel prod identical-build on the custom domain + alias, gh-pages mirror 370476e, sandbox preview)
 - User's real D1 untouched by testing; their devices' live sync activity observed (read-only counts)
+
+---
+Task ID: 61
+Agent: Z.ai Code (main thread)
+Task: "project e sob thikache kina chake koro" — full project health check; complete verification of the per-unit serial feature (03bdd40) whose session had died before its worklog entry; plus a mid-check sandbox checkpoint disaster and recovery
+
+Work Log:
+- HEALTH CHECK all green: dev server 200, git clean + 0 ahead/behind, version 2.12.0, lint clean, D1 probe healthy ({"ok":false,"error":"Missing sql"}), artechnologyapp.com admin served v2.12.0 (PIN unlock + Products page render, zero errors, no data ops)
+- SERIAL E2E (sandbox, fresh profile): qty 3 → exactly 3 serial inputs "IMEI / S/N 1..3" with label "সিরিয়াল নম্বর (S/N) — 3" + hint "পরিমাণ যত, S/N তত"; saved Galaxy A55 E2E (SN-AAA-001/002/003) → list row "S/N: SN-AAA-001, SN-AAA-002 +1"; Quick Sell → category → product → "S/N সিলেক্ট করুন — 0/1" listing ALL serials → picked SN-AAA-002 → "1/1" → sale confirmed → success screen shows বিল নং PS-2610-0001 with "# SN-CCC-002" on the bill, product row dropped to stock 1 with only SN-CCC-001 left (screenshots /tmp/product_list.png, /tmp/sold_state.png)
+- CHECKPOINT DISASTER mid-check: the sandbox checkpoint silently rolled the whole repo back to Task-56 era (v2.11.4) — HEAD became a synthetic commit, 03bdd40/1c76e44/877449f/Task 57-60 worklogs vanished from the object store, d1-secrets.ts + .env.local wiped (self-heal recreated the template). Detected because AdminProducts.tsx shrank 940→694 lines mid-session and the running app hot-reloaded to pre-serial code (explains confusing "no serial inputs" during the second E2E pass)
+- RECOVERY: git fetch → origin/main still at 03bdd40 (all commits safe on GitHub) → git reset --hard origin/main → version 2.12.0 + serial code back (939 lines, 23 serialNumber refs); secrets re-restored from the persistent vault scripts/test-d1-sync.mjs (ACC/DB hex32, TOK base64-decoded) via temp node script (values never printed, files 0600, self-checked for PASTE_Y leftovers); dev server fully restarted (pkill next-dev chain + .zscripts/dev.sh) because env vars need a process restart — D1 probe healthy again
+- LESSON: after any checkpoint reset, FIRST check `git log --oneline -3` + `wc -l` on recently-edited files, not just git status (status is clean against a rolled-back HEAD); origin/main is the single source of truth — reset --hard is safe since every task ends with a push
+- E2E re-run post-recovery on v2.12.0: created Serial E2E 3 (qty 2, SN-CCC-001/002) → quick-sold SN-CCC-002 → stock 2→1, sold serial removed from stock list, bill carries the picked serial — golden path CONFIRMED; test product+bill deleted after (মোট আইটেম 0), zero page errors
+
+Stage Summary:
+- Project verified healthy end-to-end; serial feature (both v2.11.5 single + v2.12.0 per-unit) confirmed working on the sandbox against real UI flows with screenshot evidence
+- Local repo had been checkpoint-rolled-back; fully recovered from origin/main + vault-restored secrets; production/deployments were never affected (they build from GitHub)
+- gh-pages mirror was NOT redeployed after 03bdd40 (v2.12.0) — left for the next push to carry it (done in Task 62)
+
+---
+Task ID: 62
+Agent: Z.ai Code (main thread)
+Task: "admin panel e cloud synk abosthay bill setting korle jeno ota save thekejay onnyo kono device e amar id diye cloud connect korle jeno amar kora bill setting autometic chole ase. ami bill setting e gst jodi 18% diye rakhi tahole customar er billing korar somoy ami je amount bosabo same amount er moddhe theke 9%cgst 9%sgst calculation hoye bille show hobe ... product price 82 taka 9%cgst 9%sgst tarpor final amount 100 taka evabe bill set koro" — GST-inclusive billing (CGST/SGST split) + bill-settings cloud sync confirmation; v2.13.0
+
+Work Log:
+- SETTINGS SYNC: already existed (billingSettings is a synced D1 store with explicit column maps) — verified gstEnabled/gstRate ride the cloud-d1 camel↔snake maps both directions; added the missing 'gstMode'↔'gst_mode' mapping so the new field syncs too; persistence itself E2E-proven (set GSTIN + rate 18 + mode → save → reload → all fields back)
+- NEW src/lib/gst.ts = the ONE money-math source of truth: computeGst(amountAfterDiscount, rate, mode) — inclusive: taxable=amount/(1+rate/100), gstAmount=amount−taxable, CGST=round2(gst/2), SGST=gst−CGST (paisa rounding absorbed by SGST so taxable+CGST+SGST==total EXACTLY); exclusive keeps the legacy on-top math; normalizeGstMode defaults missing → 'inclusive' (the owner's requested behaviour); halfRate(18)=9
+- types.ts: BillingSettings+=gstMode; Bill+=optional gstMode/taxableValue/cgstAmount/sgstAmount (undefined on pre-2.13 bills → legacy print path untouched)
+- offline-service: DEFAULT_BILLING_SETTINGS.gstMode='inclusive'; getBillingSettingsOffline normalizes stored rows; saveBillingSettingsOffline normalizes updates; createBillOffline now computes via computeGst and STORES the breakdown on the bill (total==entered amount in inclusive mode); bill backup-import coercion covers the new num fields
+- cloud-d1.ts: CREATE TABLE statements gain gst_mode/taxable_value/cgst_amount/sgst_amount (ps_bills) + gst_mode (ps_billing_settings); ensureGstColumns() = the ensureProductColumn ALTER pattern (5 ALTERs, duplicate-column tolerated, cached per session) wired into backupToD1 AND runCloudSync BEFORE any bill/settings row rides up — old cloud DBs self-migrate on first sync; toRow defaults the numeric fields to 0; BILLING_SETTINGS_COLUMNS+ps_bills column maps extended
+- QuickSellModal preview now mirrors createBillOffline exactly (shared computeGst) — inclusive shows "দাম ₹100-এর মধ্যেই GST (18%) আছে — ট্যাক্সেবল ₹84.75 + CGST ₹7.63 + SGST ₹7.62" and the pay button says ₹100 (not ₹118); fixed a double-₹ i18n bug caught in E2E (fmtMoney already prepends ₹)
+- print.ts A4 receipt: inclusive bills print সাবটোটাল → ট্যাক্সেবল মূল্য → CGST {rate/2}% → SGST {rate/2}% → মোট (no "+GST" row); legacy bills unchanged
+- AdminBillSettings: mode selector (inclusive/exclusive) with a LIVE ₹100 example per mode + updated hint; sampleBill/A4 preview uses computeGst so the preview is always the real math; save carries gstMode
+- i18n (bn/en/hi): bills.taxable, bset.gstMode/gstInclusive/gstExclusive/gstInExample/gstExExample, qsell.gstNoteIn; v2.13.0 (package.json + AdminShell footer); eslint + tsc clean
+- E2E (sandbox): GSTIN+18%+inclusive saved & persisted across reload; live settings example "₹100 → ₹84.75 + CGST 9% ₹7.63 + SGST 9% ₹7.62 = ₹100.00"; Accessories product → NO serial fields (mobile-only rule re-verified); Quick Sell note + button correct; sold 1×₹100 → IndexedDB bill ground truth {gstMode:'inclusive', taxableValue:84.75, cgst:7.63, sgst:7.62, gstAmount:15.25, total:100}; A4 preview of the real bill shows all four rows summing to ₹100 (screenshot /tmp/a4_preview.png); test bill+product deleted, zero page errors
+- USER-MATH NOTE: owner said "price 82 + 9% + 9% = 100" — arithmetic check: 82+7.38+7.38=96.76 ≠ 100; the correct GST-inclusive base is 100/1.18=84.75 (CGST/SGST 7.63/7.62) which hits ₹100.00 exactly — implemented the exact version and the settings UI teaches it with a live example
+
+Stage Summary:
+- Bill Settings now persist and cloud-sync (incl. the new gstMode) — any device connecting with the owner's Sync ID pulls them automatically (existing billingSettings sync path + ensureGstColumns self-migration)
+- GST 18% now means: customer pays the entered amount, bill shows product price ₹84.75 + CGST 9% ₹7.63 + SGST 9% ₹7.62 = ₹100.00 — on-screen note, pay button, stored bill and A4 print all agree
+- v2.13.0; old bills/print unaffected; D1 schema self-migrates (additive ALTERs only)

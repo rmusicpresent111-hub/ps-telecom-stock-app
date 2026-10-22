@@ -14,6 +14,7 @@
 
 import type { AdminLang } from '@/lib/admin-i18n';
 import { ta, taf } from '@/lib/admin-i18n';
+import { halfRate } from '@/lib/gst';
 import type { Bill, BillingSettings } from '@/lib/types';
 import { getBillingSettingsOffline } from '@/lib/offline-service';
 import { DEFAULT_USER_ID } from '@/lib/local-auth';
@@ -297,14 +298,26 @@ export function buildBillReceiptHtml(bill: Bill, lang: AdminLang, settings?: Bil
     })
     .join('');
 
+  // Inclusive bills (v2.13+) carry their own breakdown: the tax came OUT of
+  // the entered amount, so the receipt shows taxable value + CGST + SGST that
+  // add up to the total. Legacy bills (no gstMode) keep the old "+ GST" row.
+  const inclusiveGst = bill.gstMode === 'inclusive' && gstOn;
+  const gstTotalsRows = inclusiveGst
+    ? [
+        `<div class="trow"><span>${esc(t('bills.taxable'))}</span><b>${money(bill.taxableValue ?? 0)}</b></div>`,
+        `<div class="trow"><span>CGST ${halfRate(bill.gstRate)}%</span><b>${money(bill.cgstAmount ?? 0)}</b></div>`,
+        `<div class="trow"><span>SGST ${halfRate(bill.gstRate)}%</span><b>${money(bill.sgstAmount ?? 0)}</b></div>`,
+      ].join('')
+    : gstOn
+      ? `<div class="trow"><span>${esc(t('bills.gst'))} (${bill.gstRate}%)</span><b>+ ${money(bill.gstAmount)}</b></div>`
+      : '';
+
   const totalsRows = [
     `<div class="trow"><span>${esc(t('bills.subtotal'))}</span><b>${money(bill.subtotal)}</b></div>`,
     (bill.discountAmount || 0) > 0
       ? `<div class="trow"><span>${esc(t('bills.discount'))}</span><b>− ${money(bill.discountAmount)}</b></div>`
       : '',
-    gstOn
-      ? `<div class="trow"><span>${esc(t('bills.gst'))} (${bill.gstRate}%)</span><b>+ ${money(bill.gstAmount)}</b></div>`
-      : '',
+    gstTotalsRows,
     `<div class="trow grand"><span>${esc(t('bills.total'))}</span><span>${money(bill.total)}</span></div>`,
     `<div class="trow"><span>${esc(t('bills.paid'))}</span><b>${money(bill.paidAmount)}</b></div>`,
     due > 0.009 ? `<div class="trow"><span>${esc(t('bills.due'))}</span><b>${money(due)}</b></div>` : '',
