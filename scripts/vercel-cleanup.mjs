@@ -53,16 +53,7 @@ if (!project) {
 }
 console.log(`✓ Project: ${project.name} (${project.id})`);
 
-// 2. find current production target
-const prodTargets = await api(`/v13/deployments?projectId=${project.id}&target=production&state=READY&limit=5`);
-const current = prodTargets.deployments?.[0]; // most recent READY production = what the domain serves
-if (!current) {
-  console.error('❌ No READY production deployment found — aborting (nothing will be deleted).');
-  process.exit(1);
-}
-console.log(`✓ KEEP (current production): ${current.uid}  ${current.url}  (${new Date(current.created)}  v${current.meta?.githubCommitMessage || ''})`);
-
-// 3. list everything
+// 2. list everything (list endpoint = /v6; /v13 is single-deployment only)
 let all = [];
 let since = '';
 for (;;) {
@@ -74,6 +65,16 @@ for (;;) {
   if (all.length > 2000) break; // hard safety stop
 }
 console.log(`✓ Total deployments found: ${all.length}`);
+
+// 3. find current production target from the full list
+const current = all
+  .filter((d) => d.target === 'production' && d.state === 'READY')
+  .sort((a, b) => b.created - a.created)[0]; // most recent READY production = what the domain serves
+if (!current) {
+  console.error('❌ No READY production deployment found — aborting (nothing will be deleted).');
+  process.exit(1);
+}
+console.log(`✓ KEEP (current production): ${current.uid}  ${current.url}  (${new Date(current.created)})`);
 
 // 4. delete everything that is NOT the current production deployment
 let kept = 0, deleted = 0, failed = 0;
