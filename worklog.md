@@ -1932,3 +1932,19 @@ Stage Summary:
 - Vercel production (artechnologyapp.com + vercel.app) live at v2.13.0 — GST-inclusive billing deployed
 - GitHub Pages mirror refreshed → v2.13.0 live; all three web surfaces now match main HEAD 9d51407
 - APK untouched (built on demand via build:apk, not part of web deploy)
+---
+Task ID: 64
+Agent: Z.ai Code (main thread)
+Task: "last deploy rekhe baki gulo delet koro" — Vercel deployment history cleanup (keep only live production)
+
+Work Log:
+- No Vercel token existed in sandbox (only Cloudflare + GitHub); wrote scripts/vercel-cleanup.mjs: lists all deployments via /v6, keeps the newest READY production, DELETEs the rest via /v13/deployments/{id}; token strictly from env, never stored
+- User supplied token → run 1: 80 deployments found, deleted ~78 before `| head` SIGPIPE cut the stream
+- Bug found & fixed: /v13 rejects list queries ("Invalid API version") — list must be /v6; current production now derived from the full list (newest READY target=production); fix committed + pushed
+- Run 2 (idempotent): 2 left → deleted 1 (April 2026 leftover) → FINAL: 1 kept (dpl_5GFxCfYXUxgWVm2EDYBMPACpwoGT, v2.13.0, Oct 22 03:32 UTC), 79 deleted, 0 failed
+- Post-verify: artechnologyapp.com 200 + ps-telecom-stock-app.vercel.app 200
+
+Stage Summary:
+- Vercel history now = exactly 1 deployment: the live v2.13.0 production; future pushes will add new ones on top
+- Script kept in repo (scripts/vercel-cleanup.mjs) — re-runnable anytime (VERCEL_TOKEN=xxx node scripts/vercel-cleanup.mjs)
+- ADVISED USER: revoke the pasted token in Vercel dashboard (it transited chat)
