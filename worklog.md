@@ -1970,3 +1970,25 @@ Stage Summary:
 - Categories are now sync-immortal: nothing but future explicit user action can remove them, and the self-heal pass resurrects any category still held by any device
 - Historic tombstones are inert; devices that still hold "lost" categories will re-publish them automatically (heal) on next sync
 - v2.13.1 pushed (fe52531); production auto-deploy triggered
+
+---
+Task ID: 66
+Agent: Z.ai Code (main thread)
+Task: "category niye ekhono samosya hochhe kokhono asche abar kokhono aschena, tumi eta koro je ami je product er upor je cetegory likhbo otate oi category asbe app e ar web e" — (a) kill the intermittent category disappearance for good, (b) type-to-create category on the product form (app + web). v2.14.0
+
+Work Log:
+- LIVE D1 FORENSICS (read-only probe): PS-MUAG-JEEB has _tomb=159 rows, 152 of them t:categories:* (legacy adoption-era poison, some pushed as recently as Oct 23), only 23 category rows — every fresh device/join pulled tombstones BEFORE data rows, so the pull guard "deleted after this write" SKIPPED live category rows → "kokhono ashe kokhono ashe na" (v2.13.1 cached category tombstones then skipped their data rows; heal had the same t>=ver hole so it could never resurrect them either)
+- SYNC FIX (src/lib/d1-sync.ts, 5 holes closed, categories fully immortal):
+  1. hydrateTombCache: PURGES t:categories:% rows from cloud SQL at every boot/connect (one DELETE ... LIKE) + skips them defensively when hydrating the cache
+  2. pull tombstone branch: category tombstones are never cached (previously cached then skipped)
+  3. pull data-row guard: categories exempt (tombstone can never hide a live category row)
+  4. collectPushCandidates: categories exempt from the resurrection guard → stale tombstones never block publishing
+  5. healPass: categories always re-assert (tombstone guard skipped) → heal can now actually resurrect
+- FEATURE (product form type-to-create): offline-service.ensureCategoryOffline(name, userId) — case-insensitive find-or-create (📦 default tile, idempotent); AddProductScreen's fixed <select> replaced by a glass-styled CategoryField combobox (type filters, tap picks, ➕ Create row, save-time fallback ensures the category exists BEFORE the product lands; editing prefills the current category name, arriving from a category screen prefills it too); store list updated in-place after create; new i18n keys searchOrCreateCategory/createCategory/categoryCreated (bn/en/hi)
+- Version 2.14.0 (package.json + AdminShell footer); eslint + tsc clean
+- E2E (agent-browser, fresh profile): onboarding → dashboard → Add Product → typed "Power Bank" → Create row appeared → tapped → category created → saved product → dashboard shows "📦 Power Bank 1 items" → IndexedDB verified: 21 cats, product.categoryId === powerBank.id, linked:true → typed "BATTERY" → only existing "Battery" option, NO create row (case-insensitive dupe guard) → zero console/page errors
+
+Stage Summary:
+- Root cause of intermittent vanish: 152 legacy category tombstones in production D1 poisoning fresh devices; now purged cloud-side on first boot of v2.14.0 on ANY synced device, and every code path that could hide/skip/delete a category is closed
+- Product form now creates categories on the fly (app + web via D1 sync) — owner never needs the Add Category screen first
+- v2.14.0 pushed; production auto-deploy triggered; gh-pages mirror refresh to follow

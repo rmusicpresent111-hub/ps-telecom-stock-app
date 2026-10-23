@@ -39,6 +39,9 @@ export type TranslationKeys = {
   // Add Product
   productName: string;
   category: string;
+  searchOrCreateCategory: string;
+  createCategory: string;
+  categoryCreated: string;
   quantity: string;
   boxNumber: string;
   purchasePrice: string;
@@ -337,6 +340,9 @@ const translations: Record<Language, TranslationKeys> = {
     instantSell: 'তাৎক্ষণিক বিক্রয়',
     productName: 'প্রোডাক্টের নাম',
     category: 'ক্যাটেগরি',
+    searchOrCreateCategory: 'ক্যাটেগরি লিখুন — নতুন হলে তৈরি হবে',
+    createCategory: 'তৈরি করুন',
+    categoryCreated: 'নতুন ক্যাটেগরি তৈরি হয়েছে',
     quantity: 'পরিমাণ',
     boxNumber: 'বক্স নম্বর',
     purchasePrice: 'ক্রয় মূল্য',
@@ -615,6 +621,9 @@ const translations: Record<Language, TranslationKeys> = {
     instantSell: 'Instant Sell',
     productName: 'Product Name',
     category: 'Category',
+    searchOrCreateCategory: 'Type a category — new ones are created automatically',
+    createCategory: 'Create',
+    categoryCreated: 'New category created',
     quantity: 'Quantity',
     boxNumber: 'Box Number',
     purchasePrice: 'Purchase Price',
@@ -893,6 +902,9 @@ const translations: Record<Language, TranslationKeys> = {
     instantSell: 'तुरंत बिक्री',
     productName: 'प्रोडक्ट का नाम',
     category: 'कैटेगरी',
+    searchOrCreateCategory: 'कैटेगरी लिखें — नई हो तो बन जाएगी',
+    createCategory: 'बनाएं',
+    categoryCreated: 'नई कैटेगरी बनाई गई',
     quantity: 'मात्रा',
     boxNumber: 'बॉक्स नंबर',
     purchasePrice: 'खरीद मूल्य',

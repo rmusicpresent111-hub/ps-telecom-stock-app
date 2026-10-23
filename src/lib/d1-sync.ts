@@ -18,6 +18,10 @@
  *    the pull watermark are decrypted and applied last-writer-wins via the
  *    cloud version (_sv). Rows with un-pushed local edits are never
  *    overwritten.
+ *  - CATEGORIES ARE IMMORTAL (v2.14.0): no code path deletes a category —
+ *    local, remote or heal. Legacy category tombstones are purged from the
+ *    cloud at boot and never cached, so a stale delete marker can never hide
+ *    a live category row from any device (the "categories vanish" bug).
  *  - SELF-HEAL: if an attacker wipes or poisons cloud rows, devices restore:
  *      (a) rows missing in the cloud are re-asserted from local copies
  *      (b) rows that fail decryption ("poison") are force-overwritten
@@ -551,24 +555,22 @@ function collectPushCandidates(
     if (ver <= pushWm) continue; // unchanged since last push (device clock domain)
     const sv = typeof row._sv === 'number' ? row._sv : 0;
     if (sv && sv >= ver) continue; // echo guard: row came from the cloud unchanged
-    // resurrection guard: a newer tombstone for this id exists — drop locally instead
-    const t = tombstoneCache.get(tombKey(store, String(row.id)));
-    if (t !== undefined && t >= ver) {
-      if (store === 'categories') {
-        // 🔒 v2.13.1: categories are immortal — never execute the delete
-        // locally; skip the push and let the self-heal pass re-publish the
-        // row with a fresh version on a later cycle.
+    // resurrection guard: a newer tombstone for this id exists — drop locally instead.
+    // 🔒 v2.14.0: the guard NEVER applies to categories — they are immortal,
+    // so a stale tombstone must not block publishing a live category either.
+    if (store !== 'categories') {
+      const t = tombstoneCache.get(tombKey(store, String(row.id)));
+      if (t !== undefined && t >= ver) {
+        void (async () => {
+          try {
+            const db = await getOfflineDB();
+            await db.delete(store as 'products', row.id as string);
+          } catch {
+            /* non-fatal */
+          }
+        })();
         continue;
       }
-      void (async () => {
-        try {
-          const db = await getOfflineDB();
-          await db.delete(store as 'products', row.id as string);
-        } catch {
-          /* non-fatal */
-        }
-      })();
-      continue;
     }
     const payload = stripForCloud(row);
     payload.id = row.id;
@@ -842,18 +844,17 @@ async function pullOnce(syncId: string): Promise<{ ok: boolean; error?: string }
         if (r.store === TOMB_STORE) {
           const tomb = parseTombPayload(r, payload);
           if (!tomb) continue; // integrity check failed — ignore
-          tombstoneCache.set(tombKey(tomb.sid, tomb.iid), ver);
           if (tomb.sid === 'categories') {
-            // 🔒 v2.13.1 CATEGORIES ARE IMMORTAL: remote tombstones must never
-            // delete a category this device still holds. Historical bug: the
-            // duplicate-adoption flow tombstoned 149 categories, and every
-            // device dutifully executed those tombstones — wiping the owner's
-            // category list device by device. Categories now only ever leave
-            // via explicit local user action (none exists today), never via
-            // cloud deletes. The cache entry stays so pushes don't resurrect
-            // stale ids mid-cycle; the self-heal pass re-pushes live rows.
+            // 🔒 v2.14.0 CATEGORIES ARE IMMORTAL: category tombstones are not
+            // even cached. History: the adoption flow tombstoned 149+
+            // categories and devices executed them — wiping the owner's list
+            // device by device; worse, a cached tombstone hid the category's
+            // own data row from fresh devices (the "sometimes missing" bug).
+            // Legacy cloud tomb rows are purged at boot (hydrateTombCache);
+            // this branch is the defensive path for rows seen mid-session.
             continue;
           }
+          tombstoneCache.set(tombKey(tomb.sid, tomb.iid), ver);
           await applyLocalDelete(tomb.sid, tomb.iid);
           continue;
         }
@@ -862,7 +863,9 @@ async function pullOnce(syncId: string): Promise<{ ok: boolean; error?: string }
         if (!SYNCED_STORES.includes(store)) continue; // unknown store — ignore
         if (payload.id !== r.id) continue; // integrity: payload must match row key
 
-        const t = tombstoneCache.get(tombKey(store, r.id));
+        // 🔒 v2.14.0: categories skip the tombstone guard — a legacy delete
+        // marker must never hide a live category row from a fresh device.
+        const t = store === 'categories' ? undefined : tombstoneCache.get(tombKey(store, r.id));
         if (t !== undefined && t >= ver) continue; // deleted after this write — skip
 
         if (store === 'billingSettings') {
@@ -990,7 +993,8 @@ async function healPass(syncId: string): Promise<void> {
       for (const row of locals) {
         const id = String(row.id);
         if (cloudIds.has(id)) continue;
-        const t = tombstoneCache.get(tombKey(store, id));
+        // 🔒 v2.14.0: categories always re-assert — tombstones never block them
+        const t = store === 'categories' ? undefined : tombstoneCache.get(tombKey(store, id));
         const ver = recordVersionEpoch(row);
         if (t !== undefined && t >= ver) continue; // legitimately deleted elsewhere
         const payload = stripForCloud(row);
@@ -1040,16 +1044,33 @@ export async function syncNowD1(userId: string): Promise<{ ok: boolean; error?: 
 
 async function hydrateTombCache(syncId: string): Promise<void> {
   const key = await requireKey();
+  // 🔒 v2.14.0: PURGE legacy category tombstones from the cloud FIRST.
+  // The duplicate-adoption era queued a pendingDelete for every merged
+  // category twin — 152 `t:categories:*` rows were observed in production.
+  // Any fresh device that pulled such a tombstone before the category's data
+  // row then SKIPPED that row ("deleted after write") and the category never
+  // appeared — "kokhono ashe kokhono ashe na". Categories have no delete
+  // path anymore, so these rows are pure poison: one boot wipes them all.
+  try {
+    await d1QuerySafe(
+      "DELETE FROM sync_data WHERE user_id=? AND store='_tomb' AND id LIKE 't:categories:%'",
+      [syncId]
+    );
+  } catch {
+    /* purge is best-effort; the per-row guards below still protect pulls */
+  }
   const rows = await d1QuerySafe<PullRow>(
     "SELECT store, id, payload, updated_at AS ver FROM sync_data WHERE user_id=? AND store='_tomb'",
     [syncId]
   );
   for (const r of rows) {
+    if (r.id.startsWith('t:categories:')) continue; // defensive: purge may have failed
     const ver = Number(r.ver);
     if (typeof r.payload !== 'string' || !r.payload.startsWith('v1.')) continue;
     const payload = await decryptRow(key, r.payload);
     if (!payload) continue;
     const tomb = parseTombPayload(r, payload);
+    if (tomb && tomb.sid === 'categories') continue; // belt & suspenders
     if (tomb) tombstoneCache.set(tombKey(tomb.sid, tomb.iid), ver);
   }
 }

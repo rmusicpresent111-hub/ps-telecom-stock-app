@@ -3,12 +3,106 @@
 import { useEffect, useState } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
-import { Product } from '@/lib/types';
+import { Product, Category } from '@/lib/types';
 import { motion } from 'framer-motion';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Check, Plus } from 'lucide-react';
 import { toast } from 'sonner';
-import { createProductOffline, updateProductOffline, getProductByIdOffline, getProductsOffline } from '@/lib/offline-service';
+import { createProductOffline, updateProductOffline, getProductByIdOffline, getProductsOffline, getCategoriesOffline, ensureCategoryOffline } from '@/lib/offline-service';
 import { playSuccessSound } from '@/lib/sound-service';
+
+/**
+ * Type-to-create category field (v2.14.0) — replaces the old fixed <select>.
+ * Typing filters existing categories; any name that doesn't match is created
+ * automatically (on pick, or on save) so the category appears on the app AND
+ * the web via cloud sync. The product form never blocks on category setup.
+ */
+function CategoryField({
+  categories,
+  value,
+  text,
+  onText,
+  onPick,
+  onCreate,
+  placeholder,
+  createLabel,
+}: {
+  categories: Category[];
+  value: string;
+  text: string;
+  onText: (v: string) => void;
+  onPick: (cat: Category) => void;
+  onCreate: (name: string) => void;
+  placeholder: string;
+  createLabel: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const query = text.trim().toLowerCase();
+  const matches = query
+    ? categories.filter((c) => c.name.toLowerCase().includes(query))
+    : categories;
+  const exact = query.length > 0 && categories.some((c) => c.name.toLowerCase() === query);
+  const canCreate = query.length > 0 && !exact;
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        value={text}
+        onChange={(e) => onText(e.target.value)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => window.setTimeout(() => setOpen(false), 150)}
+        placeholder={placeholder}
+        autoComplete="off"
+        aria-label={placeholder}
+        className="glass-input w-full px-4 py-3 text-sm"
+      />
+      {open && (matches.length > 0 || canCreate) && (
+        <div className="absolute z-30 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-white/10 bg-gray-900/95 backdrop-blur-xl shadow-2xl py-1" role="listbox">
+          {matches.map((cat) => (
+            <button
+              key={cat.id}
+              type="button"
+              role="option"
+              aria-selected={cat.id === value}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onPick(cat);
+                setOpen(false);
+              }}
+              className={`w-full text-left px-3 py-2.5 text-sm flex items-center gap-2.5 hover:bg-emerald-500/10 active:bg-emerald-500/15 transition-colors min-h-[44px] ${
+                cat.id === value ? 'text-emerald-400 font-semibold' : 'text-white/85'
+              }`}
+            >
+              <span className="w-8 h-8 rounded-lg glass-card flex items-center justify-center overflow-hidden shrink-0 text-base">
+                {cat.image && (cat.image.startsWith('data:') || cat.image.startsWith('/')) ? (
+                  <img src={cat.image} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  cat.image || '📦'
+                )}
+              </span>
+              <span className="truncate">{cat.name}</span>
+              {cat.id === value && <Check size={15} className="ml-auto shrink-0" />}
+            </button>
+          ))}
+          {canCreate && (
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onCreate(text.trim());
+                setOpen(false);
+              }}
+              className="w-full text-left px-3 py-2.5 text-sm font-semibold text-emerald-400 hover:bg-emerald-500/10 active:bg-emerald-500/15 transition-colors flex items-center gap-2 min-h-[44px] border-t border-white/10"
+            >
+              <Plus size={15} className="shrink-0" />
+              <span className="truncate">{createLabel} “{text.trim()}”</span>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function AddProductScreen() {
   const {
@@ -19,6 +113,7 @@ export default function AddProductScreen() {
 
   const [name, setName] = useState('');
   const [categoryId, setCategoryId] = useState(selectedCategoryId || '');
+  const [catName, setCatName] = useState('');
   const [quantity, setQuantity] = useState('');
   const [boxNumber, setBoxNumber] = useState('');
   const [purchasePrice, setPurchasePrice] = useState('');
@@ -33,7 +128,7 @@ export default function AddProductScreen() {
     if (selectedProductId) {
       // ⚡ Direct O(1) IndexedDB get — the old path loaded ALL products to find one
       getProductByIdOffline(selectedProductId)
-        .then((product) => {
+        .then(async (product) => {
           if (product) {
             setExistingProduct(product);
             setName(product.name);
@@ -43,14 +138,49 @@ export default function AddProductScreen() {
             setPurchasePrice(String(product.purchasePrice));
             setSellingPrice(String(product.sellingPrice));
             setLowStockThreshold(String(product.lowStockThreshold));
+            // Category display name — store list first, IndexedDB fallback
+            const known = useAppStore
+              .getState()
+              .categories.find((c) => c.id === product.categoryId);
+            if (known) {
+              setCatName(known.name);
+              return;
+            }
+            try {
+              const cats = await getCategoriesOffline(product.userId || user?.id || '');
+              const cat = cats.find((x) => x.id === product.categoryId);
+              if (cat) setCatName(cat.name);
+            } catch {
+              /* id still set — name stays empty */
+            }
           }
         })
         .catch(() => {});
     }
-  }, [selectedProductId]);
+  }, [selectedProductId, user?.id]);
+
+  // Arriving from a category screen ("+ Add Product"): prefill that category
+  useEffect(() => {
+    if (selectedProductId || !selectedCategoryId) return;
+    setCategoryId(selectedCategoryId);
+    const known = useAppStore
+      .getState()
+      .categories.find((c) => c.id === selectedCategoryId);
+    if (known) {
+      setCatName(known.name);
+      return;
+    }
+    getCategoriesOffline(user?.id || '')
+      .then((cats) => {
+        const cat = cats.find((x) => x.id === selectedCategoryId);
+        if (cat) setCatName(cat.name);
+      })
+      .catch(() => {});
+  }, [selectedCategoryId, selectedProductId, user?.id]);
 
   const handleSave = async () => {
-    if (!name.trim() || !categoryId || !user?.id) {
+    // categoryId may be empty here — a typed category name resolves on save
+    if (!name.trim() || !user?.id) {
       toast.error(t('error', language));
       return;
     }
@@ -77,11 +207,36 @@ export default function AddProductScreen() {
       return;
     }
 
+    // 🔒 v2.14.0 Resolve the category BEFORE anything is written: a picked id
+    // wins; otherwise the typed name is find-or-created (case-insensitive) so
+    // the category exists on this device AND syncs to every other device
+    // (app + web). The user never has to visit Add Category first.
+    let finalCategoryId = categoryId;
+    const typedName = catName.trim();
+    if (!finalCategoryId) {
+      if (!typedName) {
+        toast.error(t('error', language), { description: t('searchOrCreateCategory', language) });
+        return;
+      }
+      try {
+        const res = await ensureCategoryOffline(typedName, user.id);
+        finalCategoryId = res.category.id;
+        if (res.created) {
+          const cur = useAppStore.getState().categories;
+          useAppStore.getState().setCategories([...cur, res.category]);
+          toast.success(t('categoryCreated', language));
+        }
+      } catch (err) {
+        toast.error((err as Error).message || t('error', language));
+        return;
+      }
+    }
+
     // Duplicate product name check (only when adding new product, not editing)
     // ⚡ Only fetches THIS category's products instead of the user's whole list
     if (!isEditing) {
       try {
-        const categoryProducts = await getProductsOffline(user.id, { categoryId });
+        const categoryProducts = await getProductsOffline(user.id, { categoryId: finalCategoryId });
         const isDuplicate = categoryProducts?.some(
           (p: Product) => p.name.trim().toLowerCase() === name.trim().toLowerCase()
         );
@@ -99,7 +254,7 @@ export default function AddProductScreen() {
       if (isEditing && selectedProductId) {
         await updateProductOffline(selectedProductId, {
           name: name.trim(),
-          categoryId,
+          categoryId: finalCategoryId,
           quantity: qty,
           boxNumber: boxNumber.trim(),
           purchasePrice: purchase,
@@ -110,7 +265,7 @@ export default function AddProductScreen() {
       } else {
         await createProductOffline({
           name: name.trim(),
-          categoryId,
+          categoryId: finalCategoryId,
           quantity: qty,
           boxNumber: boxNumber.trim(),
           purchasePrice: purchase,
@@ -140,6 +295,27 @@ export default function AddProductScreen() {
   const handleCancel = () => {
     setSelectedProductId(null);
     goBack();
+  };
+
+  const handlePickCategory = (cat: Category) => {
+    setCategoryId(cat.id);
+    setCatName(cat.name);
+  };
+
+  const handleCreateCategory = async (newName: string) => {
+    if (!user?.id || !newName.trim()) return;
+    try {
+      const { category, created } = await ensureCategoryOffline(newName, user.id);
+      if (created) {
+        const cur = useAppStore.getState().categories;
+        useAppStore.getState().setCategories([...cur, category]);
+        toast.success(t('categoryCreated', language));
+      }
+      setCategoryId(category.id);
+      setCatName(category.name);
+    } catch (err) {
+      toast.error((err as Error).message || t('error', language));
+    }
   };
 
   return (
@@ -179,21 +355,22 @@ export default function AddProductScreen() {
             />
           </div>
 
-          {/* Category */}
+          {/* Category — type to search or create (syncs to app + web) */}
           <div>
             <label className="text-xs text-white/60 mb-1 block">{t('category', language)}</label>
-            <select
+            <CategoryField
+              categories={categories}
               value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-              className="glass-input w-full px-4 py-3 text-sm"
-            >
-              <option value="" className="bg-gray-900">Select Category</option>
-              {categories.map((cat) => (
-                <option key={cat.id} value={cat.id} className="bg-gray-900">
-                  {cat.name}
-                </option>
-              ))}
-            </select>
+              text={catName}
+              onText={(v) => {
+                setCatName(v);
+                setCategoryId(''); // typing invalidates the picked id — resolved on save
+              }}
+              onPick={handlePickCategory}
+              onCreate={handleCreateCategory}
+              placeholder={t('searchOrCreateCategory', language)}
+              createLabel={t('createCategory', language)}
+            />
           </div>
 
           {/* Quantity */}

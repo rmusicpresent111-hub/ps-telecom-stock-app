@@ -296,6 +296,27 @@ export async function createCategoryOffline(name: string, image: string, userId:
   return { category };
 }
 
+/**
+ * Find-or-create a category by (trimmed, case-insensitive) name — powers the
+ * product form's type-to-create field: a category typed onto a product is
+ * guaranteed to exist before the product row lands, on this device AND on
+ * every other device via cloud sync (app + web). New categories get the 📦
+ * default tile and can be restyled later from Add Category presets.
+ * Idempotent: concurrent callers converge on the same row.
+ */
+export async function ensureCategoryOffline(
+  rawName: string,
+  userId: string
+): Promise<{ category: Category; created: boolean }> {
+  const name = rawName.trim();
+  if (!name) throw new Error('Category name is required');
+  const existing = await offlineCategories.getAll(userId);
+  const match = existing.find((c) => c.name.trim().toLowerCase() === name.toLowerCase());
+  if (match) return { category: stripSync<Category>(match), created: false };
+  const { category } = await createCategoryOffline(name, '📦', userId);
+  return { category, created: true };
+}
+
 // ============ PRODUCTS (Local) ============
 
 /**
