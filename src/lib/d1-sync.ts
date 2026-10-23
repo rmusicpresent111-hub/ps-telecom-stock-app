@@ -18,6 +18,24 @@
  *    the pull watermark are decrypted and applied last-writer-wins via the
  *    cloud version (_sv). Rows with un-pushed local edits are never
  *    overwritten.
+ *  - INTEGRITY PASS (v2.17.0): after every pull, a watermark-FREE id-diff
+ *    runs for EVERY store: any row that exists in the cloud but not locally
+ *    is fetched + applied, and any local row missing in the cloud is
+ *    re-asserted — so a row can never stay "lost" because of a watermark
+ *    edge case. Categories additionally ride the same pass every cycle.
+ *  - SERVER-DOMAIN VERSIONS (v2.17.0): outgoing pushes carry
+ *    ver = max(record updatedAt, server-normalised now) — a device with a
+ *    wrong clock can no longer write rows that other devices' pull
+ *    watermarks permanently skip (the real "kokhono ashe kokhono ashe na").
+ *  - CONDITIONAL UPSERT (v2.17.0): the cloud only overwrites a payload when
+ *    the incoming version is newer — a late push of a stale row can no
+ *    longer clobber the cloud's newer copy.
+ *  - MERGE ALIASES (v2.17.0): when two devices create the same-named
+ *    category, adoption collapses them into one deterministic row and the
+ *    loser's id is recorded in a persisted alias map — the zombie row can
+ *    never resurrect as a duplicate, and every product pointing at the
+ *    loser is rewired to the winner on every device (with a dirty bump so
+ *    the fix propagates cloud-wide).
  *  - CATEGORIES ARE IMMORTAL (v2.14.0): no code path deletes a category —
  *    local, remote or heal. Legacy category tombstones are purged from the
  *    cloud at boot and never cached, so a stale delete marker can never hide
@@ -71,7 +89,11 @@ const RETRY_DELAY_MS = 2_500;
 const PULL_PAGE_LIMIT = 400;
 const PUSH_ROWS_PER_STMT = 16; // 16 rows × 5 params = 80 (D1 limit: 100 params)
 const PUSH_CONCURRENCY = 3;
-const CLOCK_OFFSET_MAX_MS = 60 * 60 * 1000; // ignore insane offsets (>1h)
+// Trust clock offsets up to 48h: a phone with a badly-wrong clock (auto-time
+// off, battery pull) must still get server-normalised timestamps, otherwise
+// its pushes land below every other device's pull watermark and those rows
+// NEVER propagate ("category kokhono ashe kokhono ashe na").
+const CLOCK_OFFSET_MAX_MS = 48 * 60 * 60 * 1000;
 const HEAL_INTERVAL_MS = 6 * 60 * 60 * 1000; // self-heal sweep every 6h
 const HEAL_MAX_MISSING = 1000; // cap re-asserts per heal sweep
 const MAX_PAYLOAD_JSON = 200_000; // skip pathological rows (JSON chars)
@@ -296,6 +318,11 @@ const tombstoneCache = new Map<string, number>(); // "store:id" → deleted_at (
 const poisonedRows = new Set<string>(); // "store:id" — cloud rows that failed decryption
 let tombVerLast = 0; // monotonic generator for outgoing tombstone versions
 
+// v2.17.0 — category merge aliases: loserId → winnerId (chain-resolved).
+// Persisted per sync account in syncMeta so merged categories can never
+// resurrect as duplicates on ANY pull path, on ANY device.
+const catAlias = new Map<string, string>();
+
 function nowMs(): number {
   return Date.now() + clockOffsetMs;
 }
@@ -356,6 +383,47 @@ async function resetWatermarks(syncId: string): Promise<void> {
   await saveWatermark(WM_PULL, syncId, 0);
   await saveWatermark(WM_PUSH, syncId, 0);
   await saveWatermark(WM_HEAL, syncId, 0);
+}
+
+// ============ category merge aliases (v2.17.0) ============
+
+function catAliasMetaKey(syncId: string): string {
+  return `cat-alias:${syncId}`;
+}
+
+async function loadCatAlias(syncId: string): Promise<void> {
+  try {
+    const db = await getOfflineDB();
+    const row = await db.get('syncMeta', catAliasMetaKey(syncId));
+    const data = (row?.data ?? {}) as Record<string, string>;
+    catAlias.clear();
+    for (const [k, v] of Object.entries(data)) {
+      if (typeof k === 'string' && typeof v === 'string') catAlias.set(k, v);
+    }
+  } catch {
+    catAlias.clear();
+  }
+}
+
+async function saveCatAlias(syncId: string): Promise<void> {
+  try {
+    const db = await getOfflineDB();
+    await db.put('syncMeta', {
+      key: catAliasMetaKey(syncId),
+      userId: syncId,
+      lastSync: Date.now(),
+      data: Object.fromEntries(catAlias),
+    });
+  } catch {
+    /* alias persistence is best-effort; the in-memory map still guards this session */
+  }
+}
+
+/** Resolve a (possibly chained) loser id to its final winner id. */
+function resolveCatAlias(id: string): string {
+  let cur = id;
+  for (let i = 0; i < 10 && catAlias.has(cur); i++) cur = catAlias.get(cur) as string;
+  return cur;
 }
 
 // ============ clock sync (server domain) ============
@@ -551,16 +619,23 @@ function collectPushCandidates(
 ): PushItem[] {
   const out: PushItem[] = [];
   for (const row of rows) {
-    const ver = recordVersionEpoch(row);
-    if (ver <= pushWm) continue; // unchanged since last push (device clock domain)
+    const recordVer = recordVersionEpoch(row);
+    if (recordVer <= pushWm) continue; // unchanged since last push (device clock domain)
+    // v2.17.0 SERVER-DOMAIN VERSIONS: the outgoing cloud version is normalised
+    // to push time (server clock). Previously the cloud version was the origin
+    // device's LOCAL record time — a device with a behind clock wrote rows
+    // below every other device's pull watermark, so those rows NEVER arrived
+    // ("kokhono ashe kokhono ashe na"). Selection stays record-based (only
+    // re-edited rows are picked); only the published version is normalised.
+    const pushVer = Math.max(recordVer, nowMs());
     const sv = typeof row._sv === 'number' ? row._sv : 0;
-    if (sv && sv >= ver) continue; // echo guard: row came from the cloud unchanged
+    if (sv && sv >= pushVer) continue; // echo guard: row came from the cloud unchanged
     // resurrection guard: a newer tombstone for this id exists — drop locally instead.
     // 🔒 v2.14.0: the guard NEVER applies to categories — they are immortal,
     // so a stale tombstone must not block publishing a live category either.
     if (store !== 'categories') {
       const t = tombstoneCache.get(tombKey(store, String(row.id)));
-      if (t !== undefined && t >= ver) {
+      if (t !== undefined && t >= pushVer) {
         void (async () => {
           try {
             const db = await getOfflineDB();
@@ -576,7 +651,7 @@ function collectPushCandidates(
     payload.id = row.id;
     payload.userId = (row.userId as string) ?? DEFAULT_USER_ID;
     if (JSON.stringify(payload).length > MAX_PAYLOAD_JSON) continue; // pathological row
-    out.push({ store, id: String(row.id), payload, ver });
+    out.push({ store, id: String(row.id), payload, ver: pushVer });
   }
   return out;
 }
@@ -606,7 +681,13 @@ async function pushDataItems(
       }
       await d1QuerySafe(
         `INSERT INTO sync_data (user_id, store, id, payload, updated_at) VALUES ${placeholders} ` +
-          `ON CONFLICT(user_id, store, id) DO UPDATE SET payload = excluded.payload, ` +
+          `ON CONFLICT(user_id, store, id) DO UPDATE SET ` +
+          // v2.17.0 CONDITIONAL payload: a late push of a STALE row must never
+          // clobber the cloud's newer copy (the old unconditional
+          // "payload = excluded.payload" let an out-of-order device silently
+          // revert newer data). The version still advances (MAX guard) so the
+          // winning payload gets re-pulled by everyone and everything converges.
+          `payload = CASE WHEN excluded.updated_at > sync_data.updated_at THEN excluded.payload ELSE sync_data.payload END, ` +
           `updated_at = MAX(sync_data.updated_at + 1, excluded.updated_at)`,
         params
       );
@@ -625,6 +706,12 @@ async function pushOnce(syncId: string): Promise<{ ok: boolean; error?: string }
   setStatus({ state: 'syncing' });
   const cycleStartDeviceMs = Date.now();
   try {
+    // v2.17.0 clock-jump guard: the push watermark lives in the DEVICE clock
+    // domain. If the clock jumped BACKWARDS (manual change, NTP correction),
+    // the watermark sits in the future and every new row would be skipped
+    // forever. Reset once — re-pushing is safe (idempotent conditional UPSERTs).
+    if (pushWatermark > Date.now() + 60_000) pushWatermark = 0;
+
     if (Date.now() - clockOffsetUpdatedAt > 10 * 60 * 1000) await refreshClockOffset();
 
     await pushPendingDeletes(syncId);
@@ -738,68 +825,278 @@ async function applyLocalDelete(store: string, id: string): Promise<void> {
 }
 
 /**
+ * Rewire every local product from category `fromId` to `toId` and BUMP the
+ * rows (updatedAt + _dirty) so the fix re-pushes and reaches every device.
+ * v2.17.0: the old code remapped without bumping — products that had already
+ * been pushed kept their broken categoryId in the cloud forever, so on other
+ * devices the product's category looked "missing" (kokhono ashe kokhono na).
+ */
+async function remapCategoryProducts(fromId: string, toId: string): Promise<number> {
+  const db = await getOfflineDB();
+  const prods = (await db.getAllFromIndex('products', 'by-userId', DEFAULT_USER_ID)) as unknown as Row[];
+  const nowIso = new Date().toISOString();
+  const dirty = Date.now();
+  let n = 0;
+  const tx = db.transaction('products', 'readwrite');
+  for (const p of prods) {
+    if (p.categoryId !== fromId) continue;
+    void tx.store.put({ ...p, categoryId: toId, updatedAt: nowIso, _dirty: dirty } as unknown as Row);
+    n++;
+  }
+  await tx.done;
+  return n;
+}
+
+/**
  * When a cloud category arrives whose name matches a local category with a
- * DIFFERENT id, keep a deterministic single row (older createdAt wins; tie →
- * smaller id wins): delete the loser locally, remap its products, and leave
- * the loser's cloud row alone (v2.13.1 — no tombstones, see below).
- * Returns true when the incoming row was handled (adopted or skipped).
+ * DIFFERENT id, keep a deterministic single row (older createdAt wins; tie ->
+ * smaller id wins) and record the loser in the alias map.
+ *
+ * v2.17.0 fixes vs the old adoption:
+ *  - name match is CASE-INSENSITIVE + trimmed (matches ensureCategoryOffline,
+ *    so "Mobile" and "mobile" from two devices collapse instead of duplicating)
+ *  - the loser is recorded in the persisted ALIAS MAP - its zombie cloud row
+ *    can never resurrect as a live duplicate later (e.g. after the winner is
+ *    renamed and the name no longer matches)
+ *  - EVERY local product pointing at EITHER loser id is rewired to the winner
+ *    with a dirty bump - the old code only remapped in one of the two
+ *    branches and never re-pushed, leaving orphan products whose category
+ *    looked "missing" on other devices
+ *  - the local-wins branch no longer overwrites the local winner's data with
+ *    the loser's payload (that silently reverted the owner's tile image)
+ * Returns 'applied' (caller should put the incoming payload), 'skipped'
+ * (incoming row must be dropped) or 'new' (no twin - normal apply).
  */
 async function adoptCategory(
   userId: string,
   payload: Record<string, unknown>,
-  ver: number
-): Promise<boolean> {
-  const db = await getOfflineDB();
+  syncId: string
+): Promise<'applied' | 'skipped' | 'new'> {
   const incomingId = String(payload.id);
-  const incomingName = String(payload.name ?? '');
+
+  // zombie re-arrival: this id already lost a merge - never a live row again
+  if (catAlias.has(incomingId)) return 'skipped';
+
+  const db = await getOfflineDB();
+  const incomingName = String(payload.name ?? '').trim().toLowerCase();
   const incomingCreated = String(payload.createdAt ?? '');
-  if (!incomingName) return false;
+  if (!incomingName) return 'new';
 
   const locals = (await db.getAllFromIndex('categories', 'by-userId', userId)) as unknown as Row[];
-  const twin = locals.find((c) => c.name === incomingName && c.id !== incomingId);
-  if (!twin) return false;
+  const twin = locals.find(
+    (c) => String(c.name ?? '').trim().toLowerCase() === incomingName && c.id !== incomingId
+  );
+  if (!twin) return 'new';
 
   const twinCreated = String(twin.createdAt ?? '');
   const incomingWins =
     incomingCreated < twinCreated || (incomingCreated === twinCreated && incomingId < twin.id);
 
-  const tx = db.transaction(['categories', 'products'], 'readwrite');
-  const loser = incomingWins ? twin : null;
-  if (loser) {
-    // incoming wins: delete the local twin, remap its products
-    void tx.objectStore('categories').delete(loser.id);
-    const prods = await tx.objectStore('products').index('by-userId').getAll(userId);
-    for (const p of prods) {
-      if ((p as unknown as Row).categoryId === loser.id) {
-        void tx.objectStore('products').put({
-          ...(p as unknown as Row),
-          categoryId: incomingId,
-        } as unknown as OfflineDBSchema['products']['value']);
-      }
-    }
-  }
-  await tx.done;
-
-  if (loser) {
-    // 🔒 v2.13.1: NO cloud tombstone for the loser — the old code queued a
-    // pendingDelete here, which turned every duplicate-merge on one device
-    // into a mass category deletion on every other device (149 tombstones
-    // observed in production). The loser's cloud row simply stays behind as
-    // an inert zombie; adoption skips it on every device forever.
-    return true; // incoming applied by the caller
+  if (incomingWins) {
+    // incoming wins: delete the local twin, remap its products, adopt its id
+    await remapCategoryProducts(twin.id, incomingId);
+    const tx = db.transaction('categories', 'readwrite');
+    void tx.objectStore('categories').delete(twin.id);
+    await tx.done;
+    catAlias.set(twin.id, incomingId);
+    await saveCatAlias(syncId);
+    // v2.13.1: NO cloud tombstone for the loser - the loser's cloud row
+    // simply stays behind as an inert zombie; the alias map (and every
+    // device's adoption) skips it on every path forever.
+    return 'applied';
   }
 
-  // local twin wins: adopt the local id into the payload so both devices keep
-  // ONE row (the local winner); the incoming (loser) cloud row is just skipped
-  payload.id = twin.id;
+  // local twin wins: keep the local row UNTOUCHED (the old code overwrote it
+  // with the incoming payload, silently reverting the owner's icon/image),
+  // rewire any local product that already references the incoming (loser) id,
+  // and remember the loser so it can never come back.
+  await remapCategoryProducts(incomingId, twin.id);
+  catAlias.set(incomingId, twin.id);
+  await saveCatAlias(syncId);
+  return 'skipped';
+}
+
+/**
+ * Apply one decrypted DATA row (store already validated) to IndexedDB.
+ * Shared by the watermark pull AND the watermark-free integrity pass so both
+ * paths enforce the exact same guards:
+ *  - payload integrity (payload.id must match the row key)
+ *  - tombstone guard (categories exempt — immortal since v2.14.0)
+ *  - billingSettings single-row upsert
+ *  - "never clobber an un-pushed local edit" + cloud-version gate
+ *  - category merge adoption + zombie alias skip
+ *  - v2.17.0: userId forced to DEFAULT_USER_ID (one shop = one sync account;
+ *    legacy rows with odd userId values used to land invisible forever)
+ * Returns true when the row was applied.
+ */
+async function applyPulledRow(
+  store: string,
+  id: string,
+  ver: number,
+  payload: Record<string, unknown>,
+  key: CryptoKey
+): Promise<boolean> {
+  if (!(SYNCED_STORES as readonly string[]).includes(store)) return false;
+  if (payload.id !== id) return false; // integrity: payload must match row key
+
+  // categories skip the tombstone guard — a legacy delete marker must never
+  // hide a live category row from a fresh device.
+  if (store !== 'categories') {
+    const t = tombstoneCache.get(tombKey(store, id));
+    if (t !== undefined && t >= ver) return false; // deleted after this write — skip
+  }
+
+  const db = await getOfflineDB();
+
+  if (store === 'billingSettings') {
+    const local = (await db.get('billingSettings', DEFAULT_USER_ID)) as unknown as Row | undefined;
+    if (local && typeof local._sv === 'number' && local._sv >= ver) return false;
+    payload.userId = DEFAULT_USER_ID;
+    payload._sv = ver;
+    await db.put('billingSettings', payload as unknown as OfflineDBSchema['billingSettings']['value']);
+    return true;
+  }
+
+  const local = (await db.get(store as 'products', id)) as unknown as Row | undefined;
+  if (local) {
+    const localDirty = typeof local._dirty === 'number' && local._dirty > 0;
+    if (localDirty) return false; // never clobber an un-pushed local edit
+    const localSv = typeof local._sv === 'number' ? local._sv : 0;
+    if (localSv >= ver) return false; // already have this (or newer) version
+  }
+
+  // category adoption: a cloud category colliding with a same-name local
+  // seed must not become a duplicate — deterministic winner keeps its id
+  if (store === 'categories') {
+    const res = await adoptCategory(DEFAULT_USER_ID, payload, currentSyncId);
+    if (res === 'skipped') return false;
+    // 'applied' | 'new' → fall through and put the payload
+  }
+
+  // v2.17.0: a product may arrive STILL pointing at a category id that lost
+  // a merge on THIS device (the product was pushed before the loser's other
+  // device adopted). Rewire through the alias map or it lands as an orphan
+  // whose category looks "missing" forever.
+  if (store === 'products' && typeof payload.categoryId === 'string') {
+    const resolved = resolveCatAlias(payload.categoryId);
+    if (resolved !== payload.categoryId) payload.categoryId = resolved;
+  }
+
   payload._sv = ver;
   payload._dirty = 0;
   payload._synced = Date.now();
-  const tx2 = db.transaction('categories', 'readwrite');
-  void tx2.objectStore('categories').put(payload as unknown as OfflineDBSchema['categories']['value']);
-  await tx2.done;
-  // 🔒 v2.13.1: NO pendingDelete for the incoming loser either — see above.
+  payload.userId = DEFAULT_USER_ID; // v2.17.0: legacy userId rows stay visible
+  const tx = db.transaction(store as 'products', 'readwrite');
+  void tx.store.put(payload as unknown as OfflineDBSchema['products']['value']);
+  await tx.done;
   return true;
+}
+
+/**
+ * v2.17.0 INTEGRITY PASS — the "a row can never stay lost" guarantee.
+ *
+ * Runs at most once a minute (NOT on every 12s pull — the /api/cloud/d1
+ * proxy rate-limits per IP), WATERMARK-FREE, for every store:
+ *  (1) ONE combined id-list query diffs every store against the cloud;
+ *      any row that exists in the cloud but not locally is fetched and
+ *      applied — a watermark skip, a version collision or a fresh-device
+ *      race can no longer leave a category/product invisible;
+ *  (2) any local row missing in the cloud is re-asserted immediately
+ *      (tombstone-guarded for deletable stores) — the owner never waits
+ *      up to 6h for the heal sweep.
+ * Healthy devices pay ONE tiny id-only SELECT per minute.
+ */
+const INTEGRITY_INTERVAL_MS = 60_000;
+let lastIntegrityAt = 0;
+
+async function integrityPass(syncId: string, key: CryptoKey): Promise<void> {
+  const db = await getOfflineDB();
+  let fixed = 0;
+  try {
+    // ONE combined id-list for every synced store (rate-limit friendly)
+    const storeList = SYNCED_STORES.map((s) => `'${s}'`).join(',');
+    const cloudRows = await d1QuerySafe<{ store: string; id: string }>(
+      `SELECT store, id FROM sync_data WHERE user_id=? AND store IN (${storeList})`,
+      [syncId]
+    );
+    const cloudIds = new Map<string, Set<string>>();
+    for (const r of cloudRows) {
+      let set = cloudIds.get(r.store);
+      if (!set) cloudIds.set(r.store, (set = new Set()));
+      set.add(String(r.id));
+    }
+
+    for (const store of SYNCED_STORES) {
+      let locals: Record<string, unknown>[];
+      if (store === 'billingSettings') {
+        const r = await db.get('billingSettings', DEFAULT_USER_ID);
+        locals = r ? [r as unknown as Record<string, unknown>] : [];
+      } else {
+        locals = (await db.getAllFromIndex(store, 'by-userId', DEFAULT_USER_ID)) as unknown as Record<
+          string,
+          unknown
+        >[];
+      }
+      const localIds = new Set(locals.map((r) => String(r.id)));
+      const cloudIdSet = cloudIds.get(store) ?? new Set<string>();
+
+      // (1) cloud rows missing locally -> fetch + apply (watermark-independent)
+      const missingIds = [...cloudIdSet].filter((id) => !localIds.has(id));
+      for (const group of chunk(missingIds, 20)) {
+        const ph = group.map(() => '?').join(',');
+        const rows = await d1QuerySafe<PullRow>(
+          `SELECT store, id, payload, updated_at AS ver FROM sync_data WHERE user_id=? AND store=? AND id IN (${ph})`,
+          [syncId, store, ...group]
+        );
+        for (const r of rows) {
+          let payload: Record<string, unknown> | null = null;
+          try {
+            if (typeof r.payload === 'string' && r.payload.startsWith('v1.')) {
+              payload = await decryptRow(key, r.payload);
+            } else if (typeof r.payload === 'string' && r.payload.startsWith('{')) {
+              payload = JSON.parse(r.payload) as Record<string, unknown>;
+            }
+          } catch {
+            payload = null;
+          }
+          if (!payload) {
+            poisonedRows.add(tombKey(r.store, r.id)); // heal later (self-heal sweep)
+            continue;
+          }
+          const ok = await applyPulledRow(r.store, r.id, Number(r.ver), payload, key);
+          if (ok) fixed++;
+        }
+      }
+
+      // (2) local rows missing in the cloud -> re-assert immediately
+      const extra: PushItem[] = [];
+      for (const row of locals) {
+        const id = String(row.id);
+        if (cloudIdSet.has(id)) continue;
+        if (store === 'categories' && catAlias.has(id)) continue; // merged loser — never re-assert
+        const recordVer = recordVersionEpoch(row);
+        const pushVer = Math.max(recordVer, nowMs());
+        if (store !== 'categories') {
+          const t = tombstoneCache.get(tombKey(store, id));
+          if (t !== undefined && t >= pushVer) continue; // legitimately deleted elsewhere
+        }
+        const payload = stripForCloud(row);
+        payload.id = id;
+        payload.userId = (row.userId as string) ?? DEFAULT_USER_ID;
+        if (JSON.stringify(payload).length > MAX_PAYLOAD_JSON) continue;
+        extra.push({ store, id, payload, ver: pushVer });
+        if (extra.length >= 50) break;
+      }
+      if (extra.length > 0) {
+        await pushDataItems(syncId, extra, key);
+        fixed += extra.length;
+      }
+    }
+    if (fixed > 0) console.info(`[d1-sync] integrity pass restored ${fixed} rows`);
+  } catch (err) {
+    // never break the pull cycle on integrity failures
+    console.warn('[d1-sync] integrity pass failed:', (err as Error)?.message);
+  }
 }
 
 async function pullOnce(syncId: string): Promise<{ ok: boolean; error?: string }> {
@@ -859,47 +1156,9 @@ async function pullOnce(syncId: string): Promise<{ ok: boolean; error?: string }
           continue;
         }
 
-        const store = r.store as SyncStore;
-        if (!SYNCED_STORES.includes(store)) continue; // unknown store — ignore
-        if (payload.id !== r.id) continue; // integrity: payload must match row key
-
-        // 🔒 v2.14.0: categories skip the tombstone guard — a legacy delete
-        // marker must never hide a live category row from a fresh device.
-        const t = store === 'categories' ? undefined : tombstoneCache.get(tombKey(store, r.id));
-        if (t !== undefined && t >= ver) continue; // deleted after this write — skip
-
-        if (store === 'billingSettings') {
-          const local = (await db.get('billingSettings', DEFAULT_USER_ID)) as unknown as
-            | Row
-            | undefined;
-          if (local && typeof local._sv === 'number' && local._sv >= ver) continue;
-          payload.userId = DEFAULT_USER_ID;
-          payload._sv = ver;
-          await db.put('billingSettings', payload as unknown as OfflineDBSchema['billingSettings']['value']);
-          continue;
-        }
-
-        const local = (await db.get(store as 'products', r.id)) as unknown as Row | undefined;
-        if (local) {
-          const localDirty = typeof local._dirty === 'number' && local._dirty > 0;
-          if (localDirty) continue; // never clobber an un-pushed local edit
-          const localSv = typeof local._sv === 'number' ? local._sv : 0;
-          if (localSv >= ver) continue; // already have this (or newer) version
-        }
-
-        // category adoption: a cloud category colliding with a same-name local
-        // seed must not become a duplicate — deterministic winner keeps its id
-        if (store === 'categories') {
-          const adopted = await adoptCategory(DEFAULT_USER_ID, payload, ver);
-          if (adopted) continue;
-        }
-
-        payload._sv = ver;
-        payload._dirty = 0;
-        payload._synced = Date.now();
-        const tx = db.transaction(store as 'products', 'readwrite');
-        void tx.store.put(payload as unknown as OfflineDBSchema['products']['value']);
-        await tx.done;
+        // v2.17.0: one shared apply path for the watermark pull AND the
+        // integrity pass (same guards everywhere, no drift between them).
+        await applyPulledRow(r.store, r.id, ver, payload, key);
       }
       if (rows.length < PULL_PAGE_LIMIT) break;
       pullWatermark = maxVer;
@@ -908,6 +1167,15 @@ async function pullOnce(syncId: string): Promise<{ ok: boolean; error?: string }
 
     pullWatermark = maxVer;
     await saveWatermark(WM_PULL, syncId, pullWatermark);
+
+    // v2.17.0: watermark-free existence check both ways — a row can never
+    // stay lost because of a watermark/version edge case. Rate-limit friendly:
+    // at most once a minute, not on every 12s pull.
+    if (Date.now() - lastIntegrityAt >= INTEGRITY_INTERVAL_MS) {
+      lastIntegrityAt = Date.now();
+      await integrityPass(syncId, key);
+    }
+
     lastServerNow = lastServerNow || nowMs();
     setStatus({ state: 'idle', lastSyncAt: lastServerNow, lastError: null });
     return { ok: true };
@@ -1042,6 +1310,33 @@ export async function syncNowD1(userId: string): Promise<{ ok: boolean; error?: 
   return pushOnce(syncId);
 }
 
+/**
+ * v2.17.0 one-time-per-boot normalization: every synced row MUST carry
+ * userId = DEFAULT_USER_ID. Legacy rows with a foreign/undefined userId are
+ * invisible to every by-userId query AND never pushed (push reads the same
+ * index) — a silent permanent "category/product missing" on that device.
+ */
+async function normalizeUserIds(): Promise<void> {
+  const db = await getOfflineDB();
+  let fixed = 0;
+  try {
+    for (const store of SYNCED_STORES) {
+      if (store === 'billingSettings') continue; // keyed by userId itself
+      const all = (await db.getAll(store as 'products')) as unknown as Row[];
+      const tx = db.transaction(store as 'products', 'readwrite');
+      for (const r of all) {
+        if (r.userId === DEFAULT_USER_ID) continue;
+        void tx.store.put({ ...r, userId: DEFAULT_USER_ID } as unknown as Row);
+        fixed++;
+      }
+      await tx.done;
+    }
+    if (fixed > 0) console.info(`[d1-sync] normalized userId on ${fixed} legacy rows`);
+  } catch (err) {
+    console.warn('[d1-sync] userId normalization failed:', (err as Error)?.message);
+  }
+}
+
 async function hydrateTombCache(syncId: string): Promise<void> {
   const key = await requireKey();
   // 🔒 v2.14.0: PURGE legacy category tombstones from the cloud FIRST.
@@ -1083,7 +1378,9 @@ async function beginCycle(fullStart: boolean): Promise<void> {
   try {
     if (fullStart) {
       await loadWatermarks(syncId);
+      await loadCatAlias(syncId); // merged-category zombies must skip every pull
       await hydrateTombCache(syncId);
+      await normalizeUserIds(); // legacy rows with a foreign userId are invisible forever
     }
     await pullOnce(syncId); // fill this device with everything first
     if (Date.now() - lastHealAt > HEAL_INTERVAL_MS) {
