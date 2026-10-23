@@ -15,7 +15,6 @@ const D: Record<string, Entry> = {
   // ── shell / nav ──────────────────────────────────────────────
   'nav.dashboard': { bn: 'ড্যাশবোর্ড', en: 'Dashboard', hi: 'डैशबोर्ड' },
   'nav.products': { bn: 'স্টক / প্রোডাক্ট', en: 'Products / Stock', hi: 'स्टॉक / प्रोडक्ट' },
-  'nav.database': { bn: 'ডাটাবেস ভিউ', en: 'Database View', hi: 'डेटाबेस व्यू' },
   'nav.bills': { bn: 'বিল / বিক্রি', en: 'Bills / Sales', hi: 'बिल / बिक्री' },
   'nav.due': { bn: 'বাকির খাতা', en: 'Due Book', hi: 'बाकी खाता' },
   'nav.expenses': { bn: 'খরচ', en: 'Expenses', hi: 'खर्च' },
@@ -26,20 +25,6 @@ const D: Record<string, Entry> = {
   'shell.menu': { bn: 'মেনু', en: 'Menu', hi: 'मेन्यू' },
   'shell.backToApp': { bn: 'অ্যাপে ফিরে যান', en: 'Back to app', hi: 'ऐप पर वापस जाएं' },
   'shell.langLabel': { bn: 'ভাষা', en: 'Language', hi: 'भाषा' },
-
-  // ── database view (category columns) ──────────────────────
-  'dbview.title': { bn: 'ক্যাটাগরি ডাটাবেস', en: 'Category Database', hi: 'कैटेगरी डेटाबेस' },
-  'dbview.sub': { bn: 'প্রতিটি কলাম = একটি ক্যাটাগরি · প্রোডাক্ট তার ক্যাটাগরির কলামেই সেভ থাকে', en: 'Each column = one category · products are saved inside their category column', hi: 'हर कॉलम = एक कैटेगरी · प्रोडक्ट अपने कैटेगरी कॉलम में सेव रहता है' },
-  'dbview.search': { bn: 'প্রোডাক্ট / বক্স নম্বর খুঁজুন…', en: 'Search product / box no…', hi: 'प्रोडक्ट / बॉक्स नं. खोजें…' },
-  'dbview.cats': { bn: 'ক্যাটাগরি', en: 'Categories', hi: 'कैटेगरी' },
-  'dbview.products': { bn: 'প্রোডাক্ট', en: 'Products', hi: 'प्रोडक्ट' },
-  'dbview.pieces': { bn: 'পিস', en: 'Pieces', hi: 'पीस' },
-  'dbview.stockValue': { bn: 'স্টক ভ্যালু (ক্রয়)', en: 'Stock value (cost)', hi: 'स्टॉक मूल्य (लागत)' },
-  'dbview.retail': { bn: 'বিক্রয় মূল্য', en: 'Retail value', hi: 'बिक्री मूल्य' },
-  'dbview.items': { bn: 'আইটেম', en: 'items', hi: 'आइटम' },
-  'dbview.emptyCol': { bn: 'এই কলামে কোনো প্রোডাক্ট নেই', en: 'No products in this column', hi: 'इस कॉलम में कोई प्रोडक्ट नहीं' },
-  'dbview.unknown': { bn: 'ক্যাটাগরিবিহীন', en: 'Uncategorized', hi: 'बिना कैटेगरी' },
-  'dbview.none': { bn: 'কোনো ক্যাটাগরি নেই — Products ট্যাব থেকে তৈরি করুন', en: 'No categories yet — create one in Products', hi: 'कोई कैटेगरी नहीं — Products में बनाएं' },
 
   // ── dashboard ────────────────────────────────────────────────
   'dash.stockValue': { bn: 'স্টকের মূল্য', en: 'Stock Value', hi: 'स्टॉक मूल्य' },

@@ -14,7 +14,6 @@ import { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   Package,
-  Database,
   ReceiptText,
   Wallet,
   Coins,
@@ -39,7 +38,6 @@ import { AdminToaster, Badge, Btn } from './admin-ui';
 import QuickSellModal from './QuickSellModal';
 import AdminDashboard from './AdminDashboard';
 import AdminProducts from './AdminProducts';
-import AdminDataView from './AdminDataView';
 import AdminBills from './AdminBills';
 import AdminDueBook from './AdminDueBook';
 import AdminExpenses from './AdminExpenses';
@@ -53,7 +51,6 @@ import AdminPinGate, { lockAdminPanel } from './AdminPinGate';
 const NAV: { key: AdminSection; icon: React.ComponentType<{ size?: number | string }>; navKey: string }[] = [
   { key: 'dashboard', icon: LayoutDashboard, navKey: 'nav.dashboard' },
   { key: 'products', icon: Package, navKey: 'nav.products' },
-  { key: 'dataview', icon: Database, navKey: 'nav.database' },
   { key: 'bills', icon: ReceiptText, navKey: 'nav.bills' },
   { key: 'due', icon: Wallet, navKey: 'nav.due' },
   { key: 'parties', icon: Users, navKey: 'nav.parties' },
@@ -69,7 +66,6 @@ const MOBILE_NAV: AdminSection[] = ['dashboard', 'products', 'bills', 'due', 're
 const SECTION_TITLE: Record<AdminSection, string> = {
   dashboard: 'nav.dashboard',
   products: 'nav.products',
-  dataview: 'nav.database',
   bills: 'nav.bills',
   due: 'nav.due',
   parties: 'nav.parties',
@@ -333,7 +329,6 @@ function AdminShellInner() {
             />
           )}
           {section === 'products' && <AdminProducts onQuickSell={(p) => openQuickSell(p)} />}
-          {section === 'dataview' && <AdminDataView />}
           {section === 'bills' && <AdminBills />}
           {section === 'due' && <AdminDueBook />}
           {section === 'parties' && <AdminParties />}
@@ -347,7 +342,7 @@ function AdminShellInner() {
         {/* footer (sticky bottom, Vyapar-style strip) */}
         <footer className="mt-auto hidden lg:block border-t border-[var(--psa-border)] bg-[var(--psa-card)]">
           <div className="max-w-[1200px] mx-auto px-6 py-3 flex items-center justify-between text-[11px] text-[var(--psa-faint)]">
-            <span>PS TELECOM {ta('shell.title', lang)} · v2.15.0</span>
+            <span>PS TELECOM {ta('shell.title', lang)} · v2.16.0</span>
             <span className="flex items-center gap-2">
               <Badge tone="orange">Web Admin</Badge>
               <Badge tone="green">D1 encrypted</Badge>

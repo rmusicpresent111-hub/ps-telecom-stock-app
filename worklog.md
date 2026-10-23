@@ -2015,3 +2015,22 @@ Stage Summary:
 - Admin panel now has a Database View tab: the shop's data visualised as category columns — "Mobile column er moddhe Mobile products" is now literally visible, live, and cross-checked
 - No schema change needed (and none sensible): categories are user-created at runtime; per-category filing already exists at the storage layer and is now surfaced 1:1 in the UI
 - v2.15.0 pushed; Vercel auto-deploy + gh-pages mirror refresh follow
+
+---
+Task ID: 68
+Agent: Z.ai Code (main thread)
+Task: "detabase viw bad dao detabase view er puro code muche felo" — remove the Database View feature entirely. v2.16.0
+
+Work Log:
+- DELETED src/components/admin/AdminDataView.tsx (the whole category-columns Database View component, 272 lines)
+- AdminShell.tsx: removed AdminDataView import, the {section === 'dataview'} render branch, the 'dataview' NAV entry + Database lucide icon, and the SECTION_TITLE dataview mapping; footer version 2.15.0 → 2.16.0
+- adminStore.ts: removed 'dataview' from the AdminSection union AND added a persist migrate (version 0 → 1) so a stale persisted section:'dataview' (users who last had that tab open) falls back to 'dashboard' instead of a blank content area
+- admin-i18n.ts: removed 'nav.database' + all 12 'dbview.*' keys (bn/en/hi)
+- package.json version 2.15.0 → 2.16.0
+- eslint clean; full sweep: zero AdminDataView/dataview/dbview/nav.database references left in src/
+- E2E (agent-browser): /admin/ renders (dev server .next cache had corrupted → cleared + restarted), sidebar shows 10 tabs with NO ডাটাবেস ভিউ, footer v2.16.0; seeded stale localStorage {section:'dataview',version:0} → reload → auto-migrated to section:'dashboard' v1, dashboard heading + 4 content blocks render (no blank); Products tab opens fine; main app / renders (Total Items 3, Stock Value ₹63,600); zero console/page errors
+
+Stage Summary:
+- Database View (v2.15.0 feature) fully reverted/removed — admin panel is back to 10 sections; no data touched (products still carry categoryId exactly as before; nothing in IndexedDB/D1 changed)
+- Stale-persist migration guard prevents blank screens for returning users
+- v2.16.0 pushed; Vercel auto-deploy + gh-pages mirror refresh follow

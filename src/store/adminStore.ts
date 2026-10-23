@@ -14,7 +14,6 @@ import type { AdminLang } from '@/lib/admin-i18n';
 export type AdminSection =
   | 'dashboard'
   | 'products'
-  | 'dataview'
   | 'bills'
   | 'due'
   | 'expenses'
@@ -53,6 +52,29 @@ export const useAdminStore = create<AdminState>()(
     }),
     {
       name: 'ps-admin-store-v1',
+      version: 1,
+      // v2.16.0 removed the Database View section — a stale persisted
+      // 'dataview' (or anything unknown) must fall back to the dashboard
+      // instead of rendering a blank content area.
+      migrate: (persisted) => {
+        const p = (persisted ?? {}) as Partial<AdminState>;
+        const valid: AdminSection[] = [
+          'dashboard',
+          'products',
+          'bills',
+          'due',
+          'expenses',
+          'parties',
+          'staff',
+          'reports',
+          'billsettings',
+          'sync',
+        ];
+        return {
+          ...p,
+          section: valid.includes(p.section as AdminSection) ? (p.section as AdminSection) : 'dashboard',
+        } as AdminState;
+      },
       partialize: (state) => ({ language: state.language, section: state.section, theme: state.theme }),
     }
   )
