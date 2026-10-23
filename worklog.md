@@ -1992,3 +1992,26 @@ Stage Summary:
 - Root cause of intermittent vanish: 152 legacy category tombstones in production D1 poisoning fresh devices; now purged cloud-side on first boot of v2.14.0 on ANY synced device, and every code path that could hide/skip/delete a category is closed
 - Product form now creates categories on the fly (app + web via D1 sync) — owner never needs the Add Category screen first
 - v2.14.0 pushed; production auto-deploy triggered; gh-pages mirror refresh to follow
+
+---
+Task ID: 67
+Agent: Z.ai Code (main thread)
+Task: "detabase e koyekta colum banao jemon Display/combo, mobile, charger, deta cable, power bank, etc — jei product gulo mobile cetagoryr moddhe rakhbo segulo detabase e mobile colum er moddhe save hobe" — category-wise database columns. v2.15.0
+
+Work Log:
+- EXPLAINED + PROVED the existing data model: the database has ALWAYS filed products category-wise (products carry categoryId; IndexedDB 'by-category' index; D1 sync payloads carry the same link) — what was missing was a VISIBLE per-category column view
+- NEW AdminDataView.tsx ("ডাটাবেস ভিউ" tab in admin panel, nav key nav.database, AdminSection 'dataview'):
+  - Kanban-style columns — one column PER CATEGORY (Mobile, Charger, Data Cable, Power Bank…), products filed underneath, exactly the owner's mental model
+  - Column head: category icon + name + item/piece counts; body: product rows (name, qty chip red-on-low, box no / S/N count, selling price), scrollable max-h; footer: ⬇ cost value + ⬆ retail value per column
+  - Summary strip: categories / products / pieces / total stock value (qty × purchasePrice — same formula as dashboard)
+  - Cross-column search (product name OR box number) filters all columns live
+  - Orphan products (categoryId without a live category — legacy ids) surface in a dashed "ক্যাটাগরিবিহীন" column instead of vanishing
+  - Data live from getCategoriesOffline/getProductsOffline via useAdminDataTick (local writes + sync cycles + 20s poll + focus) — no separate copy, always the real database
+- i18n: nav.database + 12 dbview.* keys (bn/en/hi); version 2.14.0 → 2.15.0 (package.json + AdminShell footer)
+- eslint --fix (3 unused directives) + tsc clean
+- E2E (agent-browser): seeded 20 categories via app onboarding → added Samsung Galaxy A15→Mobile, Samsung Type-C Cable→Data Cable, Boat 25W Charger→Charger via the REAL app UI (type-to-create combobox from Task 66) → Database View: 20 columns, Mobile/Charger/Data Cable each show their own product with correct counts (23 pieces, ₹63,600) → search "samsung" narrows to exactly the 2 columns holding Samsung items → mobile viewport 390px: cards stack + horizontal scroll OK → zero console/page errors
+
+Stage Summary:
+- Admin panel now has a Database View tab: the shop's data visualised as category columns — "Mobile column er moddhe Mobile products" is now literally visible, live, and cross-checked
+- No schema change needed (and none sensible): categories are user-created at runtime; per-category filing already exists at the storage layer and is now surfaced 1:1 in the UI
+- v2.15.0 pushed; Vercel auto-deploy + gh-pages mirror refresh follow

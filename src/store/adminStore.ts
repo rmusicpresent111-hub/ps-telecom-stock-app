@@ -14,6 +14,7 @@ import type { AdminLang } from '@/lib/admin-i18n';
 export type AdminSection =
   | 'dashboard'
   | 'products'
+  | 'dataview'
   | 'bills'
   | 'due'
   | 'expenses'
