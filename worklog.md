@@ -2034,3 +2034,45 @@ Stage Summary:
 - Database View (v2.15.0 feature) fully reverted/removed — admin panel is back to 10 sections; no data touched (products still carry categoryId exactly as before; nothing in IndexedDB/D1 changed)
 - Stale-persist migration guard prevents blank screens for returning users
 - v2.16.0 pushed; Vercel auto-deploy + gh-pages mirror refresh follow
+
+---
+Task ID: 69
+Agent: Z.ai Code (main thread)
+Task: "mobile apk te categori kokhono chole jachhe kokhono abar aschena — 1/1 line of code check koro, next time admin panel or app dui jaygay kono category jeno eka na chole jay" — full category-lifecycle audit + sync engine hardening. v2.17.0
+
+Work Log:
+- LINE-BY-LINE AUDIT of d1-sync.ts (all 1174 lines), offline-db.ts, offline-service.ts category paths, AddProduct/CategoryField, admin AdminProducts, sync-events: confirmed NO local/remote/heal category delete path exists (v2.14.0 held), but found 11 deeper holes that still made categories/products flicker or vanish across devices:
+  1. ADOPTION local-wins branch never remapped products referencing the incoming (loser) id → orphan products whose category looked "missing" forever
+  2. Adoption name match was CASE-SENSITIVE ("Mobile" vs "mobile" duplicated; ensureCategoryOffline is case-insensitive)
+  3. Adoption rewrote the local winner's row with the loser's payload (silently reverted tile image)
+  4. Merged-loser cloud rows could RESURRECT as live duplicates (no alias memory), e.g. after winner rename
+  5. PRODUCTS arriving still pointing at a loser id (pushed pre-adoption) landed as orphans — no alias rewire on product apply
+  6. Remapped products were not dirty-bumped → broken categoryId never re-pushed, other devices kept the orphan forever
+  7. STALE-OVERWRITE UPSERT: cloud `payload = excluded.payload` was UNCONDITIONAL — a late push of a stale row silently clobbered the cloud's newer copy
+  8. MIXED CLOCK DOMAINS: cloud versions were the ORIGIN device's local record time — a device with a behind clock wrote rows below every other device's pull watermark → rows NEVER propagated (the real "kokhono ashe kokhono ashe na")
+  9. Echo guard compared server-domain _sv against record-domain ver → behind-clock devices' edits never pushed
+  10. pushWatermark in the future after a clock jump backwards → all new rows skipped forever
+  11. NO existence safety net: watermark misses stayed lost; heal ran only every 6h; legacy rows with foreign userId were invisible AND unpushable forever
+- FIXES (all in src/lib/d1-sync.ts unless noted):
+  - adoptCategory rewritten: case-insensitive+trimmed matching, alias map records loser→winner (persisted per sync account in syncMeta `cat-alias:<syncId>`, chain-resolved), BOTH branches remap products via remapCategoryProducts with updatedAt+_dirty bump, local-wins keeps local data untouched, zombies skipped on every path
+  - applyPulledRow helper: ONE shared apply path (watermark pull + integrity pass) — tombstone guard (categories exempt), dirty/sv gates, adoption, product categoryId alias rewire, userId forced to DEFAULT_USER_ID
+  - integrityPass: watermark-FREE id-diff for every store — cloud rows missing locally are fetched+applied, local rows missing in cloud are re-asserted immediately; ONE combined id-list query per minute (rate-limit friendly), capped
+  - SERVER-DOMAIN VERSIONS: outgoing push ver = max(recordVer, nowMs()); CLOCK_OFFSET_MAX_MS 1h→48h so badly-wrong clocks still normalise
+  - CONDITIONAL UPSERT: payload only overwritten when excluded.updated_at > existing (stale pushes can never regress the cloud)
+  - clock-jump guard: pushWatermark reset when it sits >60s in the future
+  - normalizeUserIds() at boot: legacy rows with foreign/undefined userId rewritten to DEFAULT_USER_ID (they were permanently invisible+unpushable)
+  - CLOCK_OFFSET comment + header docs updated for all v2.17.0 guarantees
+- PROXY (src/app/api/cloud/d1/route.ts): rate limit 30→90 req/IP/min — the normal sync cycle (~18/min) + integrity id-list was self-inflicted-429-ing into "Connection failed" toasts
+- E2E (agent-browser, 2 isolated sessions + throwaway D1 account PS-E2E6-9TST, production data untouched):
+  1. A created 21 categories+product → pushed to D1 ✓
+  2. B joined the same account → pulled everything (fresh-device path) ✓
+  3. ADOPTION RACE: A made "Zebra Test", B (via IndexedDB injection with foreign userId — also tested normalizeUserIds) made "zebra test"+product → converged to ONE category (A's winner id) on BOTH devices, B's product remapped into it on both, ZERO orphans, alias map blocked zombie resurrection ✓
+  4. LOSS RECOVERY: "Battery" deleted directly from A's IndexedDB → integrity pass restored it from the cloud with the same id within ~75s ✓
+  5. Test account + 51 rows fully deleted from D1 afterwards; both browser sessions disconnected/cleaned
+- Version 2.16.0 → 2.17.0 (package.json + AdminShell footer); tsc + eslint clean
+
+Stage Summary:
+- Category lifecycle is now hole-free on every path: creation (app UI / admin panel / type-to-create), merge (deterministic adoption + alias), propagation (server-domain versions + conditional UPSERT + dirty-bumped remaps), and recovery (60s integrity pass both ways + 6h heal + boot purge/normalization)
+- A category can no longer stay missing on ANY device: existence is reconciled watermark-free every minute; duplicates can never resurrect; stale pushes cannot regress the cloud
+- NOTE for the owner: the phone APK must be rebuilt/updated to ship this engine — web (Vercel + gh-pages) gets it automatically with v2.17.0
+- v2.17.0 pushed; Vercel auto-deploy + gh-pages mirror refresh follow

@@ -44,7 +44,11 @@ interface D1RequestBody {
 // ---- Per-IP rate limiting (module-scope; in-memory, pruned opportunistically) ----
 
 const RATE_WINDOW_MS = 60_000;
-const RATE_MAX_REQUESTS = 30;
+// v2.17.0: 30 -> 90. A live sync device spends ~18 req/min on the normal
+// cycle (pull + push + clock) plus ONE integrity id-list per minute — 30
+// caused self-inflicted 429s ("Connection failed") whenever a device synced
+// a couple of minutes. 90/IP/min is still far too tight for abuse.
+const RATE_MAX_REQUESTS = 90;
 
 const rateMap = new Map<string, { count: number; resetAt: number }>();
 
