@@ -485,8 +485,23 @@ async function pushPendingDeletes(syncId: string): Promise<void> {
   const pending = (await db.getAll('pendingDeletes')).filter((p) => p.userId === DEFAULT_USER_ID);
   if (pending.length === 0) return;
 
+  // 🔒 v2.13.1: categories are never cloud-deleted. Purge any legacy queued
+  // entries from the adoption-tombstone era without pushing them.
+  const legacyCats = pending.filter((p) => p.storeName === 'categories');
+  const active = pending.filter((p) => p.storeName !== 'categories');
+  if (legacyCats.length > 0) {
+    try {
+      const txp = db.transaction('pendingDeletes', 'readwrite');
+      for (const p of legacyCats) void txp.store.delete(p.id);
+      await txp.done;
+    } catch {
+      /* non-fatal */
+    }
+  }
+  if (active.length === 0) return;
+
   const seen = new Map<string, number>();
-  for (const p of pending) {
+  for (const p of active) {
     const k = tombKey(p.storeName, p.itemId);
     seen.set(k, Math.max(seen.get(k) ?? 0, p.deletedAt));
   }
@@ -520,7 +535,7 @@ async function pushPendingDeletes(syncId: string): Promise<void> {
 
   // clear the local queue + refresh the resurrection-guard cache
   const tx = db.transaction('pendingDeletes', 'readwrite');
-  for (const p of pending) void tx.store.delete(p.id);
+  for (const p of active) void tx.store.delete(p.id);
   await tx.done;
   for (const [k, deletedAt] of seen.entries()) tombstoneCache.set(k, deletedAt);
 }
@@ -539,6 +554,12 @@ function collectPushCandidates(
     // resurrection guard: a newer tombstone for this id exists — drop locally instead
     const t = tombstoneCache.get(tombKey(store, String(row.id)));
     if (t !== undefined && t >= ver) {
+      if (store === 'categories') {
+        // 🔒 v2.13.1: categories are immortal — never execute the delete
+        // locally; skip the push and let the self-heal pass re-publish the
+        // row with a fresh version on a later cycle.
+        continue;
+      }
       void (async () => {
         try {
           const db = await getOfflineDB();
@@ -717,8 +738,8 @@ async function applyLocalDelete(store: string, id: string): Promise<void> {
 /**
  * When a cloud category arrives whose name matches a local category with a
  * DIFFERENT id, keep a deterministic single row (older createdAt wins; tie →
- * smaller id wins): delete the loser, remap its products, and tombstone the
- * loser in the cloud so every device converges to one id.
+ * smaller id wins): delete the loser locally, remap its products, and leave
+ * the loser's cloud row alone (v2.13.1 — no tombstones, see below).
  * Returns true when the incoming row was handled (adopted or skipped).
  */
 async function adoptCategory(
@@ -758,24 +779,16 @@ async function adoptCategory(
   await tx.done;
 
   if (loser) {
-    // clean the loser out of the cloud too (goes through the normal delete path)
-    try {
-      const dbp = await getOfflineDB();
-      await dbp.put('pendingDeletes', {
-        id: `categories:${loser.id}`,
-        storeName: 'categories',
-        itemId: loser.id,
-        userId,
-        deletedAt: Date.now(),
-      });
-    } catch {
-      /* non-fatal */
-    }
+    // 🔒 v2.13.1: NO cloud tombstone for the loser — the old code queued a
+    // pendingDelete here, which turned every duplicate-merge on one device
+    // into a mass category deletion on every other device (149 tombstones
+    // observed in production). The loser's cloud row simply stays behind as
+    // an inert zombie; adoption skips it on every device forever.
     return true; // incoming applied by the caller
   }
 
   // local twin wins: adopt the local id into the payload so both devices keep
-  // ONE row (the local winner); the incoming (loser) cloud row gets tombstoned
+  // ONE row (the local winner); the incoming (loser) cloud row is just skipped
   payload.id = twin.id;
   payload._sv = ver;
   payload._dirty = 0;
@@ -783,17 +796,7 @@ async function adoptCategory(
   const tx2 = db.transaction('categories', 'readwrite');
   void tx2.objectStore('categories').put(payload as unknown as OfflineDBSchema['categories']['value']);
   await tx2.done;
-  try {
-    await db.put('pendingDeletes', {
-      id: `categories:${incomingId}`,
-      storeName: 'categories',
-      itemId: incomingId,
-      userId,
-      deletedAt: Date.now(),
-    });
-  } catch {
-    /* non-fatal */
-  }
+  // 🔒 v2.13.1: NO pendingDelete for the incoming loser either — see above.
   return true;
 }
 
@@ -840,6 +843,17 @@ async function pullOnce(syncId: string): Promise<{ ok: boolean; error?: string }
           const tomb = parseTombPayload(r, payload);
           if (!tomb) continue; // integrity check failed — ignore
           tombstoneCache.set(tombKey(tomb.sid, tomb.iid), ver);
+          if (tomb.sid === 'categories') {
+            // 🔒 v2.13.1 CATEGORIES ARE IMMORTAL: remote tombstones must never
+            // delete a category this device still holds. Historical bug: the
+            // duplicate-adoption flow tombstoned 149 categories, and every
+            // device dutifully executed those tombstones — wiping the owner's
+            // category list device by device. Categories now only ever leave
+            // via explicit local user action (none exists today), never via
+            // cloud deletes. The cache entry stays so pushes don't resurrect
+            // stale ids mid-cycle; the self-heal pass re-pushes live rows.
+            continue;
+          }
           await applyLocalDelete(tomb.sid, tomb.iid);
           continue;
         }
