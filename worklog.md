@@ -1948,3 +1948,25 @@ Stage Summary:
 - Vercel history now = exactly 1 deployment: the live v2.13.0 production; future pushes will add new ones on top
 - Script kept in repo (scripts/vercel-cleanup.mjs) — re-runnable anytime (VERCEL_TOKEN=xxx node scripts/vercel-cleanup.mjs)
 - ADVISED USER: revoke the pasted token in Vercel dashboard (it transited chat)
+---
+Task ID: 65
+Agent: Z.ai Code (main thread)
+Task: "ADMIN PANEL THEKE CATEGORY autometic remove hoye jachhe fix koro jate categori gulo parmanent thake remove na hoy" — categories must be permanent; v2.13.1
+
+Work Log:
+- RECOVERY: .env.local had been wiped by checkpoint rollback → restored CLOUDFLARE_* from the test-d1-sync.mjs vault + restarted dev server (D1 probe healthy again)
+- DATA FORENSICS (live D1): sync_data stores = categories 82 rows (seed is only 20 → massive duplicates), _tomb 156 of which 149 are t:categories:* tombstones (vs 6 products, 1 bill) — a category massacre, 0 overlap between live ids and tombstoned ids at query time
+- ROOT CAUSE chain: adoptCategory (dup-id merge) queued pendingDeletes for the losing id → pushPendingDeletes pushed _tomb rows + hard-DELETEd cloud rows → every other device pulled the tombstone → applyLocalDelete removed the local row (createCategoryOffline/seed store _dirty:0 = no tombstone protection) → collectPushCandidates' resurrection guard hard-deleted survivors locally → categories wiped device by device, permanently
+- FIX (4 surgical changes in src/lib/d1-sync.ts, categories now IMMORTAL):
+  1. pull: _tomb rows with sid==='categories' → tombstoneCache only, never applyLocalDelete
+  2. adoptCategory: both pendingDeletes blocks removed (loser cloud rows stay as inert zombies; same-name convergence per device unchanged)
+  3. pushPendingDeletes: legacy queued category deletes purged unpushed; only non-category stores tombstone
+  4. collectPushCandidates: categories exempt from the resurrection-guard local delete (skip push; heal re-publishes later with fresh ver)
+- Version 2.13.1 (package.json + AdminShell footer); eslint + tsc clean
+- E2E (sandbox, throwaway sync ns E2E-FIX65-TEST-NS): created "Test Fix 65" via admin UI → connected (create-mode, PIN≥6) → engine cycle ran (pull/heal/push watermarks written) → category row landed in cloud (encrypted, 1212 bytes) → PLANTED a synthetic plaintext tombstone t:categories:<id> in the cloud → Sync Now → **category SURVIVED** (old code = guaranteed death) → zero page errors; namespace wiped, account disconnected
+- NOTE: categories have no user-delete UI at all, so ALL 149 kills were system-generated; cross-device category deletion now intentionally does not propagate (matches the owner's "permanent" requirement)
+
+Stage Summary:
+- Categories are now sync-immortal: nothing but future explicit user action can remove them, and the self-heal pass resurrects any category still held by any device
+- Historic tombstones are inert; devices that still hold "lost" categories will re-publish them automatically (heal) on next sync
+- v2.13.1 pushed (fe52531); production auto-deploy triggered
