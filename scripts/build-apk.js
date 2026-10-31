@@ -523,6 +523,74 @@ function setAndroidVersion() {
 }
 setAndroidVersion();
 
+// ---------------------------------------------------------------------------
+// STEP 5.8b — PERSISTENT SIGNING. Uses the repo-tracked keystore
+// android-signing/ps-telecom.keystore (password inside android-signing/README)
+// for BOTH debug and release builds, so every APK built from this repo — on
+// any machine — installs cleanly over the previous one (same signature).
+// Without this, each machine's random debug key would force an uninstall
+// (data loss) on every new build. Idempotent + fail-soft: if the keystore is
+// missing the build falls back to Gradle's default per-machine debug key.
+// ---------------------------------------------------------------------------
+function ensurePersistentSigning() {
+  console.log('\nStep 5.8b: Ensuring persistent signing config (android-signing keystore)...');
+  try {
+    const keystoreRel = 'android-signing/ps-telecom.keystore';
+    const keystorePath = path.join(ROOT, keystoreRel);
+    if (!exists(keystorePath)) {
+      console.log(`  ⚠️  ${keystoreRel} not found — using default debug signing (upgrades from other machines will need an uninstall).`);
+      return;
+    }
+    const gradlePath = path.join(ANDROID_DIR, 'app', 'build.gradle');
+    if (!exists(gradlePath)) {
+      console.log('  ⚠️  app/build.gradle not found — skipping signing config.');
+      return;
+    }
+    let gradle = fs.readFileSync(gradlePath, 'utf8');
+    if (gradle.includes('ps-telecom.keystore')) {
+      console.log('  ✓ Persistent signing config already present.');
+      return;
+    }
+    const STORE_PASS = 'PSTelecom22000';
+    const configBlock = [
+      '    signingConfigs {',
+      '        psTelecom {',
+      "            storeFile file('../../" + keystoreRel + "')",
+      `            storePassword '${STORE_PASS}'`,
+      "            keyAlias 'ps-telecom'",
+      `            keyPassword '${STORE_PASS}'`,
+      '        }',
+      '    }',
+      '    buildTypes {',
+      '        debug {',
+      '            signingConfig signingConfigs.psTelecom',
+      '        }',
+      '        release {',
+      '            signingConfig signingConfigs.psTelecom',
+      '        }',
+      '    }',
+    ].join('\n');
+    const bt = gradle.match(/(    )buildTypes \{/);
+    if (!bt) {
+      console.log('  ⚠️  buildTypes block not found — skipping signing config.');
+      return;
+    }
+    // Replace the whole (template) buildTypes block with signingConfigs + ours
+    const btStart = gradle.indexOf(bt[0]);
+    const btEnd = gradle.indexOf('}', gradle.indexOf('proguardFiles', btStart));
+    if (btEnd === -1) {
+      console.log('  ⚠️  Could not find end of buildTypes block — skipping signing config.');
+      return;
+    }
+    gradle = gradle.slice(0, btStart) + configBlock + gradle.slice(btEnd + 1);
+    fs.writeFileSync(gradlePath, gradle);
+    console.log('  ✅ ps-telecom signing applied to debug + release builds.');
+  } catch (err) {
+    console.log(`  ⚠️  Signing config injection failed (${(err && err.message) || err}) — continuing with default signing.`);
+  }
+}
+ensurePersistentSigning();
+
 
 // ---------------------------------------------------------------------------
 // STEP 7 — Compile the APK with Gradle directly (no Android Studio needed).
@@ -590,7 +658,7 @@ function buildApkWithGradle() {
 
   try {
     execSync(
-      process.platform === 'win32' ? 'gradlew.bat assembleDebug --console=plain' : './gradlew assembleDebug --console=plain',
+      process.platform === 'win32' ? 'gradlew.bat assembleDebug assembleRelease --console=plain' : './gradlew assembleDebug assembleRelease --console=plain',
       { stdio: 'inherit', cwd: ANDROID_DIR, env: gradleEnv, shell: true }
     );
     return true;
@@ -601,32 +669,36 @@ function buildApkWithGradle() {
 }
 
 function copyApkToRoot() {
-  const built = path.join(ANDROID_DIR, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
-  if (!exists(built)) return null;
-
-  const dest = path.join(ROOT, 'PS-TELECOM-debug.apk');
+  const outDir = path.join(ANDROID_DIR, 'app', 'build', 'outputs', 'apk');
+  const copied = [];
   try {
-    fs.copyFileSync(built, dest);
-    return dest;
-  } catch {
-    return built; // fall back to reporting the original path
-  }
+    const debugBuilt = path.join(outDir, 'debug', 'app-debug.apk');
+    if (exists(debugBuilt)) {
+      const dest = path.join(ROOT, 'PS-TELECOM.apk');
+      fs.copyFileSync(debugBuilt, dest);
+      copied.push(dest);
+    }
+    const releaseBuilt = path.join(outDir, 'release', 'app-release.apk');
+    if (exists(releaseBuilt)) {
+      const dest = path.join(ROOT, 'PS-TELECOM-release.apk');
+      fs.copyFileSync(releaseBuilt, dest);
+      copied.push(dest);
+    }
+  } catch {}
+  return copied.length > 0 ? copied : null;
 }
 
 const gradleOk = buildApkWithGradle();
 
 if (gradleOk) {
-  const apkPath = copyApkToRoot();
+  const apkPaths = copyApkToRoot();
   console.log('\n🎉 APK READY! 🎉');
-  if (apkPath) {
-    console.log('   📱 ' + apkPath);
-    if (apkPath.endsWith('PS-TELECOM-debug.apk')) {
-      console.log('   (also kept at android/app/build/outputs/apk/debug/app-debug.apk)');
-    }
+  if (apkPaths) {
+    for (const p of apkPaths) console.log('   📱 ' + p);
   } else {
     console.log('   📱 ' + path.join(ANDROID_DIR, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk'));
   }
-  console.log('\n   Install: copy PS-TELECOM-debug.apk to your phone → tap it → allow "Install unknown apps".');
+  console.log('\n   Install: copy PS-TELECOM.apk (or PS-TELECOM-release.apk) to your phone → tap it → allow "Install unknown apps".');
   process.exit(0);
 }
 
