@@ -10,6 +10,10 @@
  * GSTIN from Bill Settings), logo monogram, Bill-To box, items table,
  * discount / GST / grand-total plate, amount in words, payment QR + UPI,
  * uploaded signature image, thank-you note and Terms & Conditions.
+ *
+ * Task 75: premium multi-colour FULL-PAGE A4 restyle — dark brand header
+ * with the invoice-number card docked on ONE side, colour accent strips,
+ * zebra items grid, dark grand-total plate, watermark and footer strip.
  */
 
 import type { AdminLang } from '@/lib/admin-i18n';
@@ -128,7 +132,11 @@ function resolveShop(bill: Bill, settings?: BillingSettings | null): ShopHeader 
 /** Two-letter monogram tile (PS TELECOM → PS) — print-safe shop logo. */
 function monogramHtml(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
-  const ini = ((parts[0]?.[0] || 'P') + (parts[1]?.[0] || 'S')).toUpperCase();
+  const first = parts[0] || 'PS';
+  // an all-caps 2–3 letter first word (PS, SK, RG…) IS the monogram itself
+  const ini = /^[A-Z]{2,3}$/.test(first)
+    ? first
+    : ((first[0] || 'P') + (parts[1]?.[0] || 'S')).toUpperCase();
   return `<div class="mono" aria-hidden="true">${esc(ini)}</div>`;
 }
 
@@ -253,22 +261,19 @@ function pageShell(title: string, body: string): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>${PRINT_CSS}</style></head><body>${body}</body></html>`;
 }
 
-// ── document 1: single-bill A4 invoice — TALLY ERP 9 print style ──
+// ── document 1: single-bill FULL-PAGE A4 invoice — premium multi-colour ──
 //
-// Task 74: the bill is restyled to look EXACTLY like an invoice printed
-// from Tally (the accounting software every Indian shopkeeper trusts):
-//   • plain black-on-white, thin 1px grid, no brand colours
-//   • centered company block + centered "TAX INVOICE" caption
-//   • left invoice-meta block (Invoice No. / Dated / Mode/Terms of Payment /
-//     Terms of Delivery) beside the bordered "Buyer (Bill to)" box
-//   • Sl No. | Description of Goods | GST Rate | Quantity | Rate | per | Amount
-//     table with serials printed under the description (Tally batch style)
-//   • in-table Total → Less: Discount → OUTPUT CGST/SGST @ x% On (…) →
-//     Round Off → GRAND TOTAL with the classic double underline
-//   • Tax Amount in Words + "… Receivable from party" line
-//   • Bank Details / Declaration box on the left, "For <SHOP>" +
-//     "Authorised Signatory" on the right, jurisdiction line underneath
-// Labels are fixed English (Tally never prints translated invoices).
+// Task 75: premium restyle of the bill printout:
+//   • true full-page A4 sheet — edge-to-edge colour bands top & bottom
+//   • dark charcoal header: logo monogram + shop identity on the LEFT,
+//     INVOICE No. / Dated / Payment on a white card docked on ONE side
+//   • amber→orange accent strip + coloured TAX INVOICE ribbon
+//   • Bill-To panel with a live payment-status chip (PAID / PARTIAL / DUE)
+//   • dark-headed items grid with zebra rows + filler rows so the sheet
+//     always looks complete; totals stay inside the grid (column-aligned)
+//   • OUTPUT CGST/SGST rows, GRAND TOTAL on a dark plate + gold double rule
+//   • amount in words, due-receivable callout, bank + QR, terms,
+//     declaration, watermark, signature block and a dark footer strip
 
 const GST_STATE_CODES: Record<string, string> = {
   '01': 'Jammu & Kashmir', '02': 'Himachal Pradesh', '03': 'Punjab', '04': 'Chandigarh',
@@ -310,74 +315,103 @@ function stateFromGstin(gst: string): string | null {
   return name ? `${name} , Code : ${m[1]}` : `State Code : ${m[1]}`;
 }
 
-const TALLY_CSS = `
-@page { size: A4; margin: 10mm; }
+const BILL_CSS = `
+@page { size: A4; margin: 0; }
 * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-body { margin:0; background:#fff; color:#000; font-family:Arial,'Helvetica Neue',Helvetica,'Liberation Sans',sans-serif; font-size:10.5px; line-height:1.35; }
-.doc { max-width:190mm; margin:0 auto; }
+html, body { margin:0; padding:0; }
+body { background:#fff; color:#111827; font-family:Arial,'Helvetica Neue',Helvetica,'Liberation Sans',sans-serif; font-size:10.5px; line-height:1.4; }
 
-/* company header — Tally prints it centered, no borders, no colours */
-.co { text-align:center; }
-.co-name { font-size:17px; font-weight:bold; letter-spacing:.4px; line-height:1.25; }
-.co-line { font-size:10px; margin-top:1px; }
-.doc-title { text-align:center; font-size:13px; font-weight:bold; letter-spacing:1.6px; margin:8px 0 6px; }
+/* full-page A4 sheet — colour runs edge to edge */
+.sheet { width:210mm; max-width:100%; min-height:296.6mm; margin:0 auto; background:#fff; position:relative; overflow:hidden; display:flex; flex-direction:column; }
+.wm { position:absolute; top:110mm; left:50%; transform:translate(-50%,-50%) rotate(-22deg); font-size:58px; font-weight:bold; color:rgba(234,88,12,.05); letter-spacing:8px; white-space:nowrap; pointer-events:none; }
 
-/* shared bordered grid */
-table.grid { width:100%; border-collapse:collapse; }
-table.grid td, table.grid th { border:1px solid #000; }
-.hgrid td { vertical-align:top; padding:0; }
-.metacell { width:55%; }
-.buyercell { width:45%; }
+/* top accent strip */
+.strip { height:4.5mm; background:linear-gradient(90deg,#F59E0B 0%,#F97316 45%,#EA580C 75%,#C2410C 100%); }
 
-/* left invoice-meta block: horizontal rules only, like Tally */
-table.meta { width:100%; border-collapse:collapse; }
-table.meta td { border:0; border-bottom:1px solid #000; padding:4px 8px; font-size:10px; vertical-align:top; }
-table.meta tr:last-child td { border-bottom:0; }
-table.meta td.k { width:47%; }
+/* dark brand header — shop identity LEFT, invoice card docked RIGHT */
+.hdr { background:linear-gradient(135deg,#1F2937 0%,#111827 75%); color:#fff; padding:6.5mm 10mm; display:flex; justify-content:space-between; align-items:flex-start; gap:8mm; }
+.hbrand { display:flex; align-items:flex-start; gap:4mm; min-width:0; }
+.hident { min-width:0; }
+.mono { width:14mm; height:14mm; border-radius:3mm; background:linear-gradient(135deg,#F97316,#EA580C); color:#fff; font-weight:bold; font-size:16px; display:flex; align-items:center; justify-content:center; letter-spacing:.5px; flex:0 0 auto; border:2px solid rgba(255,255,255,.28); }
+.co-name { font-size:19px; font-weight:bold; letter-spacing:.6px; line-height:1.2; }
+.co-sub { font-size:9px; color:#FDBA74; font-weight:bold; letter-spacing:1px; text-transform:uppercase; margin-top:1px; }
+.co-line { font-size:9.5px; color:#D1D5DB; margin-top:1.5px; }
+.co-gst { display:inline-block; margin-top:2.5px; background:rgba(249,115,22,.2); border:1px solid rgba(253,186,116,.5); color:#FDBA74; border-radius:4px; padding:1.5px 7px; font-size:8.5px; font-weight:bold; letter-spacing:.6px; }
 
-/* Buyer (Bill to) box */
-.btitle { text-align:center; font-weight:bold; font-size:10.5px; border-bottom:1px solid #000; padding:4px 6px; }
-.bbody { padding:4px 9px 6px; }
-.bline { font-size:10px; margin-top:2px; }
+/* invoice meta card — the bill number lives HERE, on one side of the header */
+.invcard { background:#fff; color:#111827; border-radius:3mm; padding:3.5mm 4.5mm; min-width:54mm; flex:0 0 auto; border-top:2.2mm solid #F59E0B; box-shadow:0 2px 10px rgba(0,0,0,.35); }
+.invcard .k { font-size:8px; font-weight:bold; color:#9CA3AF; letter-spacing:1.4px; text-transform:uppercase; }
+.invcard .no { font-size:15px; font-weight:bold; color:#EA580C; letter-spacing:.4px; margin:1px 0 2.5px; white-space:nowrap; }
+.invcard .row { display:flex; justify-content:space-between; gap:8px; font-size:9.5px; padding-top:2px; border-top:1px dashed #E5E7EB; }
+.invcard .row span { color:#6B7280; }
+.invcard .row b { font-weight:bold; color:#111827; }
 
-/* items table */
-.items th { font-size:9.5px; font-weight:bold; text-align:center; padding:4px 5px; line-height:1.25; }
-.items td { padding:3.5px 6px; font-size:10.5px; vertical-align:top; }
+/* TAX INVOICE ribbon */
+.ribbon { background:#FFF1EB; border-bottom:2px solid #EA580C; text-align:center; padding:2.4mm 0; }
+.ribbon span { font-size:13px; font-weight:bold; color:#9A3412; letter-spacing:5px; }
+
+/* party panels */
+.party { display:flex; gap:5mm; padding:4.5mm 10mm 0; }
+.cap { font-size:8px; font-weight:bold; letter-spacing:1.4px; color:#9CA3AF; text-transform:uppercase; margin-bottom:1.5px; }
+.pbox { border:1px solid #F3D8CB; border-left:3px solid #EA580C; border-radius:2mm; padding:2.8mm 3.5mm; background:#FFFBF8; flex:1 1 auto; min-width:0; }
+.pbox .cap { color:#C2410C; }
+.pname { font-size:12.5px; font-weight:bold; color:#111827; }
+.pline { font-size:9.5px; color:#4B5563; margin-top:1px; }
+.paside { flex:0 0 62mm; }
+.chip { display:inline-block; border-radius:999px; padding:2px 11px; font-size:9px; font-weight:bold; letter-spacing:.8px; margin:1px 0 2px; }
+.st-paid { background:#F0FDF4; color:#15803D; border:1px solid #BBF7D0; }
+.st-partial { background:#FFFBEB; color:#B45309; border:1px solid #FDE68A; }
+.st-due { background:#FEF2F2; color:#B91C1C; border:1px solid #FECACA; }
+.payline { font-size:9.5px; color:#4B5563; margin-top:1.5px; }
+.payline b { color:#111827; }
+
+/* items grid — dark header, zebra rows, totals inside the grid */
+.tblwrap { padding:4mm 10mm 0; }
+table.items { width:100%; border-collapse:collapse; border:1.5px solid #111827; }
+.items th { background:#111827; color:#fff; font-size:9px; font-weight:bold; text-align:center; padding:2.6mm 2mm; letter-spacing:.7px; border:1px solid #374151; line-height:1.3; }
+.items td { border:1px solid #E5E7EB; padding:2.3mm 2.5mm; font-size:10px; vertical-align:top; }
 .items td.c, .items th.c { text-align:center; }
 .items td.r { text-align:right; }
 .items thead { display:table-header-group; }
 .items tr { page-break-inside:avoid; }
-.sn { font-size:9px; margin-top:1px; }
-.on { font-size:9px; white-space:nowrap; }
+.items tbody.rows tr:nth-child(even) td { background:#FFF9F5; }
+.sn { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:8.5px; color:#6B7280; margin-top:1px; }
+.on { font-size:8.5px; color:#9CA3AF; white-space:nowrap; }
+.items tbody.tots tr.tt td { background:#FFF1EB; border-top:1.5px solid #111827; font-weight:bold; }
+.items tbody.tots tr.gt td { background:#111827; color:#fff; font-weight:bold; font-size:11px; border-color:#111827; }
+.items tbody.tots tr.gt td.gamt { border-bottom:4px double #F59E0B; }
 
-/* totals rows (kept inside the items table, exactly like Tally) */
-.tt td { border-top:2px solid #000; }
-.gt td { font-weight:bold; }
-.gamt { border-bottom:4px double #000; }
+/* words + due callout */
+.words { margin:3.5mm 10mm 0; background:#FFF7F3; border:1px solid #F3D8CB; border-left:3px solid #EA580C; border-radius:2mm; padding:2.4mm 3.5mm; font-size:10px; color:#374151; }
+.words b { color:#9A3412; }
+.duebox { margin:3mm 10mm 0; background:#FEF2F2; border:1px solid #FECACA; border-radius:2mm; padding:2.4mm 3.5mm; font-size:10px; color:#B91C1C; font-weight:bold; }
 
-/* words + receivable lines */
-.wline { font-size:10.5px; margin-top:5px; }
-
-/* bottom bank/declaration + signature grid */
-.botgrid { margin-top:8px; }
-.botgrid td { vertical-align:top; }
-.botleft { width:66%; padding:6px 9px 7px; font-size:10px; }
-.botright { width:34%; padding:6px 9px 7px; }
-.bank b { font-weight:bold; }
+/* bank / terms / declaration + signature */
+.mid { display:flex; gap:6mm; padding:4.5mm 10mm 0; flex:1 1 auto; align-items:stretch; }
+.midleft { flex:1 1 auto; min-width:0; }
+.midright { flex:0 0 60mm; display:flex; flex-direction:column; }
+.bank { font-size:9.5px; color:#374151; }
 .bank div { margin-top:1px; }
-.qr { width:60px; height:60px; object-fit:contain; float:right; margin:0 0 3px 8px; border:1px solid #000; padding:2px; background:#fff; }
-.qrcap { font-size:8.5px; text-align:right; clear:none; }
-.decl { margin-top:7px; border-top:1px solid #000; padding-top:4px; font-size:9.5px; line-height:1.4; }
-.tline { font-size:9px; margin-top:1px; }
-.sigwrap { display:flex; flex-direction:column; justify-content:space-between; height:100%; min-height:118px; text-align:right; }
-.sigfor { font-weight:bold; font-size:10.5px; }
-.sigimg img { max-width:140px; max-height:46px; object-fit:contain; }
-.sigas { font-size:10.5px; padding-top:6px; }
-.jur { text-align:center; font-size:9.5px; margin-top:5px; }
+.qr { width:20mm; height:20mm; object-fit:contain; float:right; margin:0 0 2mm 3mm; border:1px solid #E5E7EB; border-radius:1.5mm; padding:1mm; background:#fff; }
+.qrcap { font-size:8px; color:#9CA3AF; text-align:right; }
+.terms { margin-top:3.5mm; border-top:1px dashed #E5E7EB; padding-top:2mm; font-size:9px; color:#4B5563; }
+.tline { margin-top:1px; }
+.decl { margin-top:3.5mm; font-size:9px; color:#4B5563; line-height:1.45; }
+.jur { font-size:8.5px; color:#9CA3AF; margin-top:2mm; }
+.sigwrap { display:flex; flex-direction:column; justify-content:flex-end; align-items:flex-end; text-align:right; min-height:34mm; width:100%; }
+.sigfor { font-size:10.5px; font-weight:bold; color:#111827; }
+.sigimg img { max-width:46mm; max-height:15mm; object-fit:contain; }
+.sigline { border-top:1.5px solid #111827; margin-top:2mm; padding-top:1.5mm; font-size:9.5px; color:#374151; width:50mm; text-align:center; }
+
+/* footer strip — colour runs to the paper edge */
+.foot { margin-top:auto; }
+.fstrip { height:3mm; background:linear-gradient(90deg,#C2410C 0%,#EA580C 45%,#F59E0B 100%); }
+.fbar { background:#111827; color:#9CA3AF; display:flex; justify-content:space-between; align-items:center; gap:6mm; padding:2.6mm 10mm; font-size:8.5px; letter-spacing:.4px; }
+.fbar b { color:#FDBA74; }
 `;
 
-function tallyShell(title: string, body: string): string {
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>${TALLY_CSS}</style></head><body>${body}</body></html>`;
+function billShell(title: string, body: string): string {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><style>${BILL_CSS}</style></head><body>${body}</body></html>`;
 }
 
 export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: BillingSettings | null): string {
@@ -391,6 +425,7 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
   const disc = bill.discountAmount || 0;
   const gstAmt = bill.gstAmount || 0;
   const due = bill.dueAmount || 0;
+  const paid = Number(bill.paidAmount) || 0;
 
   const methodLabel =
     bill.paymentMethod === 'cash'
@@ -401,13 +436,12 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
           ? 'Card'
           : 'Credit (Due)';
 
-  // per-item GST rate text — Tally prints e.g. "18 %" / "5 %"
+  // per-item GST rate text — e.g. "18 %" / "5 %"
   const rateTxt = (() => {
     const r = Number(bill.gstRate) || 0;
     return `${Number.isInteger(r) ? r : Number(r.toFixed(2))} %`;
   })();
-  // CGST/SGST each carry HALF the headline rate — Tally prints 18% GST as
-  // "OUTPUT CGST @ 9.00%" + "OUTPUT SGST @ 9.00%"
+  // CGST/SGST each carry HALF the headline rate (18% GST → 9% + 9%)
   const halfTxt = (() => {
     const h = Number(halfRate(bill.gstRate)) || 0;
     return `${Number.isInteger(h) ? h : Number(h.toFixed(2))} %`;
@@ -416,15 +450,23 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
   const qtyTotal = (bill.items || []).reduce((s, it) => s + (Number(it.quantity) || 0), 0);
   const itemSum = bill.subtotal || 0;
 
-  // taxable base the tax was computed on (for the Tally "On (…)" annotation)
+  // taxable base the tax was computed on (for the "On (…)" annotation)
   const taxableBase = inclusiveGst ? bill.taxableValue ?? 0 : itemSum - disc;
 
-  // paise adjustment Tally books as "Round Off"
+  // paise adjustment booked as "Round Off"
   const expectedTotal = itemSum - disc + (gstOn && !inclusiveGst ? gstAmt : 0);
   const roundOff = Math.round(((bill.total || 0) - expectedTotal) * 100) / 100;
 
   // column layout: GST bills carry the extra "GST Rate" column
   const N = gstOn ? 7 : 6;
+
+  // payment-status chip — PAID / PARTIALLY PAID / PAYMENT DUE
+  const statusChip =
+    due > 0.009
+      ? paid > 0.009
+        ? '<span class="chip st-partial">PARTIALLY PAID</span>'
+        : '<span class="chip st-due">PAYMENT DUE</span>'
+      : '<span class="chip st-paid">✓ PAID</span>';
 
   const itemRows = (bill.items || [])
     .map((it, i) => {
@@ -438,6 +480,11 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
       );
     })
     .join('');
+
+  // filler rows keep the grid full so a short bill still covers the A4 sheet
+  const MIN_ROWS = 14;
+  const fillers = Math.max(0, MIN_ROWS - (bill.items || []).length);
+  const fillerRows = Array.from({ length: fillers }, () => `<tr>${'<td></td>'.repeat(N)}</tr>`).join('');
 
   const totalRow = gstOn
     ? `<tr class="tt"><td colspan="2" class="r"><b>Total</b></td><td class="c"></td><td class="c"><b>${tallyQty(qtyTotal)} Nos.</b></td><td class="r"></td><td class="c"></td><td class="r"><b>${tallyAmt(itemSum)}</b></td></tr>`
@@ -465,32 +512,19 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
       ? `<tr><td colspan="${N - 1}">Round Off</td><td class="r">${roundOff > 0 ? '' : '−'}${tallyAmt(Math.abs(roundOff))}</td></tr>`
       : '';
 
-  const grandRow = `<tr class="gt"><td colspan="${N - 1}" class="r">GRAND TOTAL</td><td class="r gamt"><b>${tallyAmt(bill.total)}</b></td></tr>`;
+  const grandRow = `<tr class="gt"><td colspan="${N - 1}" class="r">GRAND TOTAL</td><td class="r gamt"><b>₹ ${tallyAmt(bill.total)}</b></td></tr>`;
 
-  const metaRows = [
-    `<tr><td class="k">Invoice No.</td><td>${esc(bill.billNumber || '—')}</td></tr>`,
-    `<tr><td class="k">Dated</td><td>${tallyDate(bill.date)}</td></tr>`,
-    `<tr><td class="k">Mode/Terms of Payment</td><td>${esc(methodLabel)}</td></tr>`,
-    bill.note ? `<tr><td class="k">Terms of Delivery</td><td>${esc(bill.note)}</td></tr>` : '',
-  ].join('');
-
+  const supplyState = shop.gst ? stateFromGstin(shop.gst) : null;
   const buyerLines = [
-    `<div class="bline"><b>Name</b> : ${esc(bill.customerName || 'Cash Sale')}</div>`,
-    shop.gst ? `<div class="bline"><b>GSTIN/UIN</b> : Unregistered</div>` : '',
-    (() => {
-      if (!shop.gst) return '';
-      const st = stateFromGstin(shop.gst);
-      return st ? `<div class="bline"><b>State Name</b> : ${esc(st)}</div>` : '';
-    })(),
-    bill.customerMobile ? `<div class="bline"><b>Contact</b> : ${esc(bill.customerMobile)}</div>` : '',
+    `<div class="pname">${esc(bill.customerName || 'Cash Sale')}</div>`,
+    bill.customerMobile ? `<div class="pline">☎ ${esc(bill.customerMobile)}</div>` : '',
+    supplyState ? `<div class="pline">Place of Supply : ${esc(supplyState)}</div>` : '',
+    bill.note ? `<div class="pline">Note : ${esc(bill.note)}</div>` : '',
   ].join('');
 
-  const taxWords = gstOn
-    ? `<div class="wline"><b>Tax Amount in Words :</b> ${esc(amountInWords(gstAmt))}</div>`
-    : '';
-  const recvLine =
+  const dueBox =
     due > 0.009
-      ? `<div class="wline"><b>Amount of Rs. ${tallyAmt(due)} (${esc(amountInWords(due))}) Receivable from party :</b></div>`
+      ? `<div class="duebox">Amount of Rs. ${tallyAmt(due)} (${esc(amountInWords(due))}) receivable from party.</div>`
       : '';
 
   const bankBits = [
@@ -501,76 +535,116 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
     bankBits.length || shop.qr
       ? `<div class="bank">${
           shop.qr ? `<img class="qr" src="${shop.qr}" alt="payment QR"><div class="qrcap">Scan to Pay</div>` : ''
-        }<b>Bank Details :</b>${bankBits.join('')}</div>`
+        }<div class="cap">Bank &amp; Payment Details</div>${bankBits.join('')}</div>`
       : '';
 
   const termsItems = shop.terms
     .split(/\r?\n+/)
     .map((x) => x.trim())
     .filter(Boolean);
-  const termsLines = termsItems.map((x) => `<div class="tline">• ${esc(x)}</div>`).join('');
+  const termsBlock = termsItems.length
+    ? `<div class="terms"><div class="cap">Terms &amp; Conditions</div>${termsItems
+        .map((x) => `<div class="tline">• ${esc(x)}</div>`)
+        .join('')}</div>`
+    : '';
+
+  const jurisdiction = /kolkata/i.test(shop.address) ? 'Kolkata' : 'West Bengal';
 
   const body = `
-<div class="doc">
-  <div class="co">
-    <div class="co-name">${esc(shop.name)}</div>
-    ${shop.address ? `<div class="co-line">${escMultiline(shop.address)}</div>` : ''}
-    ${shop.phone ? `<div class="co-line">Phone: ${esc(shop.phone)}</div>` : ''}
-    ${shop.gst ? `<div class="co-line">GSTIN/UIN: ${esc(shop.gst)}</div>` : ''}
+<div class="sheet">
+  <div class="wm" aria-hidden="true">${esc(shop.name)}</div>
+  <div class="strip"></div>
+
+  <div class="hdr">
+    <div class="hbrand">
+      ${monogramHtml(shop.name)}
+      <div class="hident">
+        <div class="co-name">${esc(shop.name)}</div>
+        ${shop.proprietor ? `<div class="co-sub">${esc(shop.proprietor)}</div>` : ''}
+        ${shop.address ? `<div class="co-line">${escMultiline(shop.address)}</div>` : ''}
+        ${shop.phone ? `<div class="co-line">Phone : ${esc(shop.phone)}</div>` : ''}
+        ${shop.gst ? `<div class="co-gst">GSTIN : ${esc(shop.gst)}</div>` : ''}
+      </div>
+    </div>
+    <div class="invcard">
+      <div class="k">Invoice No.</div>
+      <div class="no">${esc(bill.billNumber || '—')}</div>
+      <div class="row"><span>Dated</span><b>${tallyDate(bill.date)}</b></div>
+      <div class="row"><span>Payment</span><b>${esc(methodLabel)}</b></div>
+    </div>
   </div>
 
-  <div class="doc-title">${esc(title)}</div>
+  <div class="ribbon"><span>${esc(title)}</span></div>
 
-  <table class="grid hgrid"><tr>
-    <td class="metacell"><table class="meta">${metaRows}</table></td>
-    <td class="buyercell">
-      <div class="btitle">Buyer (Bill to)</div>
-      <div class="bbody">${buyerLines}</div>
-    </td>
-  </tr></table>
+  <div class="party">
+    <div class="pbox">
+      <div class="cap">Bill To</div>
+      ${buyerLines}
+    </div>
+    <div class="pbox paside">
+      <div class="cap">Payment Status</div>
+      ${statusChip}
+      <div class="payline">Paid : <b>${money(paid)}</b></div>
+      <div class="payline">Balance Due : <b>${money(due)}</b></div>
+    </div>
+  </div>
 
-  <table class="grid items">
-    <thead><tr>
-      <th class="c" style="width:5%">Sl<br>No.</th>
-      <th style="width:${gstOn ? '45' : '50'}%">Description of Goods</th>
-      ${gstOn ? '<th class="c" style="width:9%">GST<br>Rate</th>' : ''}
-      <th class="c" style="width:10%">Quantity</th>
-      <th class="c" style="width:11%">Rate</th>
-      <th class="c" style="width:7%">per</th>
-      <th class="c" style="width:13%">Amount</th>
-    </tr></thead>
-    <tbody>
-      ${itemRows}
-      ${totalRow}
-      ${discRow}
-      ${taxableRow}
-      ${gstRows}
-      ${roundRow}
-      ${grandRow}
-    </tbody>
-  </table>
+  <div class="tblwrap">
+    <table class="items">
+      <thead><tr>
+        <th class="c" style="width:5%">Sl<br>No.</th>
+        <th style="width:${gstOn ? '43' : '50'}%">Description of Goods</th>
+        ${gstOn ? '<th class="c" style="width:9%">GST<br>Rate</th>' : ''}
+        <th class="c" style="width:10%">Quantity</th>
+        <th class="c" style="width:11%">Rate</th>
+        <th class="c" style="width:7%">per</th>
+        <th class="c" style="width:13%">Amount</th>
+      </tr></thead>
+      <tbody class="rows">
+        ${itemRows}
+        ${fillerRows}
+      </tbody>
+      <tbody class="tots">
+        ${totalRow}
+        ${discRow}
+        ${taxableRow}
+        ${gstRows}
+        ${roundRow}
+        ${grandRow}
+      </tbody>
+    </table>
+  </div>
 
-  ${taxWords}
-  ${recvLine}
+  <div class="words"><b>Amount in Words :</b> ${esc(amountInWords(bill.total))}</div>
+  ${dueBox}
 
-  <table class="grid botgrid"><tr>
-    <td class="botleft">
+  <div class="mid">
+    <div class="midleft">
       ${bankBlock}
-      <div class="decl"><b>Declaration :</b><br>We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.${termsLines}</div>
-    </td>
-    <td class="botright">
+      ${termsBlock}
+      <div class="decl"><div class="cap">Declaration</div>We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.</div>
+      <div class="jur">Subject to ${jurisdiction} Jurisdiction</div>
+    </div>
+    <div class="midright">
       <div class="sigwrap">
         <div class="sigfor">${shop.name ? `For ${esc(shop.name)}` : ''}</div>
         <div class="sigimg">${shop.signature ? `<img src="${shop.signature}" alt="signature">` : ''}</div>
-        <div class="sigas">Authorised Signatory</div>
+        <div class="sigline">Authorised Signatory</div>
       </div>
-    </td>
-  </tr></table>
+    </div>
+  </div>
 
-  <div class="jur">Subject to ${/kolkata/i.test(shop.address) ? 'Kolkata' : 'West Bengal'} Jurisdiction</div>
+  <div class="foot">
+    <div class="fstrip"></div>
+    <div class="fbar">
+      <div><b>${esc(shop.name)}</b>${shop.phone ? ` &nbsp;·&nbsp; ${esc(shop.phone)}` : ''}</div>
+      ${shop.thankyou ? `<div>${esc(shop.thankyou)}</div>` : '<div></div>'}
+      <div>This is a computer generated invoice</div>
+    </div>
+  </div>
 </div>`;
 
-  return tallyShell(`${shop.name} — ${bill.billNumber}`, body);
+  return billShell(`${shop.name} — ${bill.billNumber}`, body);
 }
 
 // ── document 2: sold-products report (all bills in a period) ───
