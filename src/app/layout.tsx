@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import PwaRegister from "@/components/PwaRegister";
+import AppLockGate from "@/components/AppLockGate";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -64,6 +65,8 @@ export default function RootLayout({
       >
         <PwaRegister />
         {children}
+        {/* APK-only: device screen-lock gate (covers the app AND /admin) */}
+        <AppLockGate />
         <Toaster
           position="top-center"
           richColors

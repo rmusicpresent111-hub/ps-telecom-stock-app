@@ -306,6 +306,21 @@ export type TranslationKeys = {
   // Password re-auth + backup-owner safety
   // Fresh-device login guidance (empty local database)
   // Setup Code — one-paste credential transfer across the owner's devices
+
+  // App Lock (native device screen-lock gate — APK only, v2.18.0)
+  appLock: string;
+  appLockDesc: string;
+  appLockUnavailable: string;
+  appLockOnToast: string;
+  appLockOffToast: string;
+  lockTitle: string;
+  lockSubtitle: string;
+  lockUnlock: string;
+  lockPromptTitle: string;
+  lockPromptSubtitle: string;
+  lockCancelled: string;
+  lockFailed: string;
+  lockSecured: string;
 };
 
 const translations: Record<Language, TranslationKeys> = {
@@ -589,6 +604,20 @@ const translations: Record<Language, TranslationKeys> = {
     saved: 'সংরক্ষিত হয়েছে',
     adminPanel: 'অ্যাডমিন প্যানেল (ওয়েব)',
     adminPanelDesc: 'ব্রাউজারে আলাদা Vyapar-স্টাইল কনসোল — একই ডেটাবেস',
+    // App Lock (v2.18.0)
+    appLock: 'অ্যাপ লক',
+    appLockDesc: 'অ্যাপ খুলতে ফোনের স্ক্রিন লক লাগবে (ফিঙ্গারপ্রিন্ট/পিন)',
+    appLockUnavailable: 'এই ফোনে স্ক্রিন লক সেট করা নেই — আগে ফোনের সেটিংসে স্ক্রিন লক দিন',
+    appLockOnToast: 'অ্যাপ লক চালু হয়েছে — এখন থেকে অ্যাপ খুলতে স্ক্রিন লক লাগবে',
+    appLockOffToast: 'অ্যাপ লক বন্ধ হয়েছে',
+    lockTitle: 'অ্যাপ লক করা আছে',
+    lockSubtitle: 'চালিয়ে যেতে ফোনের স্ক্রিন লক দিয়ে নিজেকে যাচাই করুন',
+    lockUnlock: 'আনলক করুন',
+    lockPromptTitle: 'PS TELECOM আনলক করুন',
+    lockPromptSubtitle: 'ফোনের স্ক্রিন লক দিয়ে যাচাই করুন',
+    lockCancelled: 'আনলক বাতিল হয়েছে — আবার চেষ্টা করুন',
+    lockFailed: 'যাচাই করা যায়নি — আবার চেষ্টা করুন',
+    lockSecured: 'এই অ্যাপ আপনার ফোনের স্ক্রিন লক দিয়ে সুরক্ষিত',
   },
   en: {
     appName: 'PS TELECOM',
@@ -870,6 +899,20 @@ const translations: Record<Language, TranslationKeys> = {
     saved: 'Saved successfully',
     adminPanel: 'Admin Panel (Web)',
     adminPanelDesc: 'Separate Vyapar-style console in the browser — same database',
+    // App Lock (v2.18.0)
+    appLock: 'App Lock',
+    appLockDesc: 'Opening the app needs your phone screen lock (fingerprint / PIN)',
+    appLockUnavailable: 'No screen lock is set on this phone — set one in phone Settings first',
+    appLockOnToast: 'App Lock on — the phone screen lock will be asked when opening the app',
+    appLockOffToast: 'App Lock off',
+    lockTitle: 'App is locked',
+    lockSubtitle: 'Verify with your phone screen lock to continue',
+    lockUnlock: 'Unlock',
+    lockPromptTitle: 'Unlock PS TELECOM',
+    lockPromptSubtitle: 'Verify with your phone screen lock',
+    lockCancelled: 'Unlock cancelled — tap Unlock to try again',
+    lockFailed: 'Could not verify — try again',
+    lockSecured: 'This app is protected by your phone screen lock',
   },
   hi: {
     appName: 'PS TELECOM',
@@ -1151,6 +1194,20 @@ const translations: Record<Language, TranslationKeys> = {
     saved: 'सहेजा गया',
     adminPanel: 'एडमिन पैनल (वेब)',
     adminPanelDesc: 'ब्राउज़र में अलग Vyapar-स्टाइल कंसोल — वही डेटाबेस',
+    // App Lock (v2.18.0)
+    appLock: 'ऐप लॉक',
+    appLockDesc: 'ऐप खोलने के लिए फ़ोन का स्क्रीन लॉक लगेगा (फ़िंगरप्रिंट/पिन)',
+    appLockUnavailable: 'इस फ़ोन पर स्क्रीन लॉक सेट नहीं है — पहले फ़ोन सेटिंग्स में स्क्रीन लॉक लगाएं',
+    appLockOnToast: 'ऐप लॉक चालू — अब ऐप खोलने पर स्क्रीन लॉक मांगा जाएगा',
+    appLockOffToast: 'ऐप लॉक बंद',
+    lockTitle: 'ऐप लॉक है',
+    lockSubtitle: 'जारी रखने के लिए फ़ोन के स्क्रीन लॉक से सत्यापित करें',
+    lockUnlock: 'अनलॉक करें',
+    lockPromptTitle: 'PS TELECOM अनलॉक करें',
+    lockPromptSubtitle: 'फ़ोन के स्क्रीन लॉक से सत्यापित करें',
+    lockCancelled: 'अनलॉक रद्द हुआ — फिर से कोशिश करें',
+    lockFailed: 'सत्यापित नहीं हो सका — फिर कोशिश करें',
+    lockSecured: 'यह ऐप आपके फ़ोन के स्क्रीन लॉक से सुरक्षित है',
   },
 };
 

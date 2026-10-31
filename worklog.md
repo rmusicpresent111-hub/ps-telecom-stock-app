@@ -2076,3 +2076,29 @@ Stage Summary:
 - A category can no longer stay missing on ANY device: existence is reconciled watermark-free every minute; duplicates can never resurrect; stale pushes cannot regress the cloud
 - NOTE for the owner: the phone APK must be rebuilt/updated to ship this engine — web (Vercel + gh-pages) gets it automatically with v2.17.0
 - v2.17.0 pushed; Vercel auto-deploy + gh-pages mirror refresh follow
+
+---
+Task ID: 70
+Agent: Z.ai Code (main thread)
+Task: "ami app er kichu changes chai jemon app e native mobile screenlock addkorte chai app open korar somoy mobile er screenlock app e add thakbe" — native device screen-lock gate on app open (APK). v2.18.0
+
+Work Log:
+- NATIVE PLUGIN (native/android/AppLockPlugin.java, local Capacitor plugin — same auto-install pattern as WhatsappSender):
+  - @CapacitorPlugin("AppLock") with isAvailable() → {available, code} mapping BiometricManager.canAuthenticate(BIOMETRIC_WEAK|DEVICE_CREDENTIAL), and authenticate({title,subtitle}) → system BiometricPrompt, always RESOLVES {ok, code, message} (never rejects) so JS can separate user-cancel from failure
+  - Allowed authenticators = BIOMETRIC_WEAK | DEVICE_CREDENTIAL: fingerprint/face when enrolled, automatic system PIN/pattern/password fallback, and devices with NO screen lock report available=false → the app simply never locks (NO possible lockout)
+  - setNegativeButtonText intentionally NOT set (androidx throws when combined with DEVICE_CREDENTIAL); empty-title guard; fail-open try/catch on odd ROMs
+- BUILD SCRIPT (scripts/build-apk.js, Steps 5.7c/5.7d, idempotent + fail-soft): copies the java file into the android project with the real package name, registers registerPlugin(AppLockPlugin.class) in MainActivity (handles all template shapes), and injects "androidx.biometric:biometric:1.1.0" into app/build.gradle (Groovy) or build.gradle.kts (Kotlin DSL) — fail-soft: any problem only means the gate is absent, the APK still builds
+- WEB BRIDGE (src/lib/app-lock.ts): typed plugin wrapper; plugin registered LAZILY and ONLY on native (web never registers → no Capacitor "already registered" console warning); cancel codes 5/10/13 mapped to cancelled; dev/E2E hooks via localStorage flags ps-applock-debug-native/-available/-cancel (inert in normal use) so the whole gate flow is browser-testable
+- LOCK STATE (src/store/appLockStore.ts, persist 'ps-applock-v1' storing only {enabled}, default ON): bootstrap() runs in a PRE-PAINT layout effect — raises the gate synchronously before any app data can paint, probes availability (no-lock devices immediately lower it), then auto-triggers the system prompt; background re-lock after ≥30s via visibilitychange with two race guards (ignore while prompting; 5s post-unlock grace kills the old-Android "credential activity paused us" loop); zero-persist of lock/transient state
+- GATE UI (src/components/AppLockGate.tsx, mounted in src/app/layout.tsx → covers the main app AND /admin): opaque full-screen overlay (z-9999, theme-aware bg-background/light-theme), fingerprint emblem + title/subtitle/error hint + Unlock button (44px, disabled while prompting) + "protected by screen lock" footnote; renders null on web; hydration-safe (initial render matches SSR, gate appears pre-paint on device)
+- PROFILE TOGGLE (ProfileScreen, APK-only row next to Language): switch with desc/unavailable hint; turning ON probes availability first and refuses with a toast when the phone has no screen lock; on/off toasts; availability probe on mount
+- i18n: 13 new keys appLock*/lock* (bn/en/hi) via a python line-insertion script (interface + 3 dictionaries, assertion-guarded)
+- Version 2.17.0 → 2.18.0 (package.json + AdminShell footer); node --check on build-apk.js; tsc + eslint clean (my files; pre-existing legacy firebase/prisma type errors untouched)
+- E2E (agent-browser, dev server): plain web shows NO gate + dashboard/admin fine; debug flags → gate engages on / AND /admin with correct UI (desktop 1280px + mobile 390px screenshots); simulated prompt auto-success lowers the gate; cancel flag → gate stays + soft "Unlock cancelled" hint + button re-enabled; manual retry cancel → still locked, retry success → unlocked; visibilitychange + 60s Date-jump → gate re-engaged; Profile toggle OFF persists ({enabled:false}) → reload shows NO gate → re-toggle ON persists; after the lazy-registration refactor the Capacitor warning is gone; zero console/page errors throughout
+- NOTE: sandbox has no Android SDK (as before) — the APK is built by the owner via `node scripts/build-apk.js` (versionCode auto-stamps to 21800); web (Vercel + gh-pages) ships v2.18.0 automatically with the gate dormant
+
+Stage Summary:
+- The APK now greets every app open with the PHONE'S OWN screen lock (fingerprint/face/PIN/pattern) — main app and admin panel both sit behind the gate; no app PIN is stored anywhere (the OS authenticates)
+- No-lockout by design: devices without a screen lock never lock; user-cancel keeps the gate up with a soft hint and a retry button; disabled setting is honored on next launch
+- 30s-background re-lock gives banking-app-style protection without annoying sub-30s app switches
+- v2.18.0 pushed; Vercel auto-deploy + gh-pages mirror refresh follow; owner rebuilds the APK to receive the native gate
