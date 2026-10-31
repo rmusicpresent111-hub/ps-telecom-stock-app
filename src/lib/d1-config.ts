@@ -1,46 +1,77 @@
 /**
- * Cloudflare D1 configuration — PS TELECOM cloud database (user's own account).
+ * Cloudflare D1 configuration — PS TELECOM cloud database.
  *
  * ─────────────────────────────────────────────────────────────────────────
- * SECURITY MODEL (v2 — E2E encrypted direct mode)
+ * SECURITY MODEL (v3 — env-only credentials, zero keys in source code)
  * ─────────────────────────────────────────────────────────────────────────
- * The app talks DIRECTLY to the D1 REST API:
- *   POST https://api.cloudflare.com/client/v4/accounts/{account}/d1/database/{db}/query
- * so a D1 API token is compiled into the app bundle. Threat model: assume
- * anyone can extract it from the APK. That is survivable because:
+ * Every credential now comes from ENVIRONMENT VARIABLES — nothing is
+ * hardcoded in the repository (the old git-ignored d1-secrets.ts file is
+ * gone). Fill them in `.env` (git-ignored, see .env.example):
  *
- *   1. EVERY synced payload is AES-256-GCM encrypted (see sync-crypto.ts).
- *      The key is derived from the shop's Sync PIN — which is NOT in the app;
- *      each shop owner types it once on their own devices. A leaked token
- *      yields nothing but ciphertext.
- *   2. Forged/tampered cloud rows fail AES-GCM authentication and are skipped,
- *      so device data cannot be damaged through the cloud.
- *   3. The token is scoped by the user in the Cloudflare dashboard
- *      (D1 access to THIS database only — no account-wide rights).
- *   4. Deletes propagate as encrypted tombstone rows — outsiders cannot
- *      forge deletions either.
+ *   NEXT_PUBLIC_CF_ACCOUNT_ID    Account ID  (client build: APK direct sync)
+ *   NEXT_PUBLIC_CF_DATABASE_ID   Database ID (client build)
+ *   NEXT_PUBLIC_CF_API_TOKEN     D1 API token (client build)
+ *   NEXT_PUBLIC_SYNC_ID          default Sync ID for auto-connect
+ *   NEXT_PUBLIC_SYNC_PIN         default Sync PIN for auto-connect
+ *   CLOUDFLARE_ACCOUNT_ID        server-side only (/api/cloud/d1 proxy)
+ *   CLOUDFLARE_D1_DATABASE_ID    server-side only
+ *   CLOUDFLARE_D1_API_TOKEN      server-side only
  *
- * RESIDUAL RISK (documented): a token holder can still DELETE/WRITE garbage
- * rows (denial-of-service on the cloud copy). Devices self-heal: missing or
- * poisoned rows are re-asserted from device copies at boot / every 6h.
- * The long-term fix is the staged Cloudflare Worker proxy
- * (/home/z/ps-stock-sync/worker.js) which needs a token with Workers
- * "Scripts:Edit" — after it is deployed the token can be removed from the
- * app entirely and this file shrinks to just the worker URL.
+ * Transport:
+ *  - Web (Vercel / any Next.js server): the browser never needs the keys —
+ *    queries are relayed through the same-origin /api/cloud/d1 proxy, which
+ *    injects the deployment's own CLOUDFLARE_* env vars. Client builds made
+ *    WITHOUT the NEXT_PUBLIC_CF_* vars simply send empty credentials and the
+ *    proxy fills them in server-side.
+ *  - APK (Capacitor): no Next.js server exists inside the bundle → the app
+ *    calls api.cloudflare.com directly using the NEXT_PUBLIC_CF_* values
+ *    baked at build time (the APK build hard-fails when they are missing —
+ *    scripts/build-apk.js preflight).
  *
- * The per-shop account (Sync ID + PIN) is stored in this device's
- * localStorage — app-private on Android (sandboxed WebView storage), and
- * required anyway to derive the decryption key on every sync cycle.
+ * RESIDUAL RISK (documented): values baked into a client build can be
+ * extracted from the bundle. That is survivable because every synced payload
+ * is AES-256-GCM encrypted (sync-crypto.ts) and forged/tampered cloud rows
+ * fail AES-GCM authentication and are skipped. A token holder can still
+ * WRITE/DELETE garbage rows (DoS on the cloud copy) — devices self-heal by
+ * re-asserting their copies at boot / every 6h.
  *
- * GIT-HYGIENE: the token itself lives in src/lib/d1-secrets.ts which is
- * GIT-IGNORED (see d1-secrets.example.ts). Copy the example, paste values.
- * GitHub Push Protection blocks tokens in pushed code — with good reason.
+ * The per-shop sync account (Sync ID + PIN) is stored in this device's
+ * localStorage after the FIRST auto-connect; the PIN is required anyway to
+ * derive the decryption key on every sync cycle.
  */
 
-import { D1_ACCOUNT_ID, D1_DATABASE_ID, D1_API_TOKEN } from './d1-secrets';
+const envVal = (v: string | undefined): string => (v ?? '').trim();
 
-export { D1_ACCOUNT_ID, D1_DATABASE_ID, D1_API_TOKEN };
+/** Client-build Cloudflare credentials (baked from .env at build time). */
+export const D1_ACCOUNT_ID = envVal(process.env.NEXT_PUBLIC_CF_ACCOUNT_ID);
+export const D1_DATABASE_ID = envVal(process.env.NEXT_PUBLIC_CF_DATABASE_ID);
+export const D1_API_TOKEN = envVal(process.env.NEXT_PUBLIC_CF_API_TOKEN);
 
+/**
+ * True when the build carries real (non-placeholder) Cloudflare credentials.
+ * Web builds can be cloud-ready even when this is false — the /api/cloud/d1
+ * proxy falls back to the server's own CLOUDFLARE_* environment variables.
+ */
+export const CLOUD_CREDS_CONFIGURED =
+  [D1_ACCOUNT_ID, D1_DATABASE_ID, D1_API_TOKEN].every(
+    (v) => v.length > 0 && !/paste[._-]?your|change[._-]?me/i.test(v)
+  );
+
+/** Default sync account for auto-connect (no sign-in UI anywhere). */
+export const DEFAULT_SYNC_ID = envVal(process.env.NEXT_PUBLIC_SYNC_ID);
+export const DEFAULT_SYNC_PIN = envVal(process.env.NEXT_PUBLIC_SYNC_PIN);
+
+/**
+ * True when DEFAULT_SYNC_ID / DEFAULT_SYNC_PIN hold usable values (not
+ * empty, not a .env.example placeholder). The sync engine auto-connects
+ * with them when the device has no locally saved account yet.
+ */
+export const DEFAULT_SYNC_CONFIGURED =
+  DEFAULT_SYNC_ID.length > 0 &&
+  DEFAULT_SYNC_PIN.length >= 4 &&
+  !/paste[._-]?your|change[._-]?me/i.test(`${DEFAULT_SYNC_ID} ${DEFAULT_SYNC_PIN}`);
+
+/** Direct Cloudflare REST endpoint (native/APK transport only). */
 export const D1_QUERY_URL =
   `https://api.cloudflare.com/client/v4/accounts/${D1_ACCOUNT_ID}` +
   `/d1/database/${D1_DATABASE_ID}/query`;

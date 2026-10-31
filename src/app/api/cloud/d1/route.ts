@@ -1,7 +1,7 @@
 /**
  * Cloudflare D1 proxy — the ONLY server-side piece of the cloud backup feature.
  *
- * The client (src/lib/cloud-d1.ts) posts { accountId, databaseId, apiToken, sql, params }
+ * The client (src/lib/d1-sync.ts) posts { accountId?, databaseId?, apiToken?, sql, params } —
  * and this route forwards the query to the official Cloudflare REST API:
  *
  *   POST {base}/accounts/{accountId}/d1/database/{databaseId}/query
@@ -99,7 +99,7 @@ function json(payload: D1Response, status = 200, extraHeaders?: Record<string, s
 
 /**
  * Stable error codes the client UI maps to translated, friendly messages.
- * Keep in sync with src/lib/cloud-d1.ts (native path) and the i18n keys.
+ * Keep in sync with the d1-sync native path and the i18n keys.
  */
 type CloudErrorCode = 'ids_wrong' | 'token_invalid' | 'ids_malformed' | 'rate_limit' | 'missing_creds';
 
@@ -185,7 +185,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // "server-managed" mode); per-field fallback keeps manual keys working even
   // alongside env vars (e.g. a personal token overriding the shared one).
   //
-  // Placeholder junk (ensure-secrets.mjs template values like PASTE_YOUR_*
+  // Placeholder junk (stale template values like PASTE_YOUR_*
   // relayed by an old build, or pasted by mistake into the manual form)
   // counts as "not provided" so the env fallback can rescue the request
   // instead of Cloudflare answering "Could not route to /accounts/PASTE_YOUR_…".

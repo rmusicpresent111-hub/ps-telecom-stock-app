@@ -3,10 +3,23 @@
  * Validates the exact protocol d1-sync.ts uses: push (multi-row upsert with
  * MAX guard), pull (watermark + tombstones), LWW, delete propagation,
  * resurrection guard. Run: node scripts/test-d1-sync.mjs
+ *
+ * v2.19.0: credentials come from the git-ignored .env file — never hardcoded.
  */
-const ACC = '45dc693e070aa16e1600611a2aee4d7d';
-const DB = '01d53b1b-d074-4f6c-84fb-82f98ca26da4';
-const TOK = Buffer.from('Y2Z1dF9xdEVqZ01pa2doc2hkdlZjZmd5N3NKd0djTXVNN1dERGNHeEE0czVLM2M1YzJmZjA=', 'base64').toString('utf-8');
+import fs from 'node:fs';
+
+const envSrc = fs.readFileSync(new URL('../.env', import.meta.url), 'utf8');
+const envGet = (name) => {
+  const m = envSrc.match(new RegExp(`^\\s*${name}\\s*=(.*)$`, 'm'));
+  return m ? m[1].trim() : '';
+};
+const ACC = envGet('CLOUDFLARE_ACCOUNT_ID');
+const DB = envGet('CLOUDFLARE_D1_DATABASE_ID');
+const TOK = envGet('CLOUDFLARE_D1_API_TOKEN');
+if (!ACC || !DB || !TOK || /PASTE[._-]?YOUR|CHANGE[._-]?ME/i.test(`${ACC}${DB}${TOK}`)) {
+  console.error('❌ .env is missing CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_D1_DATABASE_ID / CLOUDFLARE_D1_API_TOKEN');
+  process.exit(1);
+}
 const URL_ = `https://api.cloudflare.com/client/v4/accounts/${ACC}/d1/database/${DB}/query`;
 const UID = 'local-owner';
 

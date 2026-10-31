@@ -2102,3 +2102,29 @@ Stage Summary:
 - No-lockout by design: devices without a screen lock never lock; user-cancel keeps the gate up with a soft hint and a retry button; disabled setting is honored on next launch
 - 30s-background re-lock gives banking-app-style protection without annoying sub-30s app switches
 - v2.18.0 pushed; Vercel auto-deploy + gh-pages mirror refresh follow; owner rebuilds the APK to receive the native gate
+
+---
+Task ID: 71
+Agent: Z.ai Code (main thread)
+Task: "ami app er cloud sign remove kore dite chai ar code e kono api key rakhbena api key gulo list dao enverment variable e rakhbo .env file git ignore e rakhbe" — remove the cloud sign-in (create/join Sync ID + PIN UI) and move EVERY API key out of source code into the git-ignored .env file. v2.19.0
+
+Decisions:
+- "Cloud sign" = the Cloud Sync sign-in surfaces: ProfileScreen create/join dialog (Sync ID + PIN) and AdminSync connect form. Both REMOVED. The sync engine now AUTO-CONNECTS at boot from environment credentials (d1-sync.ts autoConnectFromEnv: join → not-found → create → taken-race join-retry); previously connected devices keep their localStorage account and never notice the change.
+- Secret inventory moved to env (git-ignored .env, template committed as .env.example):
+  1. CLOUDFLARE_ACCOUNT_ID 2. CLOUDFLARE_D1_DATABASE_ID 3. CLOUDFLARE_D1_API_TOKEN (server-side, /api/cloud/d1 proxy) 4-6. NEXT_PUBLIC_CF_ACCOUNT_ID / NEXT_PUBLIC_CF_DATABASE_ID / NEXT_PUBLIC_CF_API_TOKEN (client build bake — APK talks to Cloudflare directly) 7. NEXT_PUBLIC_SYNC_ID 8. NEXT_PUBLIC_SYNC_PIN (auto-connect account; PIN derives the AES-256-GCM payload key — must be the shop's existing PIN)
+- Hardcoded keys ELIMINATED from the repo: src/lib/firebase.ts (Firebase apiKey/authDomain/appId/measurementId) + src/lib/firebase-sync.ts + dead CloudBackupScreen/CloudSyncScreen + cloud-d1.ts + cloud-sync.ts + auto-restore.ts + sync-dirty.ts (whole dead cluster, only reachable from the two unreachable screens) + scripts/test-d1-sync.mjs base64 token (now reads .env) + src/lib/d1-secrets.ts/.example.ts + scripts/ensure-secrets.mjs + instrumentation.ts/.ts node self-heal — ALL DELETED. Also deleted the Task-68-leftover dead AdminDataView.tsx (zero importers).
+- .env hygiene: .gitignore now has ".env*" + "!.env.example" (template committed, real values never). gh-pages build (build-web-pages.js) now HIDES .env during the export (replaces the old d1-secrets.ts swap) and keeps the cfut_+value leak scan; APK build (build-apk.js) preflight now requires real NEXT_PUBLIC_CF_* values in .env (replaces the d1-secrets probe). package.json scripts no longer run ensure-secrets.
+- Web (Vercel) needs NO client keys: the browser relays empty creds → /api/cloud/d1 proxy injects the deployment's CLOUDFLARE_* env vars (existing server-managed path). Web auto-connect additionally needs NEXT_PUBLIC_SYNC_ID/PIN in the Vercel dashboard (documented for the owner) — until then the app stays 100% functional offline with a calm "cloud off" status, no errors.
+- Documented residual risk (d1-config.ts): client-baked values are extractable from an APK/bundle; payloads remain AES-256-GCM encrypted and tamper-forging is still rejected — the tradeoff the owner accepted by removing the typed sign-in.
+- E2E (production D1, throwaway account PS-T71-AUTO, real data untouched):
+  1. Fresh boot with .env creds → ZERO-UI auto-connect: join → not-found → auto-CREATE in sync_accounts ✓
+  2. Engine pushed the full local dataset encrypted (20 categories + 6 products + 5 bills + 9 transactions + billingSettings = 41 rows) ✓
+  3. Profile card shows "PS-T71-AUTO · Last sync" and tap = Sync Now → "Up to date ✓"; NO sign-in dialog anywhere ✓
+  4. Admin → ক্লাউড সিঙ্ক: connected status card, connect form GONE, v2.19.0 footer ✓
+  5. Cleanup: 41 sync_data rows + 1 sync_accounts row deleted from D1; .env restored to PS-MUAG-JEEB + placeholder PIN; fresh boot clean (no errors, calm off-state)
+- Version 2.18.0 → 2.19.0 (package.json + AdminShell footer); tsc clean (2 pre-existing unrelated errors), eslint clean
+
+Stage Summary:
+- The repository now contains ZERO API keys in source: everything lives in the git-ignored .env (list given to the owner + .env.example template committed)
+- Cloud sign-in UI is gone on BOTH surfaces (app Profile + admin panel); sync self-connects from env at boot and old devices migrate seamlessly
+- OWNER CHECKLIST: (a) add the 8 keys to Vercel → Settings → Environment Variables (5 server CLOUDFLARE_* + NEXT_PUBLIC_SYNC_ID/PIN are mandatory; NEXT_PUBLIC_CF_* optional on web) then redeploy; (b) fill NEXT_PUBLIC_SYNC_PIN in the local .env with the shop's existing PIN before the next APK build; (c) rebuild the APK on demand

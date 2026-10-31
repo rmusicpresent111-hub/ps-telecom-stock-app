@@ -30,8 +30,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files — real keys live ONLY here (see .env.example template)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -91,6 +92,6 @@ out/
 firebase-debug.log
 firebase-debug.*.log
 
-# Cloudflare D1 secrets (never commit real tokens — GitHub Push Protection blocks them)
-src/lib/d1-secrets.ts
+# (Cloudflare D1 credentials now live in the git-ignored .env file —
+#  the old git-ignored src/lib/d1-secrets.ts file was removed in v2.19.0)
 .vercel

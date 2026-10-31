@@ -110,23 +110,34 @@ function capCmd(args) {
   return success;
 }
 
-// Step 0: Cloud sync secrets preflight (git-ignored file must exist)
-const SECRETS_FILE = path.join(ROOT, 'src', 'lib', 'd1-secrets.ts');
-if (!exists(SECRETS_FILE)) {
-  console.error('\n❌ Missing src/lib/d1-secrets.ts (cloud sync credentials).');
+// Step 0: Cloud secrets preflight — the APK calls api.cloudflare.com DIRECTLY
+// (no server inside the bundle), so the client-build credentials MUST be
+// baked from the git-ignored .env file (v2.19.0: replaces src/lib/d1-secrets.ts).
+const ENV_FILE = path.join(ROOT, '.env');
+if (!exists(ENV_FILE)) {
+  console.error('\n❌ Missing .env (cloud sync credentials).');
   console.error('   Fix: copy the template and paste your real values:\n');
-  console.error('     cp src/lib/d1-secrets.example.ts src/lib/d1-secrets.ts');
-  console.error('     # then open src/lib/d1-secrets.ts and paste Account ID / Database ID / API Token\n');
+  console.error('     cp .env.example .env');
+  console.error('     # then open .env and fill the NEXT_PUBLIC_CF_* values\n');
   console.error('   (This file is git-ignored — the token never enters git.)');
   process.exit(1);
 }
-const secretsProbe = fs.readFileSync(SECRETS_FILE, 'utf8');
-if (secretsProbe.includes('PASTE_YOUR_')) {
-  console.error('\n❌ src/lib/d1-secrets.ts still contains placeholders (PASTE_YOUR_...).');
-  console.error('   Open it and paste your real Cloudflare Account ID / Database ID / API Token.');
+const envProbe = fs.readFileSync(ENV_FILE, 'utf8');
+const readEnvVar = (name) => {
+  const m = envProbe.match(new RegExp(`^\\s*${name}\\s*=\\s*\\S.*$`, 'm'));
+  if (!m) return '';
+  return m[0].split('=').slice(1).join('=').trim();
+};
+const isPlaceholderVal = (v) => !v || /PASTE[._-]?YOUR|CHANGE[._-]?ME/i.test(v);
+const requiredClientVars = ['NEXT_PUBLIC_CF_ACCOUNT_ID', 'NEXT_PUBLIC_CF_DATABASE_ID', 'NEXT_PUBLIC_CF_API_TOKEN'];
+const missing = requiredClientVars.filter((n) => isPlaceholderVal(readEnvVar(n)));
+if (missing.length > 0) {
+  console.error(`\n❌ .env is missing real values for: ${missing.join(', ')}`);
+  console.error('   Open .env and paste your real Cloudflare Account ID / Database ID / API Token.');
+  console.error('   (The APK talks to Cloudflare directly — without these the sync cannot work.)');
   process.exit(1);
 }
-console.log('✓ Cloud sync secrets found (src/lib/d1-secrets.ts)');
+console.log('✓ Cloud sync credentials found (.env, git-ignored)');
 
 // Step 1: Move API folder out of the way
 console.log('\n📦 PS TELECOM - APK Build Script');

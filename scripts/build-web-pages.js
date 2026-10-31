@@ -11,10 +11,11 @@
  *   3. Sets NEXT_PUBLIC_STATIC_HOST=1 → the D1 sync engines stay dormant on
  *      the mirror (browsers cannot reach api.cloudflare.com from a static
  *      host: no CORS headers + 405 preflight) and the UI shows a calm notice.
- *   4. TEMPORARILY replaces src/lib/d1-secrets.ts with the safe template so
- *      the REAL Cloudflare token is never bundled into a publicly hosted
- *      mirror — the mirror never calls the API anyway. The real file is
+ *   4. TEMPORARILY hides the git-ignored .env file so NEXT_PUBLIC_CF_* /
+ *      NEXT_PUBLIC_SYNC_* secrets are NEVER baked into this publicly hosted
+ *      mirror (the mirror never calls the API anyway). The real file is
  *      restored right after the build (fail-safe, even on build errors).
+ *      (v2.19.0: replaces the old src/lib/d1-secrets.ts swap.)
  *   5. Writes out/.nojekyll (GitHub Pages must serve the _next/ folder) and
  *      duplicates index.html as 404.html.
  *
@@ -29,8 +30,8 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const API_DIR = path.join(ROOT, 'src', 'app', 'api');
 const TEMP_API = path.join(ROOT, '.api-routes-pages-temp');
-const SECRETS = path.join(ROOT, 'src', 'lib', 'd1-secrets.ts');
-const EXAMPLE = path.join(ROOT, 'src', 'lib', 'd1-secrets.example.ts');
+const ENV_FILE = path.join(ROOT, '.env');
+const ENV_HIDDEN = path.join(ROOT, '.env.pages-build-hidden');
 const OUT = path.join(ROOT, 'out');
 
 const BASE = process.env.WEB_BASE_PATH || '/ps-telecom-stock-app';
@@ -38,24 +39,29 @@ const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf
 console.log(`\n🌐 PS TELECOM ${version} — GitHub Pages web mirror build (basePath ${BASE})\n`);
 
 const movedApi = fs.existsSync(API_DIR);
-const realSecrets = fs.existsSync(SECRETS) ? fs.readFileSync(SECRETS, 'utf8') : null;
+const realEnv = fs.existsSync(ENV_FILE) ? fs.readFileSync(ENV_FILE, 'utf8') : null;
 
 /**
- * Value-based real-credential detection — the decision must never depend on
- * comments or other prose in the file (a comment containing the placeholder
- * wording once made the whole swap+scan pipeline skip and the REAL token
- * reached the export). Only the actual `export const` VALUES count, and a
- * value counts as real only when it is not the placeholder itself.
+ * Collect the real secret VALUES from .env (for the leak scan below). The
+ * scan runs on EVERY export — a stale Turbopack cache can leak an OLDER
+ * credential even when the current .env is hidden or placeholder-only.
  */
-const readSecretValue = (name) => {
-  if (realSecrets === null) return null;
-  const m = realSecrets.match(new RegExp(`(?:^|\\n)\\s*export const ${name}\\s*=\\s*['"]([^'"]+)['"]`, 'm'));
-  return m ? m[1] : null;
+const readEnvValue = (content, name) => {
+  if (content === null) return '';
+  const m = content.match(new RegExp(`^\\s*${name}\\s*=(.*)$`, 'm'));
+  return m ? m[1].trim() : '';
 };
-const secretValues = ['D1_ACCOUNT_ID', 'D1_DATABASE_ID', 'D1_API_TOKEN'].map(readSecretValue);
-const isPlaceholder = (v) => !v || /PASTE.YOUR/i.test(v) || v.length < 8;
-const hasRealValues = secretValues.every((v) => !isPlaceholder(v));
-const realIsTemplate = realSecrets !== null && !hasRealValues;
+const secretNames = [
+  'NEXT_PUBLIC_CF_ACCOUNT_ID',
+  'NEXT_PUBLIC_CF_DATABASE_ID',
+  'NEXT_PUBLIC_CF_API_TOKEN',
+  'NEXT_PUBLIC_SYNC_PIN',
+  'CLOUDFLARE_D1_API_TOKEN',
+];
+const isPlaceholderVal = (v) => !v || /PASTE[._-]?YOUR|CHANGE[._-]?ME/i.test(v);
+const needles = secretNames
+  .map((n) => readEnvValue(realEnv, n))
+  .filter((v) => !isPlaceholderVal(v));
 
 const restore = () => {
   try {
@@ -64,9 +70,11 @@ const restore = () => {
     console.error('⚠️  could not restore src/app/api — move it back manually:', e.message);
   }
   try {
-    if (realSecrets !== null && !realIsTemplate) fs.writeFileSync(SECRETS, realSecrets);
+    if (realEnv !== null && fs.existsSync(ENV_HIDDEN)) {
+      fs.renameSync(ENV_HIDDEN, ENV_FILE);
+    }
   } catch (e) {
-    console.error('⚠️  could not restore d1-secrets.ts — paste your real values back!', e.message);
+    console.error('⚠️  could not restore .env — rename .env.pages-build-hidden back to .env!', e.message);
   }
 };
 process.on('exit', restore);
@@ -74,18 +82,18 @@ process.on('SIGINT', () => process.exit(130));
 
 async function main() {
   try {
-    // 4. ship the tokenless template instead of the real credentials
-    if (realSecrets !== null && !realIsTemplate) {
-      fs.copyFileSync(EXAMPLE, SECRETS);
-      console.log('• d1-secrets.ts → safe template for this public build (real file restored after)');
+    // 4. hide the real .env so no secret is baked into this public build
+    if (realEnv !== null) {
+      fs.renameSync(ENV_FILE, ENV_HIDDEN);
+      console.log('• .env hidden for this public build (restored right after)');
     }
     // Turbopack's persistent cache is shared between `next dev` and
-    // `next build` — a dev session that compiled REAL d1-secrets.ts can hand
-    // the export a stale compilation carrying the real token even though the
-    // file on disk is now the template (observed in practice). The public
-    // mirror build is one-shot, so purge ALL artifacts unconditionally.
+    // `next build` — a dev session that compiled REAL env values can hand
+    // the export a stale compilation carrying the secrets even though the
+    // file on disk is now hidden (observed in practice). The public mirror
+    // build is one-shot, so purge ALL artifacts unconditionally.
     fs.rmSync(path.join(ROOT, '.next'), { recursive: true, force: true });
-    console.log('• .next build artifacts purged (export recompiles from the template)');
+    console.log('• .next build artifacts purged (export recompiles without secrets)');
 
     // 1. move API routes aside
     if (movedApi) fs.renameSync(API_DIR, TEMP_API);
@@ -106,11 +114,10 @@ async function main() {
     // 5. GitHub Pages glue
     if (fs.existsSync(path.join(OUT, 'index.html'))) {
       // 5b. LEAK SCAN — hard-fail if any real credential reached the public
-      // export. Runs on EVERY export (not only when the local file currently
-      // holds real values — a stale cache can leak an OLDER credential).
-      //   needles: the actual secret VALUES from the local file (when real)
+      // export. Runs on EVERY export (not only when .env currently holds
+      // real values — a stale cache can leak an OLDER credential).
+      //   needles: the actual secret VALUES from .env (when real)
       //            + a generic Cloudflare API-token shape (cfut_…)
-      const needles = secretValues.filter((v) => !isPlaceholder(v));
       const genericToken = /cfut_[A-Za-z0-9]{16,}/;
       let leaked = false;
       const walk = (dir) => {

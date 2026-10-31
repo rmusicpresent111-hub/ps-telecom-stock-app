@@ -1,30 +1,26 @@
 'use client';
 
 /**
- * Admin Sync & Settings — connect the ADMIN PANEL to the SAME encrypted
- * Cloudflare D1 database as the mobile app (same Sync ID + PIN), show engine
- * status, CSV export and a full JSON backup.
+ * Admin Sync & Settings — mirrors the SAME encrypted Cloudflare D1 sync the
+ * mobile app uses. v2.19.0: the connect (Sync ID + PIN) form is GONE — the
+ * engine auto-connects from environment credentials at boot (d1-sync.ts);
+ * this tab shows live status, CSV export and a full JSON backup.
  */
 
 import { useEffect, useState } from 'react';
 import {
   CloudCheck,
-  CloudOff,
   RefreshCw,
-  Unplug,
-  KeyRound,
   FileSpreadsheet,
   ShieldCheck,
   Download,
 } from 'lucide-react';
 import {
-  connectSync,
-  disconnectSync,
   getD1SyncStatus,
   subscribeD1Status,
   syncNowD1,
 } from '@/lib/d1-sync';
-import { getSyncAccount, isStaticWebHost, SYNC_ID_RE } from '@/lib/d1-config';
+import { getSyncAccount, isStaticWebHost } from '@/lib/d1-config';
 import {
   getProductsOffline,
   getBillsOffline,
@@ -39,9 +35,7 @@ import {
   AdminCard,
   Badge,
   Btn,
-  Field,
   PageHeader,
-  TextInput,
   adminToast,
   fmtDateTime,
 } from './admin-ui';
@@ -72,12 +66,6 @@ export default function AdminSync() {
   const [account, setAccountState] = useState(getSyncAccount());
   const [shopName, setShopName] = useState('');
 
-  const [mode, setMode] = useState<'join' | 'create'>('join');
-  const [syncId, setSyncId] = useState('');
-  const [pin, setPin] = useState('');
-  const [connecting, setConnecting] = useState(false);
-  const [connectError, setConnectError] = useState('');
-
   const staticHost = typeof window !== 'undefined' ? isStaticWebHost() : false;
 
   useEffect(() => {
@@ -98,42 +86,6 @@ export default function AdminSync() {
       alive = false;
     };
   }, [tick, status.state]);
-
-  const doConnect = async () => {
-    setConnectError('');
-    setConnecting(true);
-    try {
-      const res = await connectSync(syncId.trim(), pin, mode);
-      if (res.ok) {
-        setAccountState(getSyncAccount());
-        setPin('');
-        adminToast(t('sync.connected'));
-      } else {
-        const keyMap: Record<string, string> = {
-          'bad-id': 'sync.errBadId',
-          'bad-pin': 'sync.errBadPin',
-          taken: 'sync.errTaken',
-          'not-found': 'sync.errNotFound',
-          'wrong-pin': 'sync.errWrongPin',
-          offline: 'sync.errOffline',
-          'static-host': 'sync.errStatic',
-          'no-server-cloud': 'sync.errNoServerCloud',
-          fail: 'sync.errFail',
-        };
-        const msg = keyMap[res.error || 'fail'] ? t(keyMap[res.error || 'fail']) : t('sync.errFail');
-        setConnectError(msg);
-        adminToast(msg, 'err');
-      }
-    } finally {
-      setConnecting(false);
-    }
-  };
-
-  const doDisconnect = () => {
-    disconnectSync();
-    setAccountState(null);
-    adminToast(t('sync.off'));
-  };
 
   const doSyncNow = async () => {
     const res = await syncNowD1(DEFAULT_USER_ID);
@@ -213,16 +165,13 @@ export default function AdminSync() {
     }
   };
 
-  const idValid = SYNC_ID_RE.test(syncId.trim());
-  const pinValid = pin.length >= (mode === 'create' ? 6 : 4);
-
   return (
     <div>
       <PageHeader title={t('sync.title')} />
 
       {staticHost && (
         <div className="mb-4 flex items-start gap-3 bg-[var(--psa-soft-amber)] border border-[var(--psa-amber-line)] rounded-xl p-4">
-          <CloudOff size={18} className="text-[#D97706] shrink-0 mt-0.5" />
+          <ShieldCheck size={18} className="text-[#D97706] shrink-0 mt-0.5" />
           <p className="text-sm text-[var(--psa-amber-ink)]">{t('sync.errStatic')}</p>
         </div>
       )}
@@ -255,60 +204,25 @@ export default function AdminSync() {
                 <Btn variant="primary" onClick={doSyncNow} disabled={status.state === 'syncing'}>
                   <RefreshCw size={15} className={status.state === 'syncing' ? 'animate-spin' : ''} /> {t('sync.syncNow')}
                 </Btn>
-                <Btn variant="outline" onClick={doDisconnect}>
-                  <Unplug size={15} /> {t('sync.disconnect')}
-                </Btn>
               </div>
               <p className="text-[11px] text-[var(--psa-faint)] leading-relaxed">{t('sync.autoNote')}</p>
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="flex items-center gap-3 text-sm text-[var(--psa-sub)]">
-                <KeyRound size={18} className="text-[#FA6E41] shrink-0" />
-                {t('sync.sameDb')}
+              {/* v2.19.0: no connect form — the engine auto-connects from env */}
+              <div className="flex items-center justify-between gap-3 bg-[var(--psa-soft-red)] border border-[var(--psa-red-line,var(--psa-field-border))] rounded-xl p-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-[#DC2626]">{t('sync.off')}</p>
+                  <p className="text-[11px] text-[var(--psa-sub)] mt-0.5">{t('sync.sameDb')}</p>
+                </div>
+                {stateBadge()}
               </div>
-              <div className="flex gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setMode('join')}
-                  className={`grow py-2 rounded-lg text-xs font-semibold border transition-colors ${mode === 'join' ? 'bg-[var(--psa-soft-orange)] border-[#FA6E41] text-[#E8552C]' : 'border-[var(--psa-field-border)] text-[var(--psa-muted)]'}`}
-                >
-                  {t('sync.useExisting')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMode('create')}
-                  className={`grow py-2 rounded-lg text-xs font-semibold border transition-colors ${mode === 'create' ? 'bg-[var(--psa-soft-orange)] border-[#FA6E41] text-[#E8552C]' : 'border-[var(--psa-field-border)] text-[var(--psa-muted)]'}`}
-                >
-                  {t('sync.createNew')}
-                </button>
-              </div>
-              <Field label={t('sync.id')}>
-                <TextInput
-                  value={syncId}
-                  onChange={(e) => setSyncId(e.target.value.toUpperCase())}
-                  placeholder="PS-XXXX-XXXX"
-                  className="font-mono tracking-wide"
-                />
-              </Field>
-              <Field label={t('sync.pin')}>
-                <TextInput
-                  type="password"
-                  inputMode="numeric"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value)}
-                  placeholder="••••••"
-                />
-              </Field>
-              {connectError && <p className="text-xs text-[#DC2626] bg-[var(--psa-soft-red)] rounded-lg p-2.5">{connectError}</p>}
               {status.state === 'error' && status.lastError && (
                 <p className="text-[11px] text-[var(--psa-amber-ink)] bg-[var(--psa-soft-amber)] rounded-lg p-2.5 break-words">
                   {status.lastError}
                 </p>
               )}
-              <Btn onClick={doConnect} disabled={connecting || !idValid || !pinValid || staticHost}>
-                {connecting ? t('sync.connecting') : t('sync.join')}
-              </Btn>
+              <p className="text-[11px] text-[var(--psa-faint)] leading-relaxed">{t('sync.autoNote')}</p>
             </div>
           )}
         </AdminCard>

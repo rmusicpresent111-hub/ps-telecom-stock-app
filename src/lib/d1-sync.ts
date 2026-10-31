@@ -63,6 +63,10 @@ import {
   D1_API_TOKEN,
   D1_ACCOUNT_ID,
   D1_DATABASE_ID,
+  CLOUD_CREDS_CONFIGURED,
+  DEFAULT_SYNC_ID,
+  DEFAULT_SYNC_PIN,
+  DEFAULT_SYNC_CONFIGURED,
   getSyncAccount,
   setSyncAccount,
   clearSyncAccount,
@@ -170,16 +174,15 @@ interface D1ResponseShape {
 }
 
 /**
- * True when the compiled-in secrets are the ensure-secrets.mjs TEMPLATE
- * placeholders (PASTE_YOUR_*) — i.e. a build made without the git-ignored
- * d1-secrets.ts (every Vercel build). Relaying placeholders to the proxy used
- * to make Cloudflare answer "Could not route to /accounts/PASTE_YOUR_ACCOUNT_ID/…"
- * ("সংযোগ ব্যর্থ হয়েছে") because non-empty body fields beat the env fallback.
- * Template build → send EMPTY creds instead, so the proxy falls back to the
- * deployment's own CLOUDFLARE_* environment variables (server-managed mode).
- * Real-value builds (sandbox preview, self-hosted) relay the constants as before.
+ * True when the compiled-in environment carries real Cloudflare credentials
+ * (NEXT_PUBLIC_CF_* from .env). Web builds WITHOUT them still sync — the
+ * same-origin /api/cloud/d1 proxy falls back to the server's own
+ * CLOUDFLARE_* environment variables, so empty credentials are relayed and
+ * the proxy fills them in server-side. APK builds hard-fail at build time
+ * without them (scripts/build-apk.js preflight) because the native transport
+ * calls api.cloudflare.com directly and needs the baked token.
  */
-const templateSecrets = /PASTE_YOUR/i.test(`${D1_ACCOUNT_ID} ${D1_DATABASE_ID} ${D1_API_TOKEN}`);
+const cloudCredsConfigured = CLOUD_CREDS_CONFIGURED;
 
 /** Cached native-runtime probe (CapacitorHttp patches fetch → CORS-free). */
 let nativeRt: boolean | null = null;
@@ -208,6 +211,12 @@ async function isNativeRuntime(): Promise<boolean> {
  */
 async function d1Query<T = Row>(sql: string, params: unknown[] = []): Promise<T[]> {
   const native = await isNativeRuntime();
+  // APK builds MUST bake real credentials (build-apk.js preflight). A native
+  // runtime without them has no transport at all — fail fast with a stable,
+  // actionable message instead of a garbage URL request.
+  if (native && !cloudCredsConfigured) {
+    throw new Error('D1: cloud sync is not configured on this build (.env missing)');
+  }
   // Timeout via Promise.race (NOT AbortController): CapacitorHttp's native
   // fetch on Android ignores abort signals — race works identically everywhere.
   const exec = (async () => {
@@ -223,13 +232,13 @@ async function d1Query<T = Row>(sql: string, params: unknown[] = []): Promise<T[
       : await fetch('/api/cloud/d1', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          // Template build (Vercel): empty creds → proxy env fallback.
-          // Real build: relay the compiled-in keys (self-hosted hosting
-          // without CLOUDFLARE_* env vars keeps working).
+          // Real client creds (self-hosted/APK-adjacent builds): relay them.
+          // Env-only builds (Vercel): send EMPTY creds → the proxy falls back
+          // to the deployment's own CLOUDFLARE_* environment variables.
           body: JSON.stringify({
-            accountId: templateSecrets ? '' : D1_ACCOUNT_ID,
-            databaseId: templateSecrets ? '' : D1_DATABASE_ID,
-            apiToken: templateSecrets ? '' : D1_API_TOKEN,
+            accountId: cloudCredsConfigured ? D1_ACCOUNT_ID : '',
+            databaseId: cloudCredsConfigured ? D1_DATABASE_ID : '',
+            apiToken: cloudCredsConfigured ? D1_API_TOKEN : '',
             sql,
             params,
           }),
@@ -533,6 +542,45 @@ export function disconnectSync(): void {
   currentSyncId = '';
   stopEngineTimers();
   setStatus({ state: 'off', lastSyncAt: 0, lastError: null });
+}
+
+// ============ AUTO-CONNECT (v2.19.0 — cloud sign-in UI removed) ============
+
+/**
+ * Signs the device into the default sync account from the environment
+ * (NEXT_PUBLIC_SYNC_ID + NEXT_PUBLIC_SYNC_PIN) with NO user interaction —
+ * the sign-in/create/join UI has been removed entirely.
+ *
+ * Resolution order at boot (startD1Sync):
+ *   1. Locally saved account (localStorage) — every previously connected
+ *      device keeps working byte-for-byte as before.
+ *   2. This auto-connect: join first; if the account does not exist yet the
+ *      FIRST device creates it; a concurrent create race is resolved by one
+ *      delayed join retry. Failures (wrong-pin / offline / not configured)
+ *      leave the engine OFF with the status surface showing why — the app
+ *      itself keeps working 100% offline.
+ */
+async function autoConnectFromEnv(): Promise<void> {
+  if (!DEFAULT_SYNC_CONFIGURED || isStaticWebHost()) return;
+  const syncId = DEFAULT_SYNC_ID;
+  const pin = DEFAULT_SYNC_PIN;
+  if (!SYNC_ID_RE.test(syncId)) {
+    setStatus({ state: 'error', lastError: 'Default Sync ID in .env is malformed (expected PS-XXXX-XXXX style)' });
+    return;
+  }
+  let res = await connectSync(syncId, pin, 'join');
+  if (!res.ok && res.error === 'not-found') {
+    // First device ever / fresh cloud → register the default account.
+    res = await connectSync(syncId, pin, 'create');
+    if (!res.ok && res.error === 'taken') {
+      // Another device created it in parallel — join after a short grace.
+      await new Promise((r) => setTimeout(r, 1500));
+      res = await connectSync(syncId, pin, 'join');
+    }
+  }
+  // wrong-pin / bad-pin / offline / no-server-cloud / fail → connectSync
+  // already set the status surface (error/offline); stay OFF, never crash.
+  void res;
 }
 
 // ============ PUSH ============
@@ -1431,7 +1479,8 @@ export function startD1Sync(): void {
     }
   });
 
-  // boot: if an account is already connected, resume syncing
+  // boot: if an account is already connected, resume syncing; otherwise
+  // auto-connect from the environment (no sign-in UI since v2.19.0)
   const acct = getSyncAccount();
   if (acct) {
     currentSyncId = acct.syncId;
@@ -1441,6 +1490,7 @@ export function startD1Sync(): void {
     });
   } else {
     setStatus({ state: 'off', lastSyncAt: 0, lastError: null });
+    void autoConnectFromEnv();
   }
 
   // realtime-ish pull loop + instant pull on focus / connectivity
