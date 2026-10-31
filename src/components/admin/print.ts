@@ -253,164 +253,324 @@ function pageShell(title: string, body: string): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>${PRINT_CSS}</style></head><body>${body}</body></html>`;
 }
 
-// ── document 1: single-bill A4 invoice ─────────────────────────
+// ── document 1: single-bill A4 invoice — TALLY ERP 9 print style ──
+//
+// Task 74: the bill is restyled to look EXACTLY like an invoice printed
+// from Tally (the accounting software every Indian shopkeeper trusts):
+//   • plain black-on-white, thin 1px grid, no brand colours
+//   • centered company block + centered "TAX INVOICE" caption
+//   • left invoice-meta block (Invoice No. / Dated / Mode/Terms of Payment /
+//     Terms of Delivery) beside the bordered "Buyer (Bill to)" box
+//   • Sl No. | Description of Goods | GST Rate | Quantity | Rate | per | Amount
+//     table with serials printed under the description (Tally batch style)
+//   • in-table Total → Less: Discount → OUTPUT CGST/SGST @ x% On (…) →
+//     Round Off → GRAND TOTAL with the classic double underline
+//   • Tax Amount in Words + "… Receivable from party" line
+//   • Bank Details / Declaration box on the left, "For <SHOP>" +
+//     "Authorised Signatory" on the right, jurisdiction line underneath
+// Labels are fixed English (Tally never prints translated invoices).
 
-export function buildBillReceiptHtml(bill: Bill, lang: AdminLang, settings?: BillingSettings | null): string {
-  const t = (k: string) => ta(k, lang);
+const GST_STATE_CODES: Record<string, string> = {
+  '01': 'Jammu & Kashmir', '02': 'Himachal Pradesh', '03': 'Punjab', '04': 'Chandigarh',
+  '05': 'Uttarakhand', '06': 'Haryana', '07': 'Delhi', '08': 'Rajasthan',
+  '09': 'Uttar Pradesh', '10': 'Bihar', '11': 'Sikkim', '12': 'Arunachal Pradesh',
+  '13': 'Nagaland', '14': 'Manipur', '15': 'Mizoram', '16': 'Tripura',
+  '17': 'Meghalaya', '18': 'Assam', '19': 'West Bengal', '20': 'Jharkhand',
+  '21': 'Odisha', '22': 'Chhattisgarh', '23': 'Madhya Pradesh', '24': 'Gujarat',
+  '26': 'Dadra & Nagar Haveli and Daman & Diu', '27': 'Maharashtra', '29': 'Karnataka',
+  '30': 'Goa', '31': 'Lakshadweep', '32': 'Kerala', '33': 'Tamil Nadu',
+  '34': 'Puducherry', '35': 'Andaman & Nicobar Islands', '36': 'Telangana',
+  '37': 'Andhra Pradesh', '38': 'Ladakh',
+};
+
+/** Tally money: plain Indian-grouped 2-decimals, NO ₹ symbol (e.g. 12,600.00). */
+function tallyAmt(n: number | undefined | null): string {
+  return Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** Tally quantity: trim trailing zeros (1 → "1", 0.5 → "0.5"). */
+function tallyQty(n: number): string {
+  const v = Number(n) || 0;
+  return Number.isInteger(v) ? String(v) : String(Number(v.toFixed(3)));
+}
+
+/** Tally dated format: 31-Oct-2025 */
+function tallyDate(dateStr: string | undefined): string {
+  if (!dateStr) return '—';
+  const d = dateStr.length > 10 ? new Date(dateStr) : new Date(dateStr + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return dateStr;
+  return `${String(d.getDate()).padStart(2, '0')}-${MONTHS[d.getMonth()]}-${d.getFullYear()}`;
+}
+
+/** "West Bengal , Code : 19" parsed from the shop GSTIN prefix. */
+function stateFromGstin(gst: string): string | null {
+  const m = (gst || '').trim().match(/^(\d{2})/);
+  if (!m) return null;
+  const name = GST_STATE_CODES[m[1]];
+  return name ? `${name} , Code : ${m[1]}` : `State Code : ${m[1]}`;
+}
+
+const TALLY_CSS = `
+@page { size: A4; margin: 10mm; }
+* { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { margin:0; background:#fff; color:#000; font-family:Arial,'Helvetica Neue',Helvetica,'Liberation Sans',sans-serif; font-size:10.5px; line-height:1.35; }
+.doc { max-width:190mm; margin:0 auto; }
+
+/* company header — Tally prints it centered, no borders, no colours */
+.co { text-align:center; }
+.co-name { font-size:17px; font-weight:bold; letter-spacing:.4px; line-height:1.25; }
+.co-line { font-size:10px; margin-top:1px; }
+.doc-title { text-align:center; font-size:13px; font-weight:bold; letter-spacing:1.6px; margin:8px 0 6px; }
+
+/* shared bordered grid */
+table.grid { width:100%; border-collapse:collapse; }
+table.grid td, table.grid th { border:1px solid #000; }
+.hgrid td { vertical-align:top; padding:0; }
+.metacell { width:55%; }
+.buyercell { width:45%; }
+
+/* left invoice-meta block: horizontal rules only, like Tally */
+table.meta { width:100%; border-collapse:collapse; }
+table.meta td { border:0; border-bottom:1px solid #000; padding:4px 8px; font-size:10px; vertical-align:top; }
+table.meta tr:last-child td { border-bottom:0; }
+table.meta td.k { width:47%; }
+
+/* Buyer (Bill to) box */
+.btitle { text-align:center; font-weight:bold; font-size:10.5px; border-bottom:1px solid #000; padding:4px 6px; }
+.bbody { padding:4px 9px 6px; }
+.bline { font-size:10px; margin-top:2px; }
+
+/* items table */
+.items th { font-size:9.5px; font-weight:bold; text-align:center; padding:4px 5px; line-height:1.25; }
+.items td { padding:3.5px 6px; font-size:10.5px; vertical-align:top; }
+.items td.c, .items th.c { text-align:center; }
+.items td.r { text-align:right; }
+.items thead { display:table-header-group; }
+.items tr { page-break-inside:avoid; }
+.sn { font-size:9px; margin-top:1px; }
+.on { font-size:9px; white-space:nowrap; }
+
+/* totals rows (kept inside the items table, exactly like Tally) */
+.tt td { border-top:2px solid #000; }
+.gt td { font-weight:bold; }
+.gamt { border-bottom:4px double #000; }
+
+/* words + receivable lines */
+.wline { font-size:10.5px; margin-top:5px; }
+
+/* bottom bank/declaration + signature grid */
+.botgrid { margin-top:8px; }
+.botgrid td { vertical-align:top; }
+.botleft { width:66%; padding:6px 9px 7px; font-size:10px; }
+.botright { width:34%; padding:6px 9px 7px; }
+.bank b { font-weight:bold; }
+.bank div { margin-top:1px; }
+.qr { width:60px; height:60px; object-fit:contain; float:right; margin:0 0 3px 8px; border:1px solid #000; padding:2px; background:#fff; }
+.qrcap { font-size:8.5px; text-align:right; clear:none; }
+.decl { margin-top:7px; border-top:1px solid #000; padding-top:4px; font-size:9.5px; line-height:1.4; }
+.tline { font-size:9px; margin-top:1px; }
+.sigwrap { display:flex; flex-direction:column; justify-content:space-between; height:100%; min-height:118px; text-align:right; }
+.sigfor { font-weight:bold; font-size:10.5px; }
+.sigimg img { max-width:140px; max-height:46px; object-fit:contain; }
+.sigas { font-size:10.5px; padding-top:6px; }
+.jur { text-align:center; font-size:9.5px; margin-top:5px; }
+`;
+
+function tallyShell(title: string, body: string): string {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>${TALLY_CSS}</style></head><body>${body}</body></html>`;
+}
+
+export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: BillingSettings | null): string {
   const shop = resolveShop(bill, settings);
 
   const gstOn = (bill.gstAmount || 0) > 0;
-  const title = gstOn ? t('print.taxInvoice') : t('print.invoice');
+  const inclusiveGst = bill.gstMode === 'inclusive' && gstOn;
+  const hasSplit = gstOn && bill.cgstAmount != null;
+  const title = gstOn ? 'TAX INVOICE' : 'INVOICE';
 
+  const disc = bill.discountAmount || 0;
+  const gstAmt = bill.gstAmount || 0;
   const due = bill.dueAmount || 0;
-  const [statusCls, statusLabel] =
-    due <= 0.009
-      ? ['st-paid', t('print.stPaid')]
-      : (bill.paidAmount || 0) > 0.009
-        ? ['st-partial', t('print.stPartial')]
-        : ['st-due', t('print.stDue')];
 
   const methodLabel =
     bill.paymentMethod === 'cash'
-      ? t('c.cash')
+      ? 'Cash'
       : bill.paymentMethod === 'upi'
         ? 'UPI'
         : bill.paymentMethod === 'card'
-          ? t('c.card')
-          : t('c.due');
+          ? 'Card'
+          : 'Credit (Due)';
 
-  const shopSub = [
-    shop.proprietor ? `<p class="proprietor">${esc(shop.proprietor)}</p>` : '',
-    shop.address ? `<p class="shopline">${escMultiline(shop.address)}</p>` : '',
-    contactBits(shop) ? `<p class="shopline">${esc(contactBits(shop))}</p>` : '',
-  ].join('');
+  // per-item GST rate text — Tally prints e.g. "18 %" / "5 %"
+  const rateTxt = (() => {
+    const r = Number(bill.gstRate) || 0;
+    return `${Number.isInteger(r) ? r : Number(r.toFixed(2))} %`;
+  })();
+  // CGST/SGST each carry HALF the headline rate — Tally prints 18% GST as
+  // "OUTPUT CGST @ 9.00%" + "OUTPUT SGST @ 9.00%"
+  const halfTxt = (() => {
+    const h = Number(halfRate(bill.gstRate)) || 0;
+    return `${Number.isInteger(h) ? h : Number(h.toFixed(2))} %`;
+  })();
+
+  const qtyTotal = (bill.items || []).reduce((s, it) => s + (Number(it.quantity) || 0), 0);
+  const itemSum = bill.subtotal || 0;
+
+  // taxable base the tax was computed on (for the Tally "On (…)" annotation)
+  const taxableBase = inclusiveGst ? bill.taxableValue ?? 0 : itemSum - disc;
+
+  // paise adjustment Tally books as "Round Off"
+  const expectedTotal = itemSum - disc + (gstOn && !inclusiveGst ? gstAmt : 0);
+  const roundOff = Math.round(((bill.total || 0) - expectedTotal) * 100) / 100;
+
+  // column layout: GST bills carry the extra "GST Rate" column
+  const N = gstOn ? 7 : 6;
 
   const itemRows = (bill.items || [])
     .map((it, i) => {
       const sns = (it.serialNumbers || []).filter(Boolean);
       return (
-        `<tr><td>${i + 1}</td><td>${esc(it.name)}${
+        `<tr><td class="c">${i + 1}</td><td>${esc(it.name)}${
           sns.length ? `<div class="sn">S/N: ${sns.map((s) => esc(s)).join(', ')}</div>` : ''
-        }</td><td class="r">${it.quantity}</td><td class="r">${money(
+        }</td>${gstOn ? `<td class="c">${rateTxt}</td>` : ''}<td class="c">${tallyQty(it.quantity)}</td><td class="r">${tallyAmt(
           it.unitPrice
-        )}</td><td class="r">${money(it.total)}</td></tr>`
+        )}</td><td class="c">Nos.</td><td class="r">${tallyAmt(it.total)}</td></tr>`
       );
     })
     .join('');
 
-  // Inclusive bills (v2.13+) carry their own breakdown: the tax came OUT of
-  // the entered amount, so the receipt shows taxable value + CGST + SGST that
-  // add up to the total. Legacy bills (no gstMode) keep the old "+ GST" row.
-  const inclusiveGst = bill.gstMode === 'inclusive' && gstOn;
-  const gstTotalsRows = inclusiveGst
-    ? [
-        `<div class="trow"><span>${esc(t('bills.taxable'))}</span><b>${money(bill.taxableValue ?? 0)}</b></div>`,
-        `<div class="trow"><span>CGST ${halfRate(bill.gstRate)}%</span><b>${money(bill.cgstAmount ?? 0)}</b></div>`,
-        `<div class="trow"><span>SGST ${halfRate(bill.gstRate)}%</span><b>${money(bill.sgstAmount ?? 0)}</b></div>`,
-      ].join('')
-    : gstOn
-      ? `<div class="trow"><span>${esc(t('bills.gst'))} (${bill.gstRate}%)</span><b>+ ${money(bill.gstAmount)}</b></div>`
+  const totalRow = gstOn
+    ? `<tr class="tt"><td colspan="2" class="r"><b>Total</b></td><td class="c"></td><td class="c"><b>${tallyQty(qtyTotal)} Nos.</b></td><td class="r"></td><td class="c"></td><td class="r"><b>${tallyAmt(itemSum)}</b></td></tr>`
+    : `<tr class="tt"><td colspan="2" class="r"><b>Total</b></td><td class="c"><b>${tallyQty(qtyTotal)} Nos.</b></td><td class="r"></td><td class="c"></td><td class="r"><b>${tallyAmt(itemSum)}</b></td></tr>`;
+
+  const discRow =
+    disc > 0.009
+      ? `<tr><td colspan="${N - 1}">Less: Discount</td><td class="r">${tallyAmt(disc)}</td></tr>`
       : '';
 
-  const totalsRows = [
-    `<div class="trow"><span>${esc(t('bills.subtotal'))}</span><b>${money(bill.subtotal)}</b></div>`,
-    (bill.discountAmount || 0) > 0
-      ? `<div class="trow"><span>${esc(t('bills.discount'))}</span><b>− ${money(bill.discountAmount)}</b></div>`
-      : '',
-    gstTotalsRows,
-    `<div class="trow grand"><span>${esc(t('bills.total'))}</span><span>${money(bill.total)}</span></div>`,
-    `<div class="trow"><span>${esc(t('bills.paid'))}</span><b>${money(bill.paidAmount)}</b></div>`,
-    due > 0.009 ? `<div class="trow"><span>${esc(t('bills.due'))}</span><b>${money(due)}</b></div>` : '',
+  // Inclusive bills (v2.13+) carry their own breakdown: the tax came OUT of
+  // the entered amount, so show the taxable value the CGST/SGST sit on.
+  const taxableRow =
+    inclusiveGst ? `<tr><td colspan="${N - 1}">Taxable Value</td><td class="r">${tallyAmt(bill.taxableValue ?? 0)}</td></tr>` : '';
+
+  const gstRows = !gstOn
+    ? ''
+    : hasSplit
+      ? `<tr><td colspan="${N - 1}">OUTPUT CGST @ ${halfTxt}&nbsp;&nbsp;<span class="on">On (${tallyAmt(taxableBase)})</span></td><td class="r">${tallyAmt(bill.cgstAmount)}</td></tr>` +
+        `<tr><td colspan="${N - 1}">OUTPUT SGST @ ${halfTxt}&nbsp;&nbsp;<span class="on">On (${tallyAmt(taxableBase)})</span></td><td class="r">${tallyAmt(bill.sgstAmount)}</td></tr>`
+      : `<tr><td colspan="${N - 1}">OUTPUT GST @ ${rateTxt}&nbsp;&nbsp;<span class="on">On (${tallyAmt(taxableBase)})</span></td><td class="r">${tallyAmt(gstAmt)}</td></tr>`;
+
+  const roundRow =
+    Math.abs(roundOff) >= 0.005
+      ? `<tr><td colspan="${N - 1}">Round Off</td><td class="r">${roundOff > 0 ? '' : '−'}${tallyAmt(Math.abs(roundOff))}</td></tr>`
+      : '';
+
+  const grandRow = `<tr class="gt"><td colspan="${N - 1}" class="r">GRAND TOTAL</td><td class="r gamt"><b>${tallyAmt(bill.total)}</b></td></tr>`;
+
+  const metaRows = [
+    `<tr><td class="k">Invoice No.</td><td>${esc(bill.billNumber || '—')}</td></tr>`,
+    `<tr><td class="k">Dated</td><td>${tallyDate(bill.date)}</td></tr>`,
+    `<tr><td class="k">Mode/Terms of Payment</td><td>${esc(methodLabel)}</td></tr>`,
+    bill.note ? `<tr><td class="k">Terms of Delivery</td><td>${esc(bill.note)}</td></tr>` : '',
   ].join('');
+
+  const buyerLines = [
+    `<div class="bline"><b>Name</b> : ${esc(bill.customerName || 'Cash Sale')}</div>`,
+    shop.gst ? `<div class="bline"><b>GSTIN/UIN</b> : Unregistered</div>` : '',
+    (() => {
+      if (!shop.gst) return '';
+      const st = stateFromGstin(shop.gst);
+      return st ? `<div class="bline"><b>State Name</b> : ${esc(st)}</div>` : '';
+    })(),
+    bill.customerMobile ? `<div class="bline"><b>Contact</b> : ${esc(bill.customerMobile)}</div>` : '',
+  ].join('');
+
+  const taxWords = gstOn
+    ? `<div class="wline"><b>Tax Amount in Words :</b> ${esc(amountInWords(gstAmt))}</div>`
+    : '';
+  const recvLine =
+    due > 0.009
+      ? `<div class="wline"><b>Amount of Rs. ${tallyAmt(due)} (${esc(amountInWords(due))}) Receivable from party :</b></div>`
+      : '';
+
+  const bankBits = [
+    shop.proprietor ? `<div>A/c Holder's Name : ${esc(shop.proprietor)}</div>` : '',
+    shop.upi ? `<div>UPI ID : ${esc(shop.upi)}</div>` : '',
+  ].filter(Boolean);
+  const bankBlock =
+    bankBits.length || shop.qr
+      ? `<div class="bank">${
+          shop.qr ? `<img class="qr" src="${shop.qr}" alt="payment QR"><div class="qrcap">Scan to Pay</div>` : ''
+        }<b>Bank Details :</b>${bankBits.join('')}</div>`
+      : '';
 
   const termsItems = shop.terms
     .split(/\r?\n+/)
     .map((x) => x.trim())
     .filter(Boolean);
-  const termsBlock = termsItems.length
-    ? `<div class="terms"><p class="t">${esc(t('print.termsTitle'))}</p><ul>${termsItems
-        .map((x) => `<li>${esc(x)}</li>`)
-        .join('')}</ul></div>`
-    : '';
-
-  const payBlock =
-    shop.qr || shop.upi
-      ? `<div class="pay">${
-          shop.qr ? `<img src="${shop.qr}" alt="payment QR">` : ''
-        }<div><p class="upi">${esc(t('print.scanPay'))}</p>${
-          shop.upi ? `<p class="upi">UPI: <b>${esc(shop.upi)}</b></p>` : ''
-        }</div></div>`
-      : '';
+  const termsLines = termsItems.map((x) => `<div class="tline">• ${esc(x)}</div>`).join('');
 
   const body = `
 <div class="doc">
-  <div class="head">
-    <div class="brandline">
-      ${monogramHtml(shop.name)}
-      <div class="min-w-0">
-        <p class="brand">${esc(shop.name)}</p>
-        ${shopSub}
-      </div>
-    </div>
-    <div style="text-align:right; flex:0 0 auto">
-      <h2 class="doc-title">${esc(title)}</h2>
-      <p class="meta"><b>${esc(t('bills.billNo'))}:</b> ${esc(bill.billNumber || '—')}</p>
-      <p class="meta"><b>${esc(t('exp.date'))}:</b> ${fmtDate(bill.date)}</p>
-      ${shop.gst ? `<span class="gstin-chip">GSTIN: ${esc(shop.gst)}</span>` : ''}
-    </div>
+  <div class="co">
+    <div class="co-name">${esc(shop.name)}</div>
+    ${shop.address ? `<div class="co-line">${escMultiline(shop.address)}</div>` : ''}
+    ${shop.phone ? `<div class="co-line">Phone: ${esc(shop.phone)}</div>` : ''}
+    ${shop.gst ? `<div class="co-line">GSTIN/UIN: ${esc(shop.gst)}</div>` : ''}
   </div>
 
-  <div class="party">
-    <div class="pbox">
-      <span class="k" style="color:#6B7280;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em">${esc(
-        t('print.billTo')
-      )}</span>
-      <p class="name">${esc(bill.customerName || t('due.walkIn'))}</p>
-      ${bill.customerMobile ? `<p class="line">${esc(bill.customerMobile)}</p>` : ''}
-    </div>
-    <div class="pbox" style="max-width:210px">
-      <span class="k" style="color:#6B7280;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em">${esc(
-        t('bills.method')
-      )}</span>
-      <p class="name">${esc(methodLabel)}</p>
-      <p class="line" style="margin-top:4px"><span class="chip-status ${statusCls}">${esc(statusLabel)}</span></p>
-    </div>
-  </div>
+  <div class="doc-title">${esc(title)}</div>
 
-  <table>
-    <thead><tr><th style="width:34px">#</th><th>${esc(t('bills.items'))}</th><th class="r">${esc(
-    t('prod.qty')
-  )}</th><th class="r">${esc(t('prod.rate'))}</th><th class="r">${esc(t('bills.total'))}</th></tr></thead>
-    <tbody>${itemRows}</tbody>
+  <table class="grid hgrid"><tr>
+    <td class="metacell"><table class="meta">${metaRows}</table></td>
+    <td class="buyercell">
+      <div class="btitle">Buyer (Bill to)</div>
+      <div class="bbody">${buyerLines}</div>
+    </td>
+  </tr></table>
+
+  <table class="grid items">
+    <thead><tr>
+      <th class="c" style="width:5%">Sl<br>No.</th>
+      <th style="width:${gstOn ? '45' : '50'}%">Description of Goods</th>
+      ${gstOn ? '<th class="c" style="width:9%">GST<br>Rate</th>' : ''}
+      <th class="c" style="width:10%">Quantity</th>
+      <th class="c" style="width:11%">Rate</th>
+      <th class="c" style="width:7%">per</th>
+      <th class="c" style="width:13%">Amount</th>
+    </tr></thead>
+    <tbody>
+      ${itemRows}
+      ${totalRow}
+      ${discRow}
+      ${taxableRow}
+      ${gstRows}
+      ${roundRow}
+      ${grandRow}
+    </tbody>
   </table>
 
-  <div class="totals">${totalsRows}</div>
+  ${taxWords}
+  ${recvLine}
 
-  <div class="words"><b>${esc(t('print.words'))}:</b> ${esc(amountInWords(bill.total))}</div>
+  <table class="grid botgrid"><tr>
+    <td class="botleft">
+      ${bankBlock}
+      <div class="decl"><b>Declaration :</b><br>We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.${termsLines}</div>
+    </td>
+    <td class="botright">
+      <div class="sigwrap">
+        <div class="sigfor">${shop.name ? `For ${esc(shop.name)}` : ''}</div>
+        <div class="sigimg">${shop.signature ? `<img src="${shop.signature}" alt="signature">` : ''}</div>
+        <div class="sigas">Authorised Signatory</div>
+      </div>
+    </td>
+  </tr></table>
 
-  ${payBlock}
-  ${bill.note ? `<div class="note-box"><b>${esc(t('bills.note'))}:</b> ${esc(bill.note)}</div>` : ''}
-
-  <div class="sig-row">
-    <p class="thanks">${esc(shop.thankyou || t('print.thankyou'))}</p>
-    <div class="sig-block">
-      ${shop.name ? `<p class="sig-for"${shop.signature ? ' style="margin-bottom:2px"' : ''}>${esc(
-        taf('print.sigFor', lang, { shop: shop.name })
-      )}</p>` : ''}
-      ${shop.signature ? `<img src="${shop.signature}" alt="signature">` : ''}
-      <div class="sig-line">${esc(t('print.authorised'))}</div>
-    </div>
-  </div>
-
-  ${termsBlock}
-
-  <div class="foot">
-    <span>${esc(t('print.generated'))}: ${new Date().toLocaleString('en-IN')}</span>
-    <span>${esc(shop.name)}${shop.phone ? ` · ${esc(shop.phone)}` : ''}</span>
-  </div>
+  <div class="jur">Subject to ${/kolkata/i.test(shop.address) ? 'Kolkata' : 'West Bengal'} Jurisdiction</div>
 </div>`;
 
-  return pageShell(`${shop.name} — ${bill.billNumber}`, body);
+  return tallyShell(`${shop.name} — ${bill.billNumber}`, body);
 }
 
 // ── document 2: sold-products report (all bills in a period) ───

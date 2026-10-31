@@ -20,12 +20,14 @@ const securityHeaders = [
 // (build-apk.js) but MUST NOT be used when a real server hosts the app —
 // static export cannot include the POST /api/cloud/d1 proxy route, so
 // `next build` would fail and Cloud Backup would break.
-// Vercel sets VERCEL=1 automatically in its build environment, so:
-//   - Vercel (and any normal `next build`/`next start` hosting) → full server
+// Vercel sets VERCEL=1 automatically in its build environment, and
+// `next dev` always runs as a full server (so the site password gate /
+// proxy.ts is active in the sandbox preview too):
+//   - Vercel, `next dev`, any `next start` hosting → full server
 //   - Everywhere else (APK script, `next build` locally) → static export
 // as before. No manual configuration needed on either side.
 const nextConfig: NextConfig = {
-  output: process.env.VERCEL ? undefined : "export",
+  output: process.env.VERCEL || process.env.NODE_ENV === "development" ? undefined : "export",
   reactStrictMode: false,
   // GitHub Pages project pages serve the site under /<repo>/ — set only for
   // the web mirror build; APK (file serving) and servers keep the root path.

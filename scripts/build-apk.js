@@ -27,6 +27,12 @@ const { execSync } = require('child_process');
 const ROOT = path.resolve(__dirname, '..');
 const API_DIR = path.join(ROOT, 'src', 'app', 'api');
 const TEMP_DIR = path.join(ROOT, '.api-routes-temp');
+// the site password gate (Next 16 proxy / legacy middleware) can't ship in
+// a static export either — move whichever exists aside during the build
+const MW_PAIRS = [
+  ['src/proxy.ts', '.proxy-apk-temp'],
+  ['src/middleware.ts', '.middleware-apk-temp'],
+].map(([f, t]) => [path.join(ROOT, f), path.join(ROOT, t)]);
 const OUT_DIR = path.join(ROOT, 'out');
 const ANDROID_DIR = path.join(ROOT, 'android');
 
@@ -139,6 +145,21 @@ if (missing.length > 0) {
 }
 console.log('✓ Cloud sync credentials found (.env, git-ignored)');
 
+const movedMw = [];
+function moveMwAside() {
+  for (const [src, tmp] of MW_PAIRS) {
+    if (exists(src)) {
+      moveDir(src, tmp);
+      movedMw.push([tmp, src]);
+    }
+  }
+}
+function restoreMw() {
+  for (const [tmp, src] of movedMw) {
+    if (exists(tmp)) moveDir(tmp, src);
+  }
+}
+
 // Step 1: Move API folder out of the way
 console.log('\n📦 PS TELECOM - APK Build Script');
 console.log('================================\n');
@@ -149,6 +170,8 @@ if (exists(API_DIR)) {
 } else {
   console.log('Step 1: API folder already moved, skipping...');
 }
+console.log('Step 1b: Moving site-gate proxy/middleware temporarily...');
+moveMwAside();
 
 // Step 2: Build static export
 try {
@@ -159,6 +182,7 @@ try {
   if (exists(TEMP_DIR)) {
     moveDir(TEMP_DIR, API_DIR);
   }
+  restoreMw();
   process.exit(1);
 }
 
@@ -169,6 +193,7 @@ if (exists(TEMP_DIR)) {
 } else {
   console.log('  No temp folder to restore.');
 }
+restoreMw();
 
 // Step 4: Verify output
 if (!exists(OUT_DIR)) {

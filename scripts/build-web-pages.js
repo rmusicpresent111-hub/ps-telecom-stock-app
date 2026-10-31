@@ -30,6 +30,12 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const API_DIR = path.join(ROOT, 'src', 'app', 'api');
 const TEMP_API = path.join(ROOT, '.api-routes-pages-temp');
+// the site password gate (Next 16 proxy / legacy middleware) can't run in a
+// static export either — move whichever exists aside during the build
+const MW_PAIRS = [
+  ['src/proxy.ts', '.proxy-pages-temp'],
+  ['src/middleware.ts', '.middleware-pages-temp'],
+].map(([f, t]) => [path.join(ROOT, f), path.join(ROOT, t)]);
 const ENV_FILE = path.join(ROOT, '.env');
 const ENV_HIDDEN = path.join(ROOT, '.env.pages-build-hidden');
 const OUT = path.join(ROOT, 'out');
@@ -39,6 +45,7 @@ const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf
 console.log(`\n🌐 PS TELECOM ${version} — GitHub Pages web mirror build (basePath ${BASE})\n`);
 
 const movedApi = fs.existsSync(API_DIR);
+const movedMw = MW_PAIRS.some(([f]) => fs.existsSync(f));
 const realEnv = fs.existsSync(ENV_FILE) ? fs.readFileSync(ENV_FILE, 'utf8') : null;
 
 /**
@@ -66,8 +73,14 @@ const needles = secretNames
 const restore = () => {
   try {
     if (movedApi && fs.existsSync(TEMP_API)) fs.renameSync(TEMP_API, API_DIR);
+    for (const [orig, tmp] of MW_PAIRS) {
+      if (fs.existsSync(tmp)) {
+        if (!fs.existsSync(orig)) fs.renameSync(tmp, orig);
+        else fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    }
   } catch (e) {
-    console.error('⚠️  could not restore src/app/api — move it back manually:', e.message);
+    console.error('⚠️  could not restore src/app/api or the site-gate proxy — move them back manually:', e.message);
   }
   try {
     if (realEnv !== null && fs.existsSync(ENV_HIDDEN)) {
@@ -97,6 +110,10 @@ async function main() {
 
     // 1. move API routes aside
     if (movedApi) fs.renameSync(API_DIR, TEMP_API);
+    // 1b. site-gate proxy aside too (static export cannot run it)
+    for (const [src, tmp] of MW_PAIRS) {
+      if (fs.existsSync(src)) fs.renameSync(src, tmp);
+    }
 
     // build
     console.log('• next build (static export)…');
