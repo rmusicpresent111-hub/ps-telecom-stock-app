@@ -577,7 +577,15 @@ function ensurePersistentSigning() {
     }
     // Replace the whole (template) buildTypes block with signingConfigs + ours
     const btStart = gradle.indexOf(bt[0]);
-    const btEnd = gradle.indexOf('}', gradle.indexOf('proguardFiles', btStart));
+    // Brace-count aware end-of-block search (the naive "first } after
+    // proguardFiles" approach breaks on Capacitor 8 templates where the
+    // release block closes before buildTypes does, leaving a stray brace).
+    let depth = 0, btEnd = -1;
+    for (let i = btStart; i < gradle.length; i++) {
+      const ch = gradle[i];
+      if (ch === '{') depth++;
+      else if (ch === '}') { depth--; if (depth === 0) { btEnd = i; break; } }
+    }
     if (btEnd === -1) {
       console.log('  ⚠️  Could not find end of buildTypes block — skipping signing config.');
       return;
