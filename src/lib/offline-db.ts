@@ -7,7 +7,9 @@
 import { openDB, type IDBPDatabase } from 'idb';
 
 const DB_NAME = 'ps-telecom-offline';
-const DB_VERSION = 8;
+// v9 (v2.20.0): + 'investments' — Others Invest (cash added into the business
+// for any other purpose; feeds the admin Cash Book).
+const DB_VERSION = 9;
 
 // ============ LOCAL USERS (authentication) ============
 
@@ -232,6 +234,22 @@ export interface OfflineDBSchema {
     };
     indexes: { 'by-userId': string; 'by-dirty': number };
   };
+  investments: {
+    key: string;
+    value: {
+      id: string;
+      userId: string;
+      date: string;      // YYYY-MM-DD (local)
+      amount: number;
+      purpose: string;   // what the cash is invested for
+      note: string;
+      createdAt: string;
+      updatedAt: string;
+      _synced: number;
+      _dirty: number;
+    };
+    indexes: { 'by-userId': string; 'by-dirty': number };
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<OfflineDBSchema>> | null = null;
@@ -307,6 +325,12 @@ function getDB(): Promise<IDBPDatabase<OfflineDBSchema>> {
           const staffStore = db.createObjectStore('staffPayments', { keyPath: 'id' });
           staffStore.createIndex('by-userId', 'userId');
           staffStore.createIndex('by-dirty', '_dirty');
+        }
+        // v9: Others Invest — additive, safe on every existing device.
+        if (!db.objectStoreNames.contains('investments')) {
+          const invStore = db.createObjectStore('investments', { keyPath: 'id' });
+          invStore.createIndex('by-userId', 'userId');
+          invStore.createIndex('by-dirty', '_dirty');
         }
       },
     }).catch((err) => {
@@ -446,6 +470,15 @@ export const offlineStaffPayments = {
   delete: (id: string) => deleteItem('staffPayments', id),
 };
 
+// ============ INVESTMENTS (Others Invest — cash into the business) ============
+
+export const offlineInvestments = {
+  getAll: (userId: string) => getAllByUser('investments', userId),
+  put: (row: OfflineDBSchema['investments']['value']) => putItem('investments', row),
+  putBulk: (rows: OfflineDBSchema['investments']['value'][]) => putBulk('investments', rows),
+  delete: (id: string) => deleteItem('investments', id),
+};
+
 // ============ CLEAR ALL ============
 
 // NOTE: the legacy `syncMeta` / `pendingDeletes` object stores are kept in the
@@ -455,7 +488,7 @@ export const offlineStaffPayments = {
 export async function clearOfflineData(userId: string): Promise<void> {
   const db = await getDB();
   const userStores = (
-    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'syncMeta', 'pendingDeletes', 'serviceTransactions', 'bills', 'staffPayments'] as const
+    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'syncMeta', 'pendingDeletes', 'serviceTransactions', 'bills', 'staffPayments', 'investments'] as const
   ).filter(s => db.objectStoreNames.contains(s));
   const txStores: (keyof OfflineDBSchema)[] = [...userStores];
   if (db.objectStoreNames.contains('billingSettings')) txStores.push('billingSettings');

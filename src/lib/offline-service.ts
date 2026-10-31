@@ -20,6 +20,7 @@ import {
   offlineServiceTransactions,
   offlineBills,
   offlineStaffPayments,
+  offlineInvestments,
   clearOfflineData,
   getOfflineDB,
   type OfflineDBSchema,
@@ -28,7 +29,7 @@ import { getLocalUser, updateLocalUser } from './local-auth';
 import { generateRecordId } from './id';
 import { notifyLocalDataChanged, notifyLocalWipe } from './sync-events';
 import { computeGst, normalizeGstMode, round2 } from './gst';
-import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillingSettings, PaymentMethod, StaffPayment, StaffPaymentKind } from './types';
+import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillingSettings, PaymentMethod, StaffPayment, StaffPaymentKind, Investment } from './types';
 
 // ============ DATE HELPERS (local timezone — never use UTC for business days) ============
 
@@ -87,7 +88,7 @@ function stripSync<T>(row: Record<string, unknown>): T {
  * the cloud on device B.
  */
 async function recordPendingDelete(
-  storeName: 'products' | 'expenses' | 'cashEntries' | 'serviceTransactions' | 'bills' | 'staffPayments',
+  storeName: 'products' | 'expenses' | 'cashEntries' | 'serviceTransactions' | 'bills' | 'staffPayments' | 'investments',
   itemId: string,
   userId: string
 ): Promise<void> {
@@ -811,21 +812,25 @@ export async function getDashboardOffline(userId: string) {
   const sevenDaysAgoStr = localDateStr(sevenDaysAgo);
 
   const saleTxns = transactions.filter(t => isSaleType(t.type) && t.date >= sevenDaysAgoStr);
-  const saleMap = new Map<string, { sales: number; quantity: number }>();
+  const saleMap = new Map<string, { sales: number; quantity: number; profit: number }>();
   for (const t of saleTxns) {
-    const existing = saleMap.get(t.date) || { sales: 0, quantity: 0 };
+    const existing = saleMap.get(t.date) || { sales: 0, quantity: 0, profit: 0 };
     existing.sales += t.totalAmount;
     existing.quantity += t.quantity;
+    // Daily profit line for the dashboard chart — same FIFO snapshot math as
+    // todayProfit below, so bar + line can never disagree.
+    existing.profit += (t.totalAmount || 0)
+      - (t.quantity || 0) * (t.product?.purchasePrice ?? products.find(p => p.id === t.productId)?.purchasePrice ?? 0);
     saleMap.set(t.date, existing);
   }
 
-  const saleOverview: { date: string; label: string; sales: number; quantity: number }[] = [];
+  const saleOverview: { date: string; label: string; sales: number; quantity: number; profit: number }[] = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
     const dateStr = localDateStr(d);
     const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' });
-    const dayData = saleMap.get(dateStr) || { sales: 0, quantity: 0 };
+    const dayData = saleMap.get(dateStr) || { sales: 0, quantity: 0, profit: 0 };
     saleOverview.push({ date: dateStr, label: dayLabel, ...dayData });
   }
 
@@ -879,6 +884,213 @@ export async function getDashboardOffline(userId: string) {
 
 // Alias for backward compatibility with existing imports
 export { getDashboardOffline as getDashboard };
+
+// ============ INVESTMENTS (Others Invest — Local) ============
+
+export async function getInvestmentsOffline(userId: string): Promise<Investment[]> {
+  const rows = await offlineInvestments.getAll(userId);
+  return rows
+    .map(r => stripSync<Investment>(r))
+    .sort((a, b) => {
+      if (a.date !== b.date) return b.date.localeCompare(a.date);
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+}
+
+export async function createInvestmentOffline(data: {
+  userId: string;
+  date?: string;
+  amount: number;
+  purpose?: string;
+  note?: string;
+}): Promise<{ investment: Investment }> {
+  const amount = round2(Number(data.amount));
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Investment amount must be greater than 0');
+
+  const now = new Date().toISOString();
+  const row: OfflineDBSchema['investments']['value'] = {
+    id: generateRecordId(),
+    userId: data.userId,
+    date: data.date || localDateStr(),
+    amount,
+    purpose: (data.purpose || '').trim(),
+    note: (data.note || '').trim(),
+    createdAt: now,
+    updatedAt: now,
+    _synced: Date.now(),
+    _dirty: 0,
+  };
+
+  await offlineInvestments.put(row);
+  notifyLocalDataChanged(data.userId);
+  return { investment: stripSync<Investment>(row) };
+}
+
+export async function deleteInvestmentOffline(id: string, userId: string): Promise<{ success: boolean }> {
+  const db = await getOfflineDB();
+  const row = await db.get('investments', id);
+  if (!row || row.userId !== userId) throw new Error('Investment not found');
+  await db.delete('investments', id);
+  await recordPendingDelete('investments', id, userId);
+  notifyLocalDataChanged(userId);
+  return { success: true };
+}
+
+// ============ CASH BOOK (Local — admin Cash section) ============
+
+export interface CashLedgerEntry {
+  id: string;
+  kind: 'sale' | 'invest' | 'expense';
+  date: string;      // YYYY-MM-DD
+  at: number;        // createdAt epoch ms (tie-breaker within a day)
+  title: string;     // bill no · customer / product name / purpose / category
+  sub: string;       // optional extra info (raw, UI localizes the prefix)
+  cashIn: number;
+  cashOut: number;
+  profit: number;    // sales only (FIFO snapshot)
+  due: number;       // bills only — unpaid portion (NOT in cash yet)
+}
+
+export interface CashBook {
+  balance: number;    // cash in hand = salesIn + investIn − expenseOut
+  salesIn: number;    // collected sale money (sell amount, profit included)
+  investIn: number;   // Others Invest total
+  expenseOut: number; // Expenses total
+  todayIn: number;
+  todayOut: number;
+  entries: CashLedgerEntry[];
+}
+
+/**
+ * The admin Cash Book — ONE merged ledger of every rupee that moves cash:
+ *  - Sales: each bill contributes what was actually COLLECTED (paidAmount);
+ *    due collections later raise paidAmount, so collecting a due adds cash
+ *    automatically. Sale transactions WITHOUT a bill (Stock-Out / quick SELL)
+ *    contribute their full amount. Profit (FIFO snapshot) rides along for display.
+ *  - Others Invest: cash added into the business for any other purpose (+).
+ *  - Expenses: every expense takes cash out (−).
+ */
+export async function getCashBookOffline(userId: string, options?: { limit?: number }): Promise<CashBook> {
+  const [localBills, localTxns, localExpenses, localInvestments, localProducts] = await Promise.all([
+    offlineBills.getAll(userId),
+    offlineTransactions.getAll(userId),
+    offlineExpenses.getAll(userId),
+    offlineInvestments.getAll(userId),
+    offlineProducts.getAll(userId),
+  ]);
+
+  const products = localProducts.map(p => stripSync<Product>(p));
+  const txns = localTxnsToTransactions(localTxns);
+  const txnById = new Map(txns.map(t => [t.id, t]));
+  const billTxnIds = new Set(
+    localBills.map(b => b.transactionId).filter((x): x is string => typeof x === 'string' && x !== '')
+  );
+
+  const fifoProfit = (t: Transaction): number =>
+    round2((t.totalAmount || 0) - (t.quantity || 0) * txnCostBasis(t, products));
+
+  const entries: CashLedgerEntry[] = [];
+
+  // 1) Bills — collected money (paidAmount). Dues are NOT cash yet; when the
+  //    due is collected (markBillPaidOffline) paidAmount rises and this entry
+  //    grows — cash follows reality with zero extra bookkeeping.
+  for (const b of localBills) {
+    const paid = round2(Number(b.paidAmount) || 0);
+    if (paid <= 0) continue; // pure-due bill — nothing in cash yet
+    const tx = b.transactionId ? txnById.get(b.transactionId) : undefined;
+    const due = round2(Number(b.dueAmount) || 0);
+    entries.push({
+      id: `b:${b.id}`,
+      kind: 'sale',
+      date: b.date,
+      at: Date.parse(b.createdAt) || 0,
+      title: `${b.billNumber || '—'} · ${b.customerName || 'Walk-in'}`,
+      sub: due > 0 ? String(due) : '',
+      cashIn: paid,
+      cashOut: 0,
+      profit: tx ? fifoProfit(tx) : 0,
+      due,
+    });
+  }
+
+  // 2) Sale transactions not documented by any bill (Stock-Out / instant SELL)
+  //    — the full sell amount (profit included) lands in cash.
+  for (const t of txns) {
+    if (!isSaleType(t.type)) continue;
+    if (billTxnIds.has(t.id)) continue; // the bill entry above already counts it
+    entries.push({
+      id: `t:${t.id}`,
+      kind: 'sale',
+      date: t.date,
+      at: Date.parse(t.createdAt) || 0,
+      title: t.product?.name || 'Sale',
+      sub: String(t.quantity || 0),
+      cashIn: round2(t.totalAmount || 0),
+      cashOut: 0,
+      profit: fifoProfit(t),
+      due: 0,
+    });
+  }
+
+  // 3) Others Invest — extra cash brought into the business (+)
+  for (const inv of localInvestments) {
+    entries.push({
+      id: `i:${inv.id}`,
+      kind: 'invest',
+      date: inv.date,
+      at: Date.parse(inv.createdAt) || 0,
+      title: inv.purpose || 'Others Invest',
+      sub: inv.note || '',
+      cashIn: round2(Number(inv.amount) || 0),
+      cashOut: 0,
+      profit: 0,
+      due: 0,
+    });
+  }
+
+  // 4) Expenses — cash leaves the box (−)
+  for (const e of localExpenses) {
+    entries.push({
+      id: `e:${e.id}`,
+      kind: 'expense',
+      date: e.date,
+      at: Date.parse(e.createdAt) || 0,
+      title: e.category || 'Expense',
+      sub: e.description || '',
+      cashIn: 0,
+      cashOut: round2(Number(e.amount) || 0),
+      profit: 0,
+      due: 0,
+    });
+  }
+
+  entries.sort((a, b) => {
+    if (a.date !== b.date) return b.date.localeCompare(a.date);
+    return b.at - a.at;
+  });
+
+  const today = localDateStr();
+  let salesIn = 0, investIn = 0, expenseOut = 0, todayIn = 0, todayOut = 0;
+  for (const e of entries) {
+    if (e.kind === 'sale') salesIn += e.cashIn;
+    else if (e.kind === 'invest') investIn += e.cashIn;
+    else expenseOut += e.cashOut;
+    if (e.date === today) {
+      todayIn += e.cashIn;
+      todayOut += e.cashOut;
+    }
+  }
+
+  return {
+    balance: round2(salesIn + investIn - expenseOut),
+    salesIn: round2(salesIn),
+    investIn: round2(investIn),
+    expenseOut: round2(expenseOut),
+    todayIn: round2(todayIn),
+    todayOut: round2(todayOut),
+    entries: entries.slice(0, options?.limit ?? 400),
+  };
+}
 
 // ============ EXPENSES (Local) ============
 
@@ -1790,7 +2002,7 @@ export async function markBillPaidOffline(
 // ============ BACKUP (Local) ============
 
 export async function exportBackupOffline(userId: string) {
-  const [localCategories, localProducts, localTransactions, localExpenses, localCashEntries, localServiceTxns, localBills, localStaffPayments, billingSettings] = await Promise.all([
+  const [localCategories, localProducts, localTransactions, localExpenses, localCashEntries, localServiceTxns, localBills, localStaffPayments, localInvestments, billingSettings] = await Promise.all([
     offlineCategories.getAll(userId),
     offlineProducts.getAll(userId),
     offlineTransactions.getAll(userId),
@@ -1799,6 +2011,7 @@ export async function exportBackupOffline(userId: string) {
     offlineServiceTransactions.getAll(userId),
     offlineBills.getAll(userId),
     offlineStaffPayments.getAll(userId),
+    offlineInvestments.getAll(userId),
     getBillingSettingsOffline(userId),
   ]);
 
@@ -1813,6 +2026,7 @@ export async function exportBackupOffline(userId: string) {
     serviceTransactions: localServiceTxns.map(s => stripSync(s)),
     bills: localBills.map(b => b),
     staffPayments: localStaffPayments.map(p => stripSync(p)),
+    investments: localInvestments.map(i => stripSync(i)),
     billingSettings,
     exportedAt: new Date().toISOString(),
   };
@@ -1827,6 +2041,7 @@ export async function importBackupOffline(userId: string, backupData: {
   serviceTransactions?: unknown[];
   bills?: unknown[];
   staffPayments?: unknown[];
+  investments?: unknown[];
   billingSettings?: unknown;
 }) {
   const now = Date.now();
@@ -1880,11 +2095,12 @@ export async function importBackupOffline(userId: string, backupData: {
   const serviceTransactions = asRows(backupData.serviceTransactions || []);
   const bills = asRows(backupData.bills || []);
   const staffPayments = asRows(backupData.staffPayments || []);
+  const investments = asRows(backupData.investments || []);
   const billingSettings = (backupData.billingSettings && typeof backupData.billingSettings === 'object')
     ? backupData.billingSettings as Record<string, unknown>
     : null;
 
-  if (categories.length === 0 && products.length === 0 && transactions.length === 0 && expenses.length === 0 && cashEntries.length === 0 && serviceTransactions.length === 0 && bills.length === 0 && staffPayments.length === 0 && !billingSettings) {
+  if (categories.length === 0 && products.length === 0 && transactions.length === 0 && expenses.length === 0 && cashEntries.length === 0 && serviceTransactions.length === 0 && bills.length === 0 && staffPayments.length === 0 && investments.length === 0 && !billingSettings) {
     // A settings-only backup (fresh shop, no rows yet) is legitimate — only
     // reject a file that has literally nothing usable.
     throw new Error('Backup file contains no valid data');
@@ -1966,16 +2182,25 @@ export async function importBackupOffline(userId: string, backupData: {
       note: typeof row.note === 'string' ? row.note : '',
     }, { amount: 'num' }) as OfflineDBSchema['staffPayments']['value']
   );
+  const invRows: OfflineDBSchema['investments']['value'][] = investments.map(
+    (row) => coerce({
+      ...fixDates(row),
+      date: isoStr(row.date),
+      userId,
+      purpose: typeof row.purpose === 'string' ? row.purpose : '',
+      note: typeof row.note === 'string' ? row.note : '',
+    }, { amount: 'num' }) as OfflineDBSchema['investments']['value']
+  );
 
   // 2. One readwrite transaction across ALL stores: wipe this user's rows,
   //    write the imported ones, swap billingSettings — all or nothing.
   const db = await getOfflineDB();
   const tx = db.transaction(
-    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills', 'staffPayments', 'billingSettings'],
+    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills', 'staffPayments', 'investments', 'billingSettings'],
     'readwrite'
   );
 
-  for (const store of ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills', 'staffPayments'] as const) {
+  for (const store of ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills', 'staffPayments', 'investments'] as const) {
     const os = tx.objectStore(store);
     const keys = await os.index('by-userId').getAllKeys(userId);
     for (const key of keys) void os.delete(key);
@@ -1989,6 +2214,7 @@ export async function importBackupOffline(userId: string, backupData: {
   for (const row of svcRows) void tx.objectStore('serviceTransactions').put(row);
   for (const row of billRows) void tx.objectStore('bills').put(row);
   for (const row of staffRows) void tx.objectStore('staffPayments').put(row);
+  for (const row of invRows) void tx.objectStore('investments').put(row);
 
   if (billingSettings) {
     void tx.objectStore('billingSettings').put({

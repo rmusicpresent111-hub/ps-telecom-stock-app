@@ -13,6 +13,8 @@ import type { AdminLang } from '@/lib/admin-i18n';
 
 export type AdminSection =
   | 'dashboard'
+  | 'cash'
+  | 'invest'
   | 'products'
   | 'bills'
   | 'due'
@@ -35,6 +37,9 @@ interface AdminState {
   toggleTheme: () => void;
   drawerOpen: boolean;
   setDrawerOpen: (v: boolean) => void;
+  /** v2.20.0 — desktop sidebar collapse (logo tap toggles it, drawer-style). */
+  sidebarCollapsed: boolean;
+  toggleSidebar: () => void;
 }
 
 export const useAdminStore = create<AdminState>()(
@@ -49,17 +54,21 @@ export const useAdminStore = create<AdminState>()(
       toggleTheme: () => set((s) => ({ theme: s.theme === 'light' ? 'dark' : 'light' })),
       drawerOpen: false,
       setDrawerOpen: (drawerOpen) => set({ drawerOpen }),
+      sidebarCollapsed: false,
+      toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
     }),
     {
       name: 'ps-admin-store-v1',
       version: 1,
-      // v2.16.0 removed the Database View section — a stale persisted
-      // 'dataview' (or anything unknown) must fall back to the dashboard
-      // instead of rendering a blank content area.
+      // v2.16.0 removed the Database View section; v2.20.0 added 'cash' and
+      // 'invest' — a stale persisted value (or anything unknown) must fall
+      // back to the dashboard instead of rendering a blank content area.
       migrate: (persisted) => {
         const p = (persisted ?? {}) as Partial<AdminState>;
         const valid: AdminSection[] = [
           'dashboard',
+          'cash',
+          'invest',
           'products',
           'bills',
           'due',

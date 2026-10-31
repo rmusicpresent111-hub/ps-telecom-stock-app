@@ -130,6 +130,19 @@ export interface StaffPayment {
   updatedAt: string;
 }
 
+/** Others Invest — cash added INTO the business for any other purpose
+ *  (new stock, shop work, extra capital…). Counts as cash-in in the Cash Book. */
+export interface Investment {
+  id: string;
+  userId: string;
+  date: string;      // YYYY-MM-DD (local)
+  amount: number;
+  purpose: string;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ServiceTransaction {
   id: string;
   userId: string;

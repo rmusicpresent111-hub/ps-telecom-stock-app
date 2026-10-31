@@ -111,6 +111,7 @@ const SYNCED_STORES = [
   'serviceTransactions',
   'bills',
   'staffPayments',
+  'investments', // v2.20.0 — Others Invest (admin Cash Book)
   'billingSettings',
 ] as const;
 type SyncStore = (typeof SYNCED_STORES)[number];

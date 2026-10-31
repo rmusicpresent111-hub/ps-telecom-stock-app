@@ -2,7 +2,11 @@
 
 /**
  * Admin Dashboard — Vyapar-style overview:
- * stat cards, 7-day sales chart, category stock, low-stock alerts, recent bills.
+ * stat cards (incl. Cash in Hand), colorful 7-day sales chart with a profit
+ * line, colorful category stock bars, low-stock alerts, recent bills.
+ *
+ * v2.20.0: charts are COLORFUL (per-day / per-category palette + profit line)
+ * and a Cash-in-Hand card links straight to the new Cash Book section.
  */
 
 import { useEffect, useState } from 'react';
@@ -15,32 +19,39 @@ import {
   ArrowRight,
   ShoppingCart,
   PiggyBank,
+  Banknote,
   Zap,
 } from 'lucide-react';
 import {
-  BarChart,
+  ComposedChart,
   Bar,
+  Line,
   XAxis,
   YAxis,
   Tooltip as RTooltip,
   ResponsiveContainer,
   Cell,
 } from 'recharts';
-import { getDashboardOffline } from '@/lib/offline-service';
+import { getDashboardOffline, getCashBookOffline } from '@/lib/offline-service';
+import type { CashBook } from '@/lib/offline-service';
 import { DEFAULT_USER_ID } from '@/lib/local-auth';
 import { useAdminStore } from '@/store/adminStore';
 import { ta } from '@/lib/admin-i18n';
 import { useAdminDataTick } from './useAdminData';
-import { AdminCard, StatCard, Badge, Btn, fmtMoney, EmptyState, ADMIN_COLORS } from './admin-ui';
+import { loadCached } from './adminCache';
+import { AdminCard, StatCard, Badge, Btn, fmtMoney, EmptyState } from './admin-ui';
 import type { Bill } from '@/lib/types';
 
 type Dashboard = Awaited<ReturnType<typeof getDashboardOffline>>;
+
+/** Vibrant (blue-free) palette — one color per chart column/category. */
+const CHART_COLORS = ['#FA6E41', '#F59E0B', '#EAB308', '#22C55E', '#14B8A6', '#A855F7', '#EC4899'] as const;
 
 export default function AdminDashboard({
   goSection,
   onQuickSell,
 }: {
-  goSection: (s: 'products' | 'bills' | 'due') => void;
+  goSection: (s: 'products' | 'bills' | 'due' | 'cash' | 'invest') => void;
   onQuickSell: () => void;
 }) {
   const lang = useAdminStore((s) => s.language);
@@ -50,17 +61,21 @@ export default function AdminDashboard({
 
   const [data, setData] = useState<Dashboard | null>(null);
   const [bills, setBills] = useState<Bill[]>([]);
+  const [cash, setCash] = useState<CashBook | null>(null);
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [d, b] = await Promise.all([
-        getDashboardOffline(DEFAULT_USER_ID),
-        import('@/lib/offline-service').then((m) => m.getBillsOffline(DEFAULT_USER_ID)),
+      const svc = await import('@/lib/offline-service');
+      const [d, b, c] = await Promise.all([
+        loadCached('admin:dashboard', () => svc.getDashboardOffline(DEFAULT_USER_ID)),
+        svc.getBillsOffline(DEFAULT_USER_ID),
+        loadCached('admin:cashbook', () => svc.getCashBookOffline(DEFAULT_USER_ID)),
       ]);
       if (!alive) return;
       setData(d);
       setBills(b);
+      setCash(c);
     })();
     return () => {
       alive = false;
@@ -69,8 +84,8 @@ export default function AdminDashboard({
 
   if (!data) {
     return (
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 animate-pulse">
-        {Array.from({ length: 8 }).map((_, i) => (
+      <div className="grid grid-cols-2 xl:grid-cols-5 gap-3 animate-pulse">
+        {Array.from({ length: 10 }).map((_, i) => (
           <div key={i} className="h-20 bg-[var(--psa-card)] rounded-xl border border-[var(--psa-border)]" />
         ))}
       </div>
@@ -91,7 +106,15 @@ export default function AdminDashboard({
       </div>
 
       {/* stat cards */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 xl:grid-cols-5 gap-3">
+        <StatCard
+          icon={<Banknote size={20} />}
+          label={t('dash.cashInHand')}
+          value={fmtMoney(cash?.balance ?? 0)}
+          tone="green"
+          sub={cash ? `+${fmtMoney(cash.todayIn)} / −${fmtMoney(cash.todayOut)}` : undefined}
+          onClick={() => goSection('cash')}
+        />
         <StatCard
           icon={<Boxes size={20} />}
           label={t('dash.stockValue')}
@@ -104,7 +127,7 @@ export default function AdminDashboard({
           icon={<TrendingUp size={20} />}
           label={t('dash.todaySale')}
           value={fmtMoney(saleOverview[6]?.sales || 0)}
-          tone="green"
+          tone="amber"
           sub={`${stats.todayTransactions} ${t('nav.bills').toLowerCase()}`}
         />
         <StatCard
@@ -124,15 +147,18 @@ export default function AdminDashboard({
       </div>
 
       <div className="grid lg:grid-cols-3 gap-4">
-        {/* 7-day sales chart */}
+        {/* 7-day sales chart — colorful bars + profit line */}
         <AdminCard title={t('dash.saleOverview')} className="lg:col-span-2">
           <div className="h-56 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={saleOverview} margin={{ top: 8, right: 8, left: -14, bottom: 0 }}>
+              <ComposedChart data={saleOverview} margin={{ top: 8, right: 8, left: -14, bottom: 0 }}>
                 <XAxis dataKey="label" tick={{ fontSize: 11, fill: dark ? '#8E9AAB' : '#6B7280' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 11, fill: dark ? '#8E9AAB' : '#6B7280' }} axisLine={false} tickLine={false} width={54} />
                 <RTooltip
-                  formatter={(v: number) => [fmtMoney(v), t('dash.todaySale')]}
+                  formatter={(v: number, name: string) => [
+                    fmtMoney(v),
+                    name === 'profit' ? t('dash.todayProfit') : t('dash.todaySale'),
+                  ]}
                   contentStyle={{
                     borderRadius: 10,
                     border: '1px solid var(--psa-border)',
@@ -143,21 +169,29 @@ export default function AdminDashboard({
                 />
                 <Bar dataKey="sales" radius={[6, 6, 0, 0]} maxBarSize={38}>
                   {saleOverview.map((entry, i) => (
-                    <Cell key={i} fill={i === saleOverview.length - 1 ? ADMIN_COLORS.orange : dark ? '#6B2A12' : '#FFD3C2'} />
+                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                   ))}
                 </Bar>
-              </BarChart>
+                <Line
+                  type="monotone"
+                  dataKey="profit"
+                  stroke="#EC4899"
+                  strokeWidth={2.5}
+                  dot={{ r: 3, fill: '#EC4899', strokeWidth: 0 }}
+                  activeDot={{ r: 5 }}
+                />
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
         </AdminCard>
 
-        {/* stock by category */}
+        {/* stock by category — colorful per-category bars */}
         <AdminCard title={t('dash.stockByCategory')}>
           {stockOverview.length === 0 ? (
             <EmptyState icon={<Boxes size={22} />} title={t('c.noData')} />
           ) : (
             <div className="space-y-3 max-h-56 overflow-y-auto pr-1">
-              {stockOverview.map((s) => (
+              {stockOverview.map((s, i) => (
                 <div key={s.category}>
                   <div className="flex justify-between text-xs mb-1">
                     <span className="font-medium text-[var(--psa-sub)] truncate">{s.category}</span>
@@ -165,8 +199,11 @@ export default function AdminDashboard({
                   </div>
                   <div className="h-2 rounded-full bg-[var(--psa-soft-slate)] overflow-hidden">
                     <div
-                      className="h-full rounded-full bg-[#FA6E41]"
-                      style={{ width: `${Math.max(4, (s.value / maxCatValue) * 100)}%` }}
+                      className="h-full rounded-full transition-[width] duration-500"
+                      style={{
+                        width: `${Math.max(4, (s.value / maxCatValue) * 100)}%`,
+                        background: `linear-gradient(90deg, ${CHART_COLORS[i % CHART_COLORS.length]}, ${CHART_COLORS[(i + 2) % CHART_COLORS.length]})`,
+                      }}
                     />
                   </div>
                 </div>

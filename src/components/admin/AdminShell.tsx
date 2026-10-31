@@ -29,14 +29,19 @@ import {
   Moon,
   Zap,
   Lock,
+  Banknote,
+  Sprout,
 } from 'lucide-react';
 import { ensureDefaultUser } from '@/lib/local-auth';
 import { startD1Sync, getD1SyncStatus, subscribeD1Status } from '@/lib/d1-sync';
 import { useAdminStore, type AdminSection } from '@/store/adminStore';
 import { ta, type AdminLang } from '@/lib/admin-i18n';
 import { AdminToaster, Badge, Btn } from './admin-ui';
+import { prefetchAdminData } from './adminCache';
 import QuickSellModal from './QuickSellModal';
 import AdminDashboard from './AdminDashboard';
+import AdminCash from './AdminCash';
+import AdminInvest from './AdminInvest';
 import AdminProducts from './AdminProducts';
 import AdminBills from './AdminBills';
 import AdminDueBook from './AdminDueBook';
@@ -50,6 +55,8 @@ import AdminPinGate, { lockAdminPanel } from './AdminPinGate';
 
 const NAV: { key: AdminSection; icon: React.ComponentType<{ size?: number | string }>; navKey: string }[] = [
   { key: 'dashboard', icon: LayoutDashboard, navKey: 'nav.dashboard' },
+  { key: 'cash', icon: Banknote, navKey: 'nav.cash' },
+  { key: 'invest', icon: Sprout, navKey: 'nav.invest' },
   { key: 'products', icon: Package, navKey: 'nav.products' },
   { key: 'bills', icon: ReceiptText, navKey: 'nav.bills' },
   { key: 'due', icon: Wallet, navKey: 'nav.due' },
@@ -65,6 +72,8 @@ const MOBILE_NAV: AdminSection[] = ['dashboard', 'products', 'bills', 'due', 're
 
 const SECTION_TITLE: Record<AdminSection, string> = {
   dashboard: 'nav.dashboard',
+  cash: 'nav.cash',
+  invest: 'nav.invest',
   products: 'nav.products',
   bills: 'nav.bills',
   due: 'nav.due',
@@ -179,15 +188,22 @@ function ThemeToggle() {
   );
 }
 
-function SidebarInner({ onNavigate }: { onNavigate?: () => void }) {
+function SidebarInner({ onNavigate, onLogoClick }: { onNavigate?: () => void; onLogoClick?: () => void }) {
   const lang = useAdminStore((s) => s.language);
   return (
     <div className="flex flex-col h-full">
-      {/* brand */}
+      {/* brand — tapping the logo works the menu like a drawer
+          (desktop: collapses the sidebar · drawer: closes it) */}
       <div className="flex items-center gap-3 px-5 pt-5 pb-4">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#FA6E41] to-[#E8552C] text-white flex items-center justify-center font-black text-sm shadow-[0_4px_10px_rgba(250,110,65,0.35)]">
+        <button
+          type="button"
+          onClick={onLogoClick}
+          aria-label="Toggle menu"
+          title="☰ Menu"
+          className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#FA6E41] to-[#E8552C] text-white flex items-center justify-center font-black text-sm shadow-[0_4px_10px_rgba(250,110,65,0.35)] hover:shadow-[0_6px_14px_rgba(250,110,65,0.5)] hover:scale-105 active:scale-95 transition-all shrink-0"
+        >
           PS
-        </div>
+        </button>
         <div className="min-w-0">
           <p className="text-[15px] font-black text-[var(--psa-ink)] leading-tight tracking-tight">PS TELECOM</p>
           <p className="text-[11px] font-semibold text-[#FA6E41]">{ta('shell.title', lang)}</p>
@@ -231,6 +247,8 @@ function AdminShellInner() {
   const setSection = useAdminStore((s) => s.setSection);
   const drawerOpen = useAdminStore((s) => s.drawerOpen);
   const setDrawerOpen = useAdminStore((s) => s.setDrawerOpen);
+  const sidebarCollapsed = useAdminStore((s) => s.sidebarCollapsed);
+  const toggleSidebar = useAdminStore((s) => s.toggleSidebar);
   const theme = useAdminStore((s) => s.theme);
   const lang = useAdminStore((s) => s.language);
   const [shopName, setShopName] = useState('');
@@ -242,7 +260,7 @@ function AdminShellInner() {
     setQsOpen(true);
   };
 
-  // boot: local profile + D1 sync engine (shared with the app)
+  // boot: local profile + D1 sync engine (shared with the app) + warm data cache
   useEffect(() => {
     (async () => {
       try {
@@ -253,6 +271,7 @@ function AdminShellInner() {
       }
     })();
     startD1Sync();
+    prefetchAdminData(); // dashboard + cash book load while the first paint happens
   }, []);
 
   // deep-link: /admin#bills etc.
@@ -265,14 +284,19 @@ function AdminShellInner() {
 
   return (
     <div className={`psadmin ${theme === 'dark' ? 'admin-dark' : ''} min-h-screen bg-[var(--psa-canvas)] text-[var(--psa-ink)] flex`}>
-      {/* desktop sidebar */}
-      <aside className="hidden lg:flex flex-col fixed inset-y-0 left-0 w-60 bg-[var(--psa-card)] border-r border-[var(--psa-border)] z-30">
-        <SidebarInner />
+      {/* desktop sidebar — logo tap collapses it (drawer closes); the top-bar
+          logo reopens it as an overlay drawer */}
+      <aside
+        className={`hidden lg:flex flex-col fixed inset-y-0 left-0 w-60 bg-[var(--psa-card)] border-r border-[var(--psa-border)] z-30 transition-transform duration-300 ${
+          sidebarCollapsed ? 'lg:-translate-x-full' : 'lg:translate-x-0'
+        }`}
+      >
+        <SidebarInner onLogoClick={toggleSidebar} />
       </aside>
 
-      {/* mobile drawer */}
+      {/* drawer menu — mobile always; desktop when the sidebar is collapsed */}
       {drawerOpen && (
-        <div className="lg:hidden fixed inset-0 z-50">
+        <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-[#0F172A]/45" onClick={() => setDrawerOpen(false)} />
           <aside className="absolute inset-y-0 left-0 w-72 bg-[var(--psa-card)] shadow-2xl flex flex-col">
             <button
@@ -282,13 +306,13 @@ function AdminShellInner() {
             >
               <X size={16} />
             </button>
-            <SidebarInner onNavigate={() => setDrawerOpen(false)} />
+            <SidebarInner onNavigate={() => setDrawerOpen(false)} onLogoClick={() => setDrawerOpen(false)} />
           </aside>
         </div>
       )}
 
       {/* main column */}
-      <div className="grow lg:pl-60 flex flex-col min-w-0">
+      <div className={`grow flex flex-col min-w-0 transition-[padding] duration-300 ${sidebarCollapsed ? 'lg:pl-0' : 'lg:pl-60'}`}>
         {/* top bar */}
         <header className="sticky top-0 z-20 bg-[var(--psa-card)]/90 backdrop-blur border-b border-[var(--psa-border)]">
           <div className="flex items-center gap-3 px-4 lg:px-6 h-14">
@@ -299,6 +323,17 @@ function AdminShellInner() {
             >
               <Menu size={19} />
             </button>
+            {/* collapsed-desktop: the sidebar's logo lives here now — tap = drawer opens */}
+            {sidebarCollapsed && (
+              <button
+                onClick={() => setDrawerOpen(true)}
+                aria-label="Open menu"
+                title="☰ Menu"
+                className="hidden lg:flex w-9 h-9 rounded-xl bg-gradient-to-br from-[#FA6E41] to-[#E8552C] text-white items-center justify-center font-black text-xs shadow-[0_4px_10px_rgba(250,110,65,0.35)] hover:scale-105 active:scale-95 transition-transform shrink-0"
+              >
+                PS
+              </button>
+            )}
             <div className="min-w-0 grow">
               <h1 className="text-[15px] font-bold text-[var(--psa-ink)] leading-tight truncate">{title}</h1>
               <p className="text-[11px] text-[var(--psa-faint)] leading-tight truncate">
@@ -328,6 +363,8 @@ function AdminShellInner() {
               onQuickSell={() => openQuickSell()}
             />
           )}
+          {section === 'cash' && <AdminCash />}
+          {section === 'invest' && <AdminInvest />}
           {section === 'products' && <AdminProducts onQuickSell={(p) => openQuickSell(p)} />}
           {section === 'bills' && <AdminBills />}
           {section === 'due' && <AdminDueBook />}
@@ -342,7 +379,7 @@ function AdminShellInner() {
         {/* footer (sticky bottom, Vyapar-style strip) */}
         <footer className="mt-auto hidden lg:block border-t border-[var(--psa-border)] bg-[var(--psa-card)]">
           <div className="max-w-[1200px] mx-auto px-6 py-3 flex items-center justify-between text-[11px] text-[var(--psa-faint)]">
-            <span>PS TELECOM {ta('shell.title', lang)} · v2.19.0</span>
+            <span>PS TELECOM {ta('shell.title', lang)} · v2.20.0</span>
             <span className="flex items-center gap-2">
               <Badge tone="orange">Web Admin</Badge>
               <Badge tone="green">D1 encrypted</Badge>
