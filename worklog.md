@@ -2170,3 +2170,15 @@ Stage Summary:
 - The sandbox can now build the APK END-TO-END (SDK + JDK + gradle mirrors + persistent signing) — "APK korte hobe" no longer needs the owner's machine
 - Both tracked APK files updated to v2.20.0 (screen-lock gate, no-API-key refactor, Cash Book/Others Invest, colorful dashboard, faster admin load) and pushed to git — download from GitHub main
 - One-time caveat: if the phone currently runs an APK signed by the owner's machine, Android requires UNINSTALL before installing this repo-key build (cloud sync auto-restores data afterwards; PIN 9732881732 baked in). All FUTURE repo builds upgrade in place silently
+
+---
+Task ID: 73b
+Task: "diployment error" — Vercel deploy failing with `Cannot find module '/vercel/path0/scripts/ensure-secrets.mjs'`.
+
+Fix:
+- Root cause: vercel.json still had `"buildCommand": "node scripts/ensure-secrets.mjs && next build"` — but ensure-secrets.mjs was DELETED in Task 71 (v2.19.0, API keys moved to .env). Every deploy since v2.19.0 died instantly on that command. (Local .env also got wiped by a dev-server restart and was restored from the known values.)
+- Fix: vercel.json buildCommand → plain `next build` (server mode — next.config.ts auto-selects server output when VERCEL=1; the VERCEL guard in build-apk.js is no longer on the Vercel path at all). Dashboard Build-Command overrides are superseded by vercel.json, so this one fix is authoritative.
+- Deployed commit 26eda50 + this fix auto-redeploys; env vars must exist in the Vercel dashboard (5 mandatory keys, see Task 71 checklist).
+
+Stage Summary:
+- Vercel builds again: stale ensure-secrets reference removed from vercel.json; future deploys need only the dashboard env vars.
