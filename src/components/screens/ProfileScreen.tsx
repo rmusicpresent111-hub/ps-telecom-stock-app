@@ -10,7 +10,7 @@ import { registerBackModal } from '@/lib/modal-back';
 import { subscribeD1Status, getD1SyncStatus, syncNowD1, type D1SyncStatus } from '@/lib/d1-sync';
 import { getSyncAccount, type SyncAccount } from '@/lib/d1-config';
 import { motion } from 'framer-motion';
-import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, Receipt, ReceiptText, RefreshCw, CloudUpload, Lock, HandCoins, FileSpreadsheet, Monitor } from 'lucide-react';
+import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, Receipt, ReceiptText, RefreshCw, CloudUpload, Lock, LockKeyhole, HandCoins, FileSpreadsheet, Monitor } from 'lucide-react';
 import { toast } from 'sonner';
 import type { User as UserType, Category } from '@/lib/types';
 
@@ -156,6 +156,14 @@ export default function ProfileScreen() {
       void useAppLockStore.getState().probe();
     }
   }, []);
+
+  // Manual "Lock Now" — raise the gate instantly (hand the phone to staff /
+  // step away). The gate never engages on devices without a screen lock.
+  const handleLockNow = async () => {
+    const ok = await useAppLockStore.getState().lockNow();
+    if (ok) toast.success(t('lockNowToast', language));
+    else toast.error(t('lockNowFailToast', language));
+  };
 
   const handleBackup = async () => {
     if (!user?.id) return;
@@ -405,6 +413,23 @@ export default function ProfileScreen() {
               <div className={`w-10 h-5 rounded-full transition-all ${appLockEnabled ? 'bg-emerald-500/40' : 'bg-white/20'} relative`}>
                 <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-all ${appLockEnabled ? 'left-[22px]' : 'left-0.5'}`} />
               </div>
+            </button>
+          )}
+
+          {/* Lock Now — raise the lock gate instantly (APK only) */}
+          {appLockSupported() && (
+            <button
+              onClick={() => void handleLockNow()}
+              className="glass-card w-full p-4 flex items-center justify-between active:scale-[0.99] transition-transform"
+            >
+              <div className="flex items-center gap-3">
+                <LockKeyhole size={18} className="text-red-400" />
+                <div className="text-left">
+                  <span className="text-sm block">{t('lockNow', language)}</span>
+                  <span className="text-[10px] text-white/40">{t('lockNowDesc', language)}</span>
+                </div>
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-red-300/80">ON</span>
             </button>
           )}
 

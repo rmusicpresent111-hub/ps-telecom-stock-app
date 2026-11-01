@@ -319,95 +319,103 @@ const BILL_CSS = `
 @page { size: A4; margin: 0; }
 * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 html, body { margin:0; padding:0; }
-body { background:#fff; color:#111827; font-family:Arial,'Helvetica Neue',Helvetica,'Liberation Sans',sans-serif; font-size:10.5px; line-height:1.4; }
+body { background:#fff; color:#111827; font-family:Arial,'Noto Sans Bengali','Hind Siliguri','Helvetica Neue',Helvetica,'Liberation Sans',sans-serif; font-size:10.5px; line-height:1.4; }
 
 /* full-page A4 sheet — colour runs edge to edge */
 .sheet { width:210mm; max-width:100%; min-height:296.6mm; margin:0 auto; background:#fff; position:relative; overflow:hidden; display:flex; flex-direction:column; }
-.wm { position:absolute; top:110mm; left:50%; transform:translate(-50%,-50%) rotate(-22deg); font-size:58px; font-weight:bold; color:rgba(234,88,12,.05); letter-spacing:8px; white-space:nowrap; pointer-events:none; }
 
-/* top accent strip */
-.strip { height:4.5mm; background:linear-gradient(90deg,#F59E0B 0%,#F97316 45%,#EA580C 75%,#C2410C 100%); }
+/* thin royal edge at the very top of the sheet */
+.topline { height:2.2mm; background:#1E3A8A; }
 
-/* dark brand header — shop identity LEFT, invoice card docked RIGHT */
-.hdr { background:linear-gradient(135deg,#1F2937 0%,#111827 75%); color:#fff; padding:6.5mm 10mm; display:flex; justify-content:space-between; align-items:flex-start; gap:8mm; }
-.hbrand { display:flex; align-items:flex-start; gap:4mm; min-width:0; }
-.hident { min-width:0; }
-.mono { width:14mm; height:14mm; border-radius:3mm; background:linear-gradient(135deg,#F97316,#EA580C); color:#fff; font-weight:bold; font-size:16px; display:flex; align-items:center; justify-content:center; letter-spacing:.5px; flex:0 0 auto; border:2px solid rgba(255,255,255,.28); }
-.co-name { font-size:19px; font-weight:bold; letter-spacing:.6px; line-height:1.2; }
-.co-sub { font-size:9px; color:#FDBA74; font-weight:bold; letter-spacing:1px; text-transform:uppercase; margin-top:1px; }
-.co-line { font-size:9.5px; color:#D1D5DB; margin-top:1.5px; }
-.co-gst { display:inline-block; margin-top:2.5px; background:rgba(249,115,22,.2); border:1px solid rgba(253,186,116,.5); color:#FDBA74; border-radius:4px; padding:1.5px 7px; font-size:8.5px; font-weight:bold; letter-spacing:.6px; }
+/* royal blue header — shop identity LEFT, invoice meta box docked RIGHT */
+.hdr { background:#1E3A8A; color:#fff; margin:4mm 8mm 0; border-radius:2.5mm; padding:5mm 6mm; display:flex; justify-content:space-between; align-items:stretch; gap:6mm; }
+.hbrand { min-width:0; flex:1 1 auto; }
+.co-name { font-size:21px; font-weight:bold; letter-spacing:.8px; line-height:1.15; }
+.co-sub { font-size:9px; color:#C7D8F5; font-weight:bold; letter-spacing:1.1px; text-transform:uppercase; margin-top:1.2px; }
+.co-line { font-size:9px; color:#DCE6F8; margin-top:1.6px; line-height:1.5; }
+.co-contact { font-size:9.5px; font-weight:bold; color:#fff; margin-top:2.2px; }
+.co-contact .sep { color:#8FA9DD; padding:0 2mm; font-weight:normal; }
 
-/* invoice meta card — the bill number lives HERE, on one side of the header */
-.invcard { background:#fff; color:#111827; border-radius:3mm; padding:3.5mm 4.5mm; min-width:54mm; flex:0 0 auto; border-top:2.2mm solid #F59E0B; box-shadow:0 2px 10px rgba(0,0,0,.35); }
-.invcard .k { font-size:8px; font-weight:bold; color:#9CA3AF; letter-spacing:1.4px; text-transform:uppercase; }
-.invcard .no { font-size:15px; font-weight:bold; color:#EA580C; letter-spacing:.4px; margin:1px 0 2.5px; white-space:nowrap; }
-.invcard .row { display:flex; justify-content:space-between; gap:8px; font-size:9.5px; padding-top:2px; border-top:1px dashed #E5E7EB; }
-.invcard .row span { color:#6B7280; }
-.invcard .row b { font-weight:bold; color:#111827; }
+/* invoice meta — the bill number lives HERE, in a darker box on one side */
+.invmeta { background:#17306E; border:1px solid rgba(255,255,255,.16); border-radius:2mm; padding:3.2mm 4.5mm; flex:0 0 47mm; color:#fff; }
+.invmeta .k { font-size:7.5px; font-weight:bold; color:#9DB4E4; letter-spacing:1.3px; text-transform:uppercase; margin-top:2mm; }
+.invmeta .k:first-child { margin-top:0; }
+.invmeta .no { font-size:13px; font-weight:bold; letter-spacing:.4px; margin:.6mm 0 1.2mm; white-space:nowrap; }
+.invmeta .v { font-size:10px; font-weight:bold; margin-top:.6mm; }
 
-/* TAX INVOICE ribbon */
-.ribbon { background:#FFF1EB; border-bottom:2px solid #EA580C; text-align:center; padding:2.4mm 0; }
-.ribbon span { font-size:13px; font-weight:bold; color:#9A3412; letter-spacing:5px; }
+/* light blue title strip — INVOICE (left) · CUSTOMER COPY (right) */
+.titlebar { display:flex; justify-content:space-between; align-items:center; background:#DCE9F9; margin:3.5mm 8mm 0; border-radius:1.6mm; padding:2.6mm 4.5mm; }
+.titlebar .ttl { font-size:12.5px; font-weight:bold; color:#16306B; letter-spacing:3.5px; }
+.titlebar .copy { font-size:8.5px; font-weight:bold; color:#5B74AD; letter-spacing:1.6px; }
 
-/* party panels */
-.party { display:flex; gap:5mm; padding:4.5mm 10mm 0; }
-.cap { font-size:8px; font-weight:bold; letter-spacing:1.4px; color:#9CA3AF; text-transform:uppercase; margin-bottom:1.5px; }
-.pbox { border:1px solid #F3D8CB; border-left:3px solid #EA580C; border-radius:2mm; padding:2.8mm 3.5mm; background:#FFFBF8; flex:1 1 auto; min-width:0; }
-.pbox .cap { color:#C2410C; }
-.pname { font-size:12.5px; font-weight:bold; color:#111827; }
-.pline { font-size:9.5px; color:#4B5563; margin-top:1px; }
-.paside { flex:0 0 62mm; }
-.chip { display:inline-block; border-radius:999px; padding:2px 11px; font-size:9px; font-weight:bold; letter-spacing:.8px; margin:1px 0 2px; }
-.st-paid { background:#F0FDF4; color:#15803D; border:1px solid #BBF7D0; }
-.st-partial { background:#FFFBEB; color:#B45309; border:1px solid #FDE68A; }
-.st-due { background:#FEF2F2; color:#B91C1C; border:1px solid #FECACA; }
-.payline { font-size:9.5px; color:#4B5563; margin-top:1.5px; }
-.payline b { color:#111827; }
+/* bill-to panel + payment status panel */
+.party { display:flex; gap:5mm; padding:4mm 8mm 0; }
+.cap { font-size:7.8px; font-weight:bold; letter-spacing:1.4px; color:#5B74AD; text-transform:uppercase; margin-bottom:1.5px; }
+.bto { flex:1 1 auto; min-width:0; border:1px solid #C3D4EC; border-left:2.6px solid #1E3A8A; border-radius:1.6mm; padding:2.8mm 3.5mm; background:#FBFDFF; }
+.pname { font-size:13px; font-weight:bold; color:#0F1F45; }
+.pline { font-size:9.3px; color:#3E5170; margin-top:1.2px; }
+.pstat { flex:0 0 64mm; border-radius:1.6mm; padding:2.8mm 3.5mm; border:1px solid #BFDFC9; border-left:2.6px solid #1E8E3E; background:#E9F6EE; }
+.pstat .cap { color:#1E8E3E; }
+.pstat .st { font-size:11.5px; font-weight:bold; color:#1E8E3E; margin:.6mm 0 1mm; }
+.pstat.partial { border-color:#F2DCB0; border-left-color:#D97706; background:#FFF7E6; }
+.pstat.partial .cap, .pstat.partial .st { color:#B45309; }
+.pstat.due { border-color:#F3C4C4; border-left-color:#C62828; background:#FDEDED; }
+.pstat.due .cap, .pstat.due .st { color:#C62828; }
+.payline { font-size:9.3px; color:#3E5170; margin-top:1px; }
+.payline b { color:#0F1F45; }
 
-/* items grid — dark header, zebra rows, totals inside the grid */
-.tblwrap { padding:4mm 10mm 0; }
-table.items { width:100%; border-collapse:collapse; border:1.5px solid #111827; }
-.items th { background:#111827; color:#fff; font-size:9px; font-weight:bold; text-align:center; padding:2.6mm 2mm; letter-spacing:.7px; border:1px solid #374151; line-height:1.3; }
-.items td { border:1px solid #E5E7EB; padding:2.3mm 2.5mm; font-size:10px; vertical-align:top; }
+/* items grid — royal header, light grid lines */
+.tblwrap { padding:4mm 8mm 0; }
+table.items { width:100%; border-collapse:collapse; border:1.4px solid #1E3A8A; }
+.items th { background:#1E3A8A; color:#fff; font-size:8.8px; font-weight:bold; text-align:center; padding:2.6mm 2mm; letter-spacing:.8px; border:1px solid #2A4CA0; line-height:1.3; }
+.items td { border:1px solid #D5E1F4; padding:2.3mm 2.5mm; font-size:10px; vertical-align:top; }
 .items td.c, .items th.c { text-align:center; }
 .items td.r { text-align:right; }
 .items thead { display:table-header-group; }
 .items tr { page-break-inside:avoid; }
-.items tbody.rows tr:nth-child(even) td { background:#FFF9F5; }
-.sn { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:8.5px; color:#6B7280; margin-top:1px; }
-.on { font-size:8.5px; color:#9CA3AF; white-space:nowrap; }
-.items tbody.tots tr.tt td { background:#FFF1EB; border-top:1.5px solid #111827; font-weight:bold; }
-.items tbody.tots tr.gt td { background:#111827; color:#fff; font-weight:bold; font-size:11px; border-color:#111827; }
-.items tbody.tots tr.gt td.gamt { border-bottom:4px double #F59E0B; }
+.items tbody.rows tr:nth-child(even) td { background:#F4F8FD; }
+.sn { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:8.5px; color:#6B7FA6; margin-top:1px; }
+.on { font-size:8.3px; color:#8296BC; white-space:nowrap; }
+/* totals inside the grid — light blue rows, then the navy grand plate */
+.items tbody.tots tr.tv td { background:#EFF5FC; font-weight:bold; color:#24355C; }
+.items tbody.tots tr.split td.tqty { background:#DCE9F9; color:#16306B; text-align:center; font-weight:bold; font-size:10.5px; border:1px solid #B9CCEA; border-top:1.4px solid #1E3A8A; }
+.items tbody.tots tr.split td.gtcell { background:#1E3A8A; color:#fff; text-align:center; font-weight:bold; font-size:11px; letter-spacing:1px; border:1px solid #1E3A8A; }
+.items tbody.tots tr.split td.gtcell .amt { font-size:12.5px; letter-spacing:.4px; }
 
-/* words + due callout */
-.words { margin:3.5mm 10mm 0; background:#FFF7F3; border:1px solid #F3D8CB; border-left:3px solid #EA580C; border-radius:2mm; padding:2.4mm 3.5mm; font-size:10px; color:#374151; }
-.words b { color:#9A3412; }
-.duebox { margin:3mm 10mm 0; background:#FEF2F2; border:1px solid #FECACA; border-radius:2mm; padding:2.4mm 3.5mm; font-size:10px; color:#B91C1C; font-weight:bold; }
+/* amount in words band + due callout */
+.words { margin:3.5mm 8mm 0; background:#EFF5FC; border:1px solid #C3D4EC; border-radius:1.6mm; padding:2.4mm 3.5mm; font-size:10px; color:#24355C; }
+.words b { color:#16306B; letter-spacing:.8px; }
+.duebox { margin:3mm 8mm 0; background:#FDEDED; border:1px solid #F3C4C4; border-left:2.6px solid #C62828; border-radius:1.6mm; padding:2.4mm 3.5mm; font-size:9.8px; color:#C62828; font-weight:bold; }
 
-/* bank / terms / declaration + signature */
-.mid { display:flex; gap:6mm; padding:4.5mm 10mm 0; flex:1 1 auto; align-items:stretch; }
-.midleft { flex:1 1 auto; min-width:0; }
-.midright { flex:0 0 60mm; display:flex; flex-direction:column; }
-.bank { font-size:9.5px; color:#374151; }
-.bank div { margin-top:1px; }
-.qr { width:20mm; height:20mm; object-fit:contain; float:right; margin:0 0 2mm 3mm; border:1px solid #E5E7EB; border-radius:1.5mm; padding:1mm; background:#fff; }
-.qrcap { font-size:8px; color:#9CA3AF; text-align:right; }
-.terms { margin-top:3.5mm; border-top:1px dashed #E5E7EB; padding-top:2mm; font-size:9px; color:#4B5563; }
-.tline { margin-top:1px; }
-.decl { margin-top:3.5mm; font-size:9px; color:#4B5563; line-height:1.45; }
-.jur { font-size:8.5px; color:#9CA3AF; margin-top:2mm; }
-.sigwrap { display:flex; flex-direction:column; justify-content:flex-end; align-items:flex-end; text-align:right; min-height:34mm; width:100%; }
-.sigfor { font-size:10.5px; font-weight:bold; color:#111827; }
-.sigimg img { max-width:46mm; max-height:15mm; object-fit:contain; }
-.sigline { border-top:1.5px solid #111827; margin-top:2mm; padding-top:1.5mm; font-size:9.5px; color:#374151; width:50mm; text-align:center; }
+/* bank / QR / signature row */
+.mid { display:flex; gap:5mm; padding:4.5mm 8mm 0; align-items:stretch; }
+.bank { flex:1 1 auto; min-width:0; font-size:9.3px; color:#24355C; }
+.bank .cap2 { font-size:8.2px; font-weight:bold; letter-spacing:1.1px; color:#16306B; text-transform:uppercase; margin-bottom:1.5px; }
+.bank div { margin-top:1.2px; }
+.qrbox { flex:0 0 30mm; text-align:center; }
+.qrbox img { width:24mm; height:24mm; object-fit:contain; border:1px solid #C3D4EC; border-radius:1.5mm; padding:1.2mm; background:#fff; }
+.qrcap { font-size:7.8px; color:#5B74AD; font-weight:bold; margin-top:1mm; }
+.sig { flex:0 0 62mm; display:flex; flex-direction:column; justify-content:space-between; align-items:flex-end; text-align:right; min-height:24mm; }
+.sigfor { font-size:10px; font-weight:bold; color:#16306B; letter-spacing:.6px; }
+.sigimg img { max-width:46mm; max-height:14mm; object-fit:contain; }
+.sigline { border-top:1.4px solid #24355C; margin-top:1.6mm; padding-top:1.4mm; font-size:9px; color:#24355C; width:56mm; text-align:center; }
 
-/* footer strip — colour runs to the paper edge */
-.foot { margin-top:auto; }
-.fstrip { height:3mm; background:linear-gradient(90deg,#C2410C 0%,#EA580C 45%,#F59E0B 100%); }
-.fbar { background:#111827; color:#9CA3AF; display:flex; justify-content:space-between; align-items:center; gap:6mm; padding:2.6mm 10mm; font-size:8.5px; letter-spacing:.4px; }
-.fbar b { color:#FDBA74; }
+/* terms — bordered box, two Bengali columns like the reference */
+.terms { margin:4mm 8mm 0; border:1.4px solid #1E3A8A; border-radius:1.6mm; padding:3mm 4mm; font-size:8.6px; color:#3E5170; line-height:1.5; column-count:2; column-gap:6mm; column-rule:1px solid #D5E1F5; }
+.terms .ttitle { font-size:8.6px; font-weight:bold; color:#16306B; letter-spacing:1px; text-transform:uppercase; margin-bottom:1.5mm; column-span:all; }
+.terms .tline { margin-top:1px; break-inside:avoid; }
+
+/* declaration + thank-you */
+.bottomrow { display:flex; justify-content:space-between; gap:8mm; padding:3.5mm 8mm 0; }
+.decl { flex:1 1 auto; min-width:0; }
+.decl .cap2 { font-size:7.8px; font-weight:bold; letter-spacing:1.3px; color:#5B74AD; text-transform:uppercase; margin-bottom:1px; }
+.decl .dtxt { font-size:8.8px; color:#3E5170; line-height:1.5; }
+.jur { font-size:8.5px; color:#8296BC; margin-top:1.6mm; }
+.thanksbox { flex:0 0 62mm; text-align:right; font-size:8.8px; color:#3E5170; line-height:1.55; }
+
+/* footer — royal navy bar, colour to the paper edge */
+.foot { margin-top:auto; background:#1E3A8A; color:#fff; display:flex; justify-content:space-between; align-items:center; gap:6mm; padding:2.8mm 8mm; font-size:9px; font-weight:bold; letter-spacing:.4px; }
+.foot .sep { color:#8FA9DD; padding:0 2mm; font-weight:normal; }
 `;
 
 function billShell(title: string, body: string): string {
@@ -457,16 +465,9 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
   const expectedTotal = itemSum - disc + (gstOn && !inclusiveGst ? gstAmt : 0);
   const roundOff = Math.round(((bill.total || 0) - expectedTotal) * 100) / 100;
 
-  // column layout: GST bills carry the extra "GST Rate" column
-  const N = gstOn ? 7 : 6;
-
-  // payment-status chip — PAID / PARTIALLY PAID / PAYMENT DUE
-  const statusChip =
-    due > 0.009
-      ? paid > 0.009
-        ? '<span class="chip st-partial">PARTIALLY PAID</span>'
-        : '<span class="chip st-due">PAYMENT DUE</span>'
-      : '<span class="chip st-paid">✓ PAID</span>';
+  // payment-status panel — green PAID / amber PARTIAL / red DUE (reference style)
+  const paidCls = due > 0.009 ? (paid > 0.009 ? 'partial' : 'due') : '';
+  const stText = due > 0.009 ? (paid > 0.009 ? 'PARTIALLY PAID' : 'PAYMENT DUE') : '✓ PAID';
 
   const itemRows = (bill.items || [])
     .map((it, i) => {
@@ -474,7 +475,7 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
       return (
         `<tr><td class="c">${i + 1}</td><td>${esc(it.name)}${
           sns.length ? `<div class="sn">S/N: ${sns.map((s) => esc(s)).join(', ')}</div>` : ''
-        }</td>${gstOn ? `<td class="c">${rateTxt}</td>` : ''}<td class="c">${tallyQty(it.quantity)}</td><td class="r">${tallyAmt(
+        }</td><td class="c">${tallyQty(it.quantity)}</td><td class="r">${tallyAmt(
           it.unitPrice
         )}</td><td class="c">Nos.</td><td class="r">${tallyAmt(it.total)}</td></tr>`
       );
@@ -482,37 +483,35 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
     .join('');
 
   // filler rows keep the grid full so a short bill still covers the A4 sheet
-  const MIN_ROWS = 14;
+  const MIN_ROWS = 12;
   const fillers = Math.max(0, MIN_ROWS - (bill.items || []).length);
-  const fillerRows = Array.from({ length: fillers }, () => `<tr>${'<td></td>'.repeat(N)}</tr>`).join('');
+  const fillerRows = Array.from({ length: fillers }, () => `<tr>${'<td></td>'.repeat(6)}</tr>`).join('');
 
-  const totalRow = gstOn
-    ? `<tr class="tt"><td colspan="2" class="r"><b>Total</b></td><td class="c"></td><td class="c"><b>${tallyQty(qtyTotal)} Nos.</b></td><td class="r"></td><td class="c"></td><td class="r"><b>${tallyAmt(itemSum)}</b></td></tr>`
-    : `<tr class="tt"><td colspan="2" class="r"><b>Total</b></td><td class="c"><b>${tallyQty(qtyTotal)} Nos.</b></td><td class="r"></td><td class="c"></td><td class="r"><b>${tallyAmt(itemSum)}</b></td></tr>`;
-
+  // adjustment rows — light blue, inside the grid above the grand plate
   const discRow =
     disc > 0.009
-      ? `<tr><td colspan="${N - 1}">Less: Discount</td><td class="r">${tallyAmt(disc)}</td></tr>`
+      ? `<tr class="tv"><td colspan="5" class="r">Less: Discount</td><td class="r">${tallyAmt(disc)}</td></tr>`
       : '';
 
   // Inclusive bills (v2.13+) carry their own breakdown: the tax came OUT of
   // the entered amount, so show the taxable value the CGST/SGST sit on.
   const taxableRow =
-    inclusiveGst ? `<tr><td colspan="${N - 1}">Taxable Value</td><td class="r">${tallyAmt(bill.taxableValue ?? 0)}</td></tr>` : '';
+    inclusiveGst ? `<tr class="tv"><td colspan="5" class="r">Taxable Value</td><td class="r">${tallyAmt(bill.taxableValue ?? 0)}</td></tr>` : '';
 
   const gstRows = !gstOn
     ? ''
     : hasSplit
-      ? `<tr><td colspan="${N - 1}">OUTPUT CGST @ ${halfTxt}&nbsp;&nbsp;<span class="on">On (${tallyAmt(taxableBase)})</span></td><td class="r">${tallyAmt(bill.cgstAmount)}</td></tr>` +
-        `<tr><td colspan="${N - 1}">OUTPUT SGST @ ${halfTxt}&nbsp;&nbsp;<span class="on">On (${tallyAmt(taxableBase)})</span></td><td class="r">${tallyAmt(bill.sgstAmount)}</td></tr>`
-      : `<tr><td colspan="${N - 1}">OUTPUT GST @ ${rateTxt}&nbsp;&nbsp;<span class="on">On (${tallyAmt(taxableBase)})</span></td><td class="r">${tallyAmt(gstAmt)}</td></tr>`;
+      ? `<tr class="tv"><td colspan="5" class="r">OUTPUT CGST @ ${halfTxt}&nbsp;&nbsp;<span class="on">On (${tallyAmt(taxableBase)})</span></td><td class="r">${tallyAmt(bill.cgstAmount)}</td></tr>` +
+        `<tr class="tv"><td colspan="5" class="r">OUTPUT SGST @ ${halfTxt}&nbsp;&nbsp;<span class="on">On (${tallyAmt(taxableBase)})</span></td><td class="r">${tallyAmt(bill.sgstAmount)}</td></tr>`
+      : `<tr class="tv"><td colspan="5" class="r">OUTPUT GST @ ${rateTxt}&nbsp;&nbsp;<span class="on">On (${tallyAmt(taxableBase)})</span></td><td class="r">${tallyAmt(gstAmt)}</td></tr>`;
 
   const roundRow =
     Math.abs(roundOff) >= 0.005
-      ? `<tr><td colspan="${N - 1}">Round Off</td><td class="r">${roundOff > 0 ? '' : '−'}${tallyAmt(Math.abs(roundOff))}</td></tr>`
+      ? `<tr class="tv"><td colspan="5" class="r">Round Off</td><td class="r">${roundOff > 0 ? '' : '−'}${tallyAmt(Math.abs(roundOff))}</td></tr>`
       : '';
 
-  const grandRow = `<tr class="gt"><td colspan="${N - 1}" class="r">GRAND TOTAL</td><td class="r gamt"><b>₹ ${tallyAmt(bill.total)}</b></td></tr>`;
+  // bottom split row — quantity band LEFT, navy GRAND TOTAL plate RIGHT
+  const splitRow = `<tr class="split"><td colspan="3" class="tqty">Total quantity&nbsp;&nbsp;&nbsp;<b>${tallyQty(qtyTotal)} Nos.</b></td><td colspan="3" class="gtcell">GRAND TOTAL&nbsp;&nbsp;&nbsp;<span class="amt">₹ ${tallyAmt(bill.total)}</span></td></tr>`;
 
   const supplyState = shop.gst ? stateFromGstin(shop.gst) : null;
   const buyerLines = [
@@ -528,119 +527,122 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
       : '';
 
   const bankBits = [
-    shop.proprietor ? `<div>A/c Holder's Name : ${esc(shop.proprietor)}</div>` : '',
-    shop.upi ? `<div>UPI ID : ${esc(shop.upi)}</div>` : '',
+    shop.proprietor ? `<div>A/c Holder: ${esc(shop.proprietor)}</div>` : '',
+    shop.upi ? `<div>UPI ID: ${esc(shop.upi)}</div>` : '',
   ].filter(Boolean);
-  const bankBlock =
-    bankBits.length || shop.qr
-      ? `<div class="bank">${
-          shop.qr ? `<img class="qr" src="${shop.qr}" alt="payment QR"><div class="qrcap">Scan to Pay</div>` : ''
-        }<div class="cap">Bank &amp; Payment Details</div>${bankBits.join('')}</div>`
-      : '';
+  const bankBlock = bankBits.length
+    ? `<div class="cap2">Bank &amp; Payment Details</div>${bankBits.join('')}`
+    : '';
 
   const termsItems = shop.terms
     .split(/\r?\n+/)
     .map((x) => x.trim())
     .filter(Boolean);
   const termsBlock = termsItems.length
-    ? `<div class="terms"><div class="cap">Terms &amp; Conditions</div>${termsItems
-        .map((x) => `<div class="tline">• ${esc(x)}</div>`)
+    ? `<div class="terms"><div class="ttitle">Terms &amp; Conditions</div>${termsItems
+        .map((x) => `<div class="tline">${esc(x)}</div>`)
         .join('')}</div>`
     : '';
 
   const jurisdiction = /kolkata/i.test(shop.address) ? 'Kolkata' : 'West Bengal';
 
+  const declBlock = `
+  <div class="bottomrow">
+    <div class="decl">
+      <div class="cap2">Declaration</div>
+      <div class="dtxt">We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.</div>
+      <div class="jur">Subject to ${jurisdiction} Jurisdiction</div>
+    </div>
+    <div class="thanksbox">
+      ${shop.thankyou ? esc(shop.thankyou) : 'Thank you for your business!'}<br>
+      This is a computer generated invoice.
+    </div>
+  </div>`;
+
   const body = `
 <div class="sheet">
-  <div class="wm" aria-hidden="true">${esc(shop.name)}</div>
-  <div class="strip"></div>
+  <div class="topline"></div>
 
   <div class="hdr">
     <div class="hbrand">
-      ${monogramHtml(shop.name)}
-      <div class="hident">
-        <div class="co-name">${esc(shop.name)}</div>
-        ${shop.proprietor ? `<div class="co-sub">${esc(shop.proprietor)}</div>` : ''}
-        ${shop.address ? `<div class="co-line">${escMultiline(shop.address)}</div>` : ''}
-        ${shop.phone ? `<div class="co-line">Phone : ${esc(shop.phone)}</div>` : ''}
-        ${shop.gst ? `<div class="co-gst">GSTIN : ${esc(shop.gst)}</div>` : ''}
-      </div>
+      <div class="co-name">${esc(shop.name)}</div>
+      ${shop.proprietor ? `<div class="co-sub">${esc(shop.proprietor)}</div>` : ''}
+      ${shop.address ? `<div class="co-line">${escMultiline(shop.address)}</div>` : ''}
+      ${shop.phone || shop.gst ? `<div class="co-contact">${[
+        shop.phone ? `Phone: ${esc(shop.phone)}` : '',
+        shop.gst ? `GSTIN: ${esc(shop.gst)}` : '',
+      ].filter(Boolean).join('<span class="sep">|</span>')}</div>` : ''}
     </div>
-    <div class="invcard">
+    <div class="invmeta">
       <div class="k">Invoice No.</div>
       <div class="no">${esc(bill.billNumber || '—')}</div>
-      <div class="row"><span>Dated</span><b>${tallyDate(bill.date)}</b></div>
-      <div class="row"><span>Payment</span><b>${esc(methodLabel)}</b></div>
+      <div class="k">Date</div>
+      <div class="v">${tallyDate(bill.date)}</div>
+      <div class="k">Payment Mode</div>
+      <div class="v">${esc(methodLabel)}</div>
     </div>
   </div>
 
-  <div class="ribbon"><span>${esc(title)}</span></div>
+  <div class="titlebar"><span class="ttl">${esc(title)}</span><span class="copy">CUSTOMER COPY</span></div>
 
   <div class="party">
-    <div class="pbox">
+    <div class="bto">
       <div class="cap">Bill To</div>
       ${buyerLines}
     </div>
-    <div class="pbox paside">
+    <div class="pstat ${paidCls}">
       <div class="cap">Payment Status</div>
-      ${statusChip}
-      <div class="payline">Paid : <b>${money(paid)}</b></div>
-      <div class="payline">Balance Due : <b>${money(due)}</b></div>
+      <div class="st">${stText}</div>
+      <div class="payline">Paid: <b>${money(paid)}</b></div>
+      <div class="payline">Balance Due: <b>${money(due)}</b></div>
     </div>
   </div>
 
   <div class="tblwrap">
     <table class="items">
       <thead><tr>
-        <th class="c" style="width:5%">Sl<br>No.</th>
-        <th style="width:${gstOn ? '43' : '50'}%">Description of Goods</th>
-        ${gstOn ? '<th class="c" style="width:9%">GST<br>Rate</th>' : ''}
-        <th class="c" style="width:10%">Quantity</th>
-        <th class="c" style="width:11%">Rate</th>
-        <th class="c" style="width:7%">per</th>
-        <th class="c" style="width:13%">Amount</th>
+        <th class="c" style="width:6%">SL.</th>
+        <th style="width:44%">DESCRIPTION OF GOODS</th>
+        <th class="c" style="width:10%">QTY</th>
+        <th class="c" style="width:13%">RATE</th>
+        <th class="c" style="width:8%">PER</th>
+        <th class="c" style="width:19%">AMOUNT</th>
       </tr></thead>
       <tbody class="rows">
         ${itemRows}
         ${fillerRows}
       </tbody>
       <tbody class="tots">
-        ${totalRow}
         ${discRow}
         ${taxableRow}
         ${gstRows}
         ${roundRow}
-        ${grandRow}
+        ${splitRow}
       </tbody>
     </table>
   </div>
 
-  <div class="words"><b>Amount in Words :</b> ${esc(amountInWords(bill.total))}</div>
+  <div class="words"><b>AMOUNT IN WORDS</b>&nbsp;&nbsp; ${esc(amountInWords(bill.total))}</div>
   ${dueBox}
 
   <div class="mid">
-    <div class="midleft">
+    <div class="bank">
       ${bankBlock}
-      ${termsBlock}
-      <div class="decl"><div class="cap">Declaration</div>We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.</div>
-      <div class="jur">Subject to ${jurisdiction} Jurisdiction</div>
     </div>
-    <div class="midright">
-      <div class="sigwrap">
-        <div class="sigfor">${shop.name ? `For ${esc(shop.name)}` : ''}</div>
-        <div class="sigimg">${shop.signature ? `<img src="${shop.signature}" alt="signature">` : ''}</div>
-        <div class="sigline">Authorised Signatory</div>
-      </div>
+    <div class="qrbox">${shop.qr ? `<img src="${shop.qr}" alt="payment QR"><div class="qrcap">Scan to Pay</div>` : ''}</div>
+    <div class="sig">
+      <div class="sigfor">FOR ${esc((shop.name || 'PS TELECOM').toUpperCase())}</div>
+      <div class="sigimg">${shop.signature ? `<img src="${shop.signature}" alt="signature">` : ''}</div>
+      <div class="sigline">Authorised Signatory</div>
     </div>
   </div>
 
+  ${termsBlock}
+  ${declBlock}
+
   <div class="foot">
-    <div class="fstrip"></div>
-    <div class="fbar">
-      <div><b>${esc(shop.name)}</b>${shop.phone ? ` &nbsp;·&nbsp; ${esc(shop.phone)}` : ''}</div>
-      ${shop.thankyou ? `<div>${esc(shop.thankyou)}</div>` : '<div></div>'}
-      <div>This is a computer generated invoice</div>
-    </div>
+    <div><b>${esc(shop.name)}</b>${shop.phone ? `<span class="sep">|</span>${esc(shop.phone)}` : ''}</div>
+    <div>${esc(bill.billNumber || '')}</div>
   </div>
 </div>`;
 

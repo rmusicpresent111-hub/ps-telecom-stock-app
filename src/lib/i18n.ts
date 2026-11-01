@@ -367,6 +367,10 @@ export type TranslationKeys = {
   lockCancelled: string;
   lockFailed: string;
   lockSecured: string;
+  lockNow: string;
+  lockNowDesc: string;
+  lockNowToast: string;
+  lockNowFailToast: string;
 };
 
 const translations: Record<Language, TranslationKeys> = {
@@ -709,6 +713,10 @@ const translations: Record<Language, TranslationKeys> = {
     lockCancelled: 'আনলক বাতিল হয়েছে — আবার চেষ্টা করুন',
     lockFailed: 'যাচাই করা যায়নি — আবার চেষ্টা করুন',
     lockSecured: 'এই অ্যাপ আপনার ফোনের স্ক্রিন লক দিয়ে সুরক্ষিত',
+    lockNow: 'এখনই লক করুন',
+    lockNowDesc: 'অ্যাপ সাথে সাথে লক হবে — স্ক্রিন লক দিয়ে খুলবেন',
+    lockNowToast: 'অ্যাপ লক হয়ে গেছে — ফিরে এসে আনলক করুন',
+    lockNowFailToast: 'লক করা যায়নি — ফোনে স্ক্রিন লক সেট করুন',
   },
   en: {
     appName: 'PS TELECOM',
@@ -1049,6 +1057,10 @@ const translations: Record<Language, TranslationKeys> = {
     lockCancelled: 'Unlock cancelled — tap Unlock to try again',
     lockFailed: 'Could not verify — try again',
     lockSecured: 'This app is protected by your phone screen lock',
+    lockNow: 'Lock Now',
+    lockNowDesc: 'Lock the app instantly — unlock with your screen lock',
+    lockNowToast: 'App locked — unlock when you return',
+    lockNowFailToast: 'Could not lock — set up a screen lock on this phone first',
   },
   hi: {
     appName: 'PS TELECOM',
@@ -1389,6 +1401,10 @@ const translations: Record<Language, TranslationKeys> = {
     lockCancelled: 'अनलॉक रद्द हुआ — फिर से कोशिश करें',
     lockFailed: 'सत्यापित नहीं हो सका — फिर कोशिश करें',
     lockSecured: 'यह ऐप आपके फ़ोन के स्क्रीन लॉक से सुरक्षित है',
+    lockNow: 'अभी लॉक करें',
+    lockNowDesc: 'ऐप तुरंत लॉक होगा — स्क्रीन लॉक से खोलें',
+    lockNowToast: 'ऐप लॉक हो गया — वापस आकर अनलॉक करें',
+    lockNowFailToast: 'लॉक नहीं हो सका — पहले फ़ोन में स्क्रीन लॉक सेट करें',
   },
 };
 

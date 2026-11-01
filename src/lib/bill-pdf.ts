@@ -8,11 +8,13 @@
  *  2. Fallback: download the PDF + open wa.me chat with a formatted bill
  *     summary, so the user just attaches the downloaded file.
  *
- * PDF design: classic GENUINE INVOICE — clean white letterhead, centered
- * shop identity, bordered two-cell Bill-To/Bill-No box, full-grid items
- * table, black Grand-Total plate, QR + signature row, and a dedicated
- * Terms & Conditions block that preserves the shop's OWN line-by-line
- * formatting (every newline typed in Settings reaches the PDF as-is).
+ * PDF design: ROYAL BLUE & WHITE invoice (v2.24.0) — matches the printed
+ * admin A4 bill: navy header band with the invoice-number box docked on one
+ * side, light-blue title strip, Bill-To + payment-status panels, navy-headed
+ * items grid with a navy GRAND TOTAL plate, amount-in-words band, QR +
+ * signature row, and a dedicated Terms & Conditions block that preserves
+ * the shop's OWN line-by-line formatting (every newline typed in Settings
+ * reaches the PDF as-is).
  */
 
 import { jsPDF } from 'jspdf';
@@ -21,17 +23,29 @@ import { Bill } from './types';
 
 type RGB = [number, number, number];
 
-// ============ palette (classic print, no decoration) ============
+// ============ palette (ROYAL BLUE & WHITE — matches the printed invoice) ============
 
-const BLACK: RGB = [24, 24, 24];
-const INK: RGB = [45, 45, 45];
-const BODY: RGB = [70, 70, 70];
-const MUTE: RGB = [110, 110, 110];
-const LINE: RGB = [120, 120, 120];
-const SOFT: RGB = [205, 205, 205];
-const HEADFILL: RGB = [238, 238, 238];
-const GREEN: RGB = [16, 130, 82];
+const WHITE: RGB = [255, 255, 255];
+const NAVY: RGB = [30, 58, 138];         // #1E3A8A — header band / table head / grand total / footer
+const NAVY_DARK: RGB = [23, 48, 110];    // #17306E — invoice-number box
+const NAVY_INK: RGB = [15, 31, 69];      // #0F1F45 — strongest text
+const HEADTXT: RGB = [157, 180, 228];    // #9DB4E4 — captions on navy
+const PALE: RGB = [220, 230, 248];       // #DCE6F8 — address lines on navy
+const BLUE_LIGHT: RGB = [220, 233, 249]; // #DCE9F9 — title strip / qty band
+const BLUE_SOFT: RGB = [239, 245, 252];  // #EFF5FC — words band / adjustment rows
+const BLUE_BORDER: RGB = [195, 212, 236];// #C3D4EC — light borders
+const BLUE_TEXT: RGB = [91, 116, 173];   // #5B74AD — captions on white
+const INK: RGB = [62, 81, 112];          // #3E5170 — body text
+const MUTE: RGB = [130, 150, 188];       // #8296BC
+const GREEN: RGB = [30, 142, 62];
+const GREEN_BG: RGB = [233, 246, 238];
+const GREEN_BR: RGB = [191, 223, 201];
+const AMBER: RGB = [180, 83, 9];
+const AMBER_BG: RGB = [255, 247, 230];
+const AMBER_BR: RGB = [242, 220, 176];
 const RED: RGB = [198, 40, 40];
+const RED_BG: RGB = [253, 237, 237];
+const RED_BR: RGB = [243, 196, 196];
 
 const PROPRIETOR_FALLBACK = 'Avijit Maity & Brother';
 
@@ -151,7 +165,8 @@ export async function generateBillPdf(
   const doc = new jsPDF({ unit: 'pt', format: 'a5', orientation: 'portrait' });
   const W = doc.internal.pageSize.getWidth();   // 419.5 pt
   const H = doc.internal.pageSize.getHeight();  // 595.3 pt
-  const M = 28; // margin
+  const M = 20; // side margin
+  const CW = W - M * 2;
 
   const shop = bill.shopSnapshot || { name: 'PS TELECOM', address: '', phone: '', gstNumber: '' };
   const shopName = shop.name || 'PS TELECOM';
@@ -162,238 +177,266 @@ export async function generateBillPdf(
     doc.setLineWidth(w);
     doc.line(x1, y1, x2, y2);
   };
-  const gridRect = (x: number, y: number, w: number, h: number, fill?: RGB) => {
-    if (fill) {
-      doc.setFillColor(...fill);
-      doc.rect(x, y, w, h, 'F');
+  /** rounded/filled/stroked box helper */
+  const box = (x: number, yy: number, w: number, h: number, fill?: RGB, stroke?: RGB, r = 0) => {
+    if (fill) doc.setFillColor(...fill);
+    if (stroke) {
+      doc.setDrawColor(...stroke);
+      doc.setLineWidth(0.9);
     }
-    doc.setDrawColor(...INK);
-    doc.setLineWidth(0.8);
-    doc.rect(x, y, w, h, 'S');
+    if (fill && stroke) doc.roundedRect(x, yy, w, h, r, r, 'FD');
+    else if (fill) doc.roundedRect(x, yy, w, h, r, r, 'F');
+    else if (stroke) doc.roundedRect(x, yy, w, h, r, r, 'S');
   };
+  const txt = (
+    s: string,
+    x: number,
+    yy: number,
+    o: { align?: 'left' | 'center' | 'right'; font?: 'helvetica' | 'times' | 'courier'; style?: 'normal' | 'bold' | 'italic' | 'bolditalic'; size?: number; color?: RGB; cs?: number } = {}
+  ) => {
+    doc.setFont(o.font ?? 'helvetica', o.style ?? 'normal');
+    doc.setFontSize(o.size ?? 7);
+    doc.setTextColor(...(o.color ?? INK));
+    doc.setCharSpace(o.cs ?? 0);
+    doc.text(s, x, yy, { align: o.align ?? 'left' });
+    doc.setCharSpace(0);
+  };
+  const cap = (s: string, x: number, yy: number, color: RGB = BLUE_TEXT) =>
+    txt(s.toUpperCase(), x, yy, { size: 5.7, style: 'bold', color, cs: 1.1 });
 
-  // ================= LETTERHEAD (centered shop identity) =================
-  let y = 40;
+  // ================= ROYAL BLUE HEADER =================
+  // thin royal edge across the very top of the sheet
+  doc.setFillColor(...NAVY);
+  doc.rect(0, 0, W, 5, 'F');
 
-  doc.setFont('times', 'bold');
-  doc.setTextColor(...BLACK);
-  let nameSize = 17.5;
-  doc.setCharSpace(0.7);
-  while (doc.getTextWidth(shopName) > W - M * 2 && nameSize > 11) {
-    nameSize -= 0.5;
-    doc.setFontSize(nameSize);
-  }
-  doc.setFontSize(nameSize);
-  doc.text(shopName, W / 2, y, { align: 'center' });
-  doc.setCharSpace(0);
-
+  // header band — shop identity LEFT, invoice meta box docked on ONE side
+  box(10, 12, W - 20, 68, NAVY, undefined, 4);
+  let y = 33;
+  txt(shopName, 22, y, { size: 15.5, style: 'bold', color: WHITE, cs: 0.6 });
+  y += 9;
   if (proprietor) {
-    y += 12.5;
-    doc.setFont('times', 'italic');
-    doc.setFontSize(8.5);
-    doc.setTextColor(...BODY);
-    doc.text(`Proprietor: ${proprietor}`, W / 2, y, { align: 'center' });
+    txt(proprietor.toUpperCase(), 22, y, { size: 6.2, style: 'bold', color: PALE, cs: 1 });
+    y += 8;
   }
-
   if (shop.address) {
+    const addrLines = doc.splitTextToSize(shop.address, W - 170) as string[];
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.9);
-    doc.setTextColor(...BODY);
-    const addrLines = doc.splitTextToSize(shop.address, W - M * 2) as string[];
-    y += addrLines.length * 9.4 + 2;
-    doc.text(addrLines, W / 2, y, { align: 'center' });
+    doc.setFontSize(6.2);
+    doc.setTextColor(...PALE);
+    doc.text(addrLines, 22, y);
+    y += addrLines.length * 7.6 + 1.5;
   }
-
   const contactBits: string[] = [];
-  if (shop.phone) contactBits.push(`Ph: ${shop.phone}`);
+  if (shop.phone) contactBits.push(`Phone: ${shop.phone}`);
   if (shop.gstNumber) contactBits.push(`GSTIN: ${shop.gstNumber}`);
   if (contactBits.length) {
-    y += 10.5;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.9);
-    doc.setTextColor(...BODY);
-    doc.text(contactBits.join('   |   '), W / 2, y, { align: 'center' });
+    txt(contactBits.join('   |   '), 22, Math.min(y, 73), { size: 6.8, style: 'bold', color: WHITE });
   }
 
-  // classic double rule under the letterhead
-  y += 6;
-  line(M, y, W - M, y, 1.5, BLACK);
-  line(M, y + 3, W - M, y + 3, 0.5, LINE);
+  // invoice meta — the bill number lives HERE, in a darker box on one side
+  const mx = W - 132;
+  box(mx, 19, 122, 54, NAVY_DARK, undefined, 3);
+  cap('Invoice No.', mx + 8, 29, HEADTXT);
+  txt(bill.billNumber, mx + 8, 39, { size: 9.5, style: 'bold', color: WHITE, cs: 0.3 });
+  cap('Date', mx + 8, 48, HEADTXT);
+  txt(formatDate(bill.date), mx + 8, 55, { size: 7.2, style: 'bold', color: WHITE });
+  cap('Payment Mode', mx + 8, 64, HEADTXT);
+  const pmLabel: Record<string, string> = { cash: 'Cash', upi: 'UPI', card: 'Card', due: 'Credit (Due)' };
+  txt((pmLabel[bill.paymentMethod] || bill.paymentMethod || 'Cash').toUpperCase(), mx + 8, 71, { size: 7.2, style: 'bold', color: WHITE });
 
-  // ================= INVOICE TITLE =================
-  y += 17;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11.5);
-  doc.setTextColor(...BLACK);
-  doc.setCharSpace(1.6);
-  doc.text(bill.gstEnabled ? 'TAX INVOICE' : 'INVOICE', W / 2, y, { align: 'center' });
-  doc.setCharSpace(0);
+  // ================= TITLE STRIP =================
+  const stripY = 86;
+  box(10, stripY, W - 20, 17, BLUE_LIGHT, undefined, 2);
+  txt(bill.gstEnabled ? 'TAX INVOICE' : 'INVOICE', 20, stripY + 11.5, { size: 9, style: 'bold', color: NAVY_INK, cs: 2.2 });
+  txt('CUSTOMER COPY', W - 20, stripY + 11, { size: 5.8, style: 'bold', color: BLUE_TEXT, cs: 1.4, align: 'right' });
 
-  // ================= BILL-TO + BILL META (bordered two-cell box) =================
-  y += 7;
-  const boxTop = y;
-  const boxH = 46;
-  const boxW = W - M * 2;
-  const splitX = M + boxW * 0.62;
-  gridRect(M, boxTop, boxW, boxH);
-  line(splitX, boxTop, splitX, boxTop + boxH, 0.8, INK);
+  // ================= BILL TO + PAYMENT STATUS =================
+  const pY = stripY + 23;
+  const pbsW = 236;
+  // bill-to panel — white, navy left accent
+  box(M, pY, pbsW, 44, undefined, BLUE_BORDER, 2);
+  doc.setFillColor(...NAVY);
+  doc.rect(M, pY, 2.5, 44, 'F');
+  cap('Bill To', M + 9, pY + 10);
+  txt(bill.customerName || 'Walk-in Customer', M + 9, pY + 20, { size: 9, style: 'bold', color: NAVY_INK });
+  let py = pY + 29;
+  if (bill.customerMobile) {
+    txt(`Phone: ${bill.customerMobile}`, M + 9, py, { size: 6.6, color: INK });
+    py += 7.5;
+  }
+  if (shop.gstNumber) {
+    txt(`Place of Supply Code: ${shop.gstNumber.slice(0, 2)}`, M + 9, py, { size: 6.6, color: INK });
+    py += 7.5;
+  }
+  if (bill.note) {
+    const noteLines = doc.splitTextToSize(`Note: ${bill.note}`, pbsW - 18) as string[];
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.2);
+    doc.setTextColor(...INK);
+    doc.text(noteLines, M + 9, py);
+  }
 
-  // left cell — customer
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6.8);
-  doc.setTextColor(...MUTE);
-  doc.setCharSpace(1);
-  doc.text('BILL TO', M + 10, boxTop + 12);
-  doc.setCharSpace(0);
-  doc.setFont('times', 'bold');
-  doc.setFontSize(11.5);
-  doc.setTextColor(...BLACK);
-  const custName = doc.splitTextToSize(bill.customerName || 'Walk-in Customer', splitX - M - 20) as string[];
-  doc.text(custName, M + 10, boxTop + 26);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.4);
-  doc.setTextColor(...BODY);
-  doc.text(bill.customerMobile ? `Mob: ${bill.customerMobile}` : ' ', M + 10, boxTop + 38.5);
+  // payment status panel — green PAID / amber PARTIAL / red DUE
+  const sX = M + pbsW + 8;
+  const sW = W - M - sX;
+  const paid = Number(bill.paidAmount) || 0;
+  const dueAmt = Number(bill.dueAmount) || 0;
+  const stPaid = dueAmt <= 0.009;
+  const stPartial = !stPaid && paid > 0.009;
+  const sFill = stPaid ? GREEN_BG : stPartial ? AMBER_BG : RED_BG;
+  const sBar = stPaid ? GREEN : stPartial ? AMBER : RED;
+  const sBr = stPaid ? GREEN_BR : stPartial ? AMBER_BR : RED_BR;
+  box(sX, pY, sW, 44, sFill, sBr, 2);
+  doc.setFillColor(...sBar);
+  doc.rect(sX, pY, 2.5, 44, 'F');
+  cap('Payment Status', sX + 9, pY + 10, sBar);
+  txt(stPaid ? 'PAID' : stPartial ? 'PARTIALLY PAID' : 'PAYMENT DUE', sX + 9, pY + 19, { size: 7.2, style: 'bold', color: sBar, cs: 0.5 });
+  txt(`Paid: Rs. ${formatMoney(paid)}`, sX + 9, pY + 28.5, { size: 6.3, color: INK });
+  txt(`Balance Due: Rs. ${formatMoney(dueAmt)}`, sX + 9, pY + 36, { size: 6.3, style: 'bold', color: sBar });
 
-  // right cell — bill number / date (plain right-aligned, classic print)
-  const metaX = W - M - 10;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.8);
-  doc.setTextColor(...BLACK);
-  doc.text(`Bill No: ${bill.billNumber}`, metaX, boxTop + 16, { align: 'right' });
-  doc.text(`Date: ${formatDate(bill.date)}`, metaX, boxTop + 31, { align: 'right' });
+  y = pY + 52;
 
-  y = boxTop + boxH + 12;
-
-  // ================= ITEMS TABLE (full grid) =================
+  // ================= ITEMS TABLE — royal header, light grid =================
   const tblLeft = M;
-  const tblW = W - M * 2;
-  const cNo = 24;
-  const cQty = 46;
-  const cRate = 66;
-  const cAmt = 76;
-  const cItem = tblW - cNo - cQty - cRate - cAmt;
+  const tblW = CW;
+  const cNo = 20;
+  const cQty = 34;
+  const cRate = 48;
+  const cPer = 26;
+  const cAmt = 62;
+  const cItem = tblW - cNo - cQty - cRate - cPer - cAmt;
   const xNo = tblLeft;
   const xItem = xNo + cNo;
   const xQty = xItem + cItem;
   const xRate = xQty + cQty;
-  const xAmt = xRate + cRate;
+  const xPer = xRate + cRate;
+  const xAmt = xPer + cPer;
   const tblRight = tblLeft + tblW;
 
   const tblTop = y;
-  const headH = 20;
-
-  // header row
-  gridRect(tblLeft, tblTop, tblW, headH, HEADFILL);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.6);
-  doc.setTextColor(...BLACK);
-  doc.setCharSpace(0.5);
-  doc.text('#', xNo + cNo / 2, tblTop + 13.5, { align: 'center' });
-  doc.text('ITEM', xItem + 5, tblTop + 13.5);
-  doc.text('QTY', xQty + cQty / 2, tblTop + 13.5, { align: 'center' });
-  doc.text('RATE', xRate + cRate - 5, tblTop + 13.5, { align: 'right' });
-  doc.text('AMOUNT', xAmt + cAmt - 5, tblTop + 13.5, { align: 'right' });
-  doc.setCharSpace(0);
+  const headH = 15;
+  doc.setFillColor(...NAVY);
+  doc.rect(tblLeft, tblTop, tblW, headH, 'F');
+  txt('SL.', xNo + cNo / 2, tblTop + 10, { size: 6.2, style: 'bold', color: WHITE, align: 'center', cs: 0.4 });
+  txt('DESCRIPTION OF GOODS', xItem + 5, tblTop + 10, { size: 6.2, style: 'bold', color: WHITE, cs: 0.4 });
+  txt('QTY', xQty + cQty / 2, tblTop + 10, { size: 6.2, style: 'bold', color: WHITE, align: 'center', cs: 0.4 });
+  txt('RATE', xRate + cRate - 5, tblTop + 10, { size: 6.2, style: 'bold', color: WHITE, align: 'right', cs: 0.4 });
+  txt('PER', xPer + cPer / 2, tblTop + 10, { size: 6.2, style: 'bold', color: WHITE, align: 'center', cs: 0.4 });
+  txt('AMOUNT', xAmt + cAmt - 5, tblTop + 10, { size: 6.2, style: 'bold', color: WHITE, align: 'right', cs: 0.4 });
 
   let rowY = tblTop + headH;
   const items = bill.items.length ? bill.items : [{ productId: '', name: '—', quantity: 0, unitPrice: 0, total: 0 }];
   items.forEach((item, idx) => {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.8);
     const nameLines = doc.splitTextToSize(item.name, cItem - 10) as string[];
-    const rowH = Math.max(19, nameLines.length * 10.6 + 8);
+    const sns = (item.serialNumbers || []).filter(Boolean);
+    const rowH = Math.max(16, nameLines.length * 9 + 7 + (sns.length ? 7 : 0));
 
-    // row text
-    doc.setTextColor(...INK);
-    doc.text(String(idx + 1), xNo + cNo / 2, rowY + 13, { align: 'center' });
-    doc.text(nameLines, xItem + 5, rowY + 13);
-    doc.text(String(item.quantity), xQty + cQty / 2, rowY + 13, { align: 'center' });
-    doc.text(`Rs. ${formatMoney(item.unitPrice)}`, xRate + cRate - 5, rowY + 13, { align: 'right' });
-    doc.setFont('times', 'bold');
-    doc.setFontSize(9.6);
-    doc.text(`Rs. ${formatMoney(item.total)}`, xAmt + cAmt - 5, rowY + 13, { align: 'right' });
+    txt(String(idx + 1), xNo + cNo / 2, rowY + 11.5, { size: 7, color: INK, align: 'center' });
+    txt(nameLines, xItem + 5, rowY + 11.5, { size: 7.6, color: NAVY_INK });
+    if (sns.length) {
+      const snTxt = doc.splitTextToSize(`S/N: ${sns.join(', ')}`, cItem - 10) as string[];
+      doc.setFont('courier', 'normal');
+      doc.setFontSize(5.4);
+      doc.setTextColor(...MUTE);
+      doc.text(snTxt, xItem + 5, rowY + 11.5 + nameLines.length * 9);
+    }
+    txt(String(item.quantity), xQty + cQty / 2, rowY + 11.5, { size: 7, color: INK, align: 'center' });
+    txt(formatMoney(item.unitPrice), xRate + cRate - 5, rowY + 11.5, { size: 7, color: INK, align: 'right' });
+    txt('Nos.', xPer + cPer / 2, rowY + 11.5, { size: 6.2, color: MUTE, align: 'center' });
+    txt(formatMoney(item.total), xAmt + cAmt - 5, rowY + 11.5, { size: 7.4, style: 'bold', color: NAVY_INK, align: 'right' });
 
     rowY += rowH;
-    line(tblLeft, rowY, tblRight, rowY, 0.6, SOFT);
+    line(tblLeft, rowY, tblRight, rowY, 0.5, BLUE_BORDER);
   });
 
-  // outer frame + column separators over the whole table
-  gridRect(tblLeft, tblTop, tblW, rowY - tblTop);
-  line(xItem, tblTop, xItem, rowY, 0.6, SOFT);
-  line(xQty, tblTop, xQty, rowY, 0.6, SOFT);
-  line(xRate, tblTop, xRate, rowY, 0.6, SOFT);
-  line(xAmt, tblTop, xAmt, rowY, 0.6, SOFT);
-
-  // ================= AMOUNT IN WORDS =================
-  y = rowY + 12;
-  doc.setFont('times', 'bolditalic');
-  doc.setFontSize(8);
-  doc.setTextColor(...BODY);
-  const wordsLines = doc.splitTextToSize(`In Words: ${amountInWords(bill.total)}`, tblW) as string[];
-  doc.text(wordsLines, tblLeft, y);
-  y += wordsLines.length * 9 + 1.5;
-
-  // ================= TOTALS =================
-  const tLabelX = W * 0.42;
-  const tValueX = tblRight - 10;
-  const totalRow = (label: string, value: string, opts?: { bold?: boolean; color?: RGB; size?: number }) => {
-    doc.setFont('helvetica', opts?.bold ? 'bold' : 'normal');
-    doc.setFontSize(opts?.size ?? 8.8);
-    doc.setTextColor(...(opts?.color ?? BODY));
-    doc.text(label, tLabelX, y);
-    doc.text(value, tValueX, y, { align: 'right' });
-    y += opts?.bold ? 14 : 12;
+  // adjustment rows — light blue, inside the grid above the grand plate
+  const tRow = (label: string, value: string, color: RGB = INK) => {
+    doc.setFillColor(...BLUE_SOFT);
+    doc.rect(tblLeft, rowY, tblW, 13, 'F');
+    txt(label, xAmt - 6, rowY + 9, { size: 6.3, style: 'bold', color, align: 'right' });
+    txt(value, xAmt + cAmt - 5, rowY + 9, { size: 6.8, style: 'bold', color: NAVY_INK, align: 'right' });
+    rowY += 13;
+    line(tblLeft, rowY, tblRight, rowY, 0.5, BLUE_BORDER);
   };
-
-  totalRow('Subtotal', `Rs. ${formatMoney(bill.subtotal)}`);
-  if (bill.discountAmount > 0) {
-    const pct = bill.discountType === 'percent' ? ` (${bill.discountValue}%)` : '';
-    totalRow(`Discount${pct}`, `- Rs. ${formatMoney(bill.discountAmount)}`, { color: GREEN });
+  const disc = bill.discountAmount || 0;
+  const gstAmt = bill.gstAmount || 0;
+  const gstOn = bill.gstEnabled && gstAmt > 0;
+  const inclusiveGst = bill.gstMode === 'inclusive' && gstOn;
+  if (disc > 0.009) {
+    tRow(`Less: Discount${bill.discountType === 'percent' ? ` (${bill.discountValue}%)` : ''}`, `- ${formatMoney(disc)}`, GREEN);
   }
-  if (bill.gstEnabled && bill.gstAmount > 0) {
-    totalRow(`GST (${bill.gstRate}%)`, `Rs. ${formatMoney(bill.gstAmount)}`);
+  if (inclusiveGst && bill.taxableValue != null) {
+    tRow('Taxable Value', formatMoney(bill.taxableValue));
   }
-
-  // GRAND TOTAL — solid black plate, white text (the classic bill signature)
-  y += 2;
-  const plateH = 24;
-  doc.setFillColor(...BLACK);
-  doc.rect(tLabelX, y, tblRight - tLabelX, plateH, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
-  doc.setTextColor(255, 255, 255);
-  doc.setCharSpace(0.8);
-  doc.text('GRAND TOTAL', tLabelX + 10, y + 17);
-  doc.setCharSpace(0);
-  doc.setFontSize(12.5);
-  doc.text(`Rs. ${formatMoney(bill.total)}`, tValueX - 10, y + 16.5, { align: 'right' });
-  y += plateH + 7;
-
-  const pmLabel: Record<string, string> = { cash: 'Cash', upi: 'UPI', card: 'Card', due: 'Due (Credit)' };
-  if (bill.paidAmount > 0 || bill.dueAmount > 0) {
-    totalRow('Paid', `Rs. ${formatMoney(bill.paidAmount)}`, { color: GREEN });
-    if (bill.dueAmount > 0) {
-      totalRow('Balance Due', `Rs. ${formatMoney(bill.dueAmount)}`, { color: RED, bold: true, size: 9.4 });
+  if (gstOn) {
+    if (bill.cgstAmount != null && bill.sgstAmount != null) {
+      const half = Math.round((bill.gstRate / 2) * 100) / 100;
+      tRow(`OUTPUT CGST @ ${half}%`, formatMoney(bill.cgstAmount));
+      tRow(`OUTPUT SGST @ ${half}%`, formatMoney(bill.sgstAmount));
+    } else {
+      tRow(`OUTPUT GST @ ${bill.gstRate}%`, formatMoney(gstAmt));
     }
   }
-  totalRow('Payment Method', pmLabel[bill.paymentMethod] || bill.paymentMethod);
 
-  if (bill.note) {
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(8);
-    doc.setTextColor(...BODY);
-    const noteLines = doc.splitTextToSize(`Note: ${bill.note}`, tblW) as string[];
-    doc.text(noteLines, tblLeft, y + 2);
-    y += noteLines.length * 9.5 + 2;
+  // bottom split row — quantity band LEFT, navy GRAND TOTAL plate RIGHT
+  const qtyTotal = items.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
+  const splitH = 18;
+  const splitMid = tblLeft + cNo + cItem + cQty;
+  doc.setFillColor(...BLUE_LIGHT);
+  doc.rect(tblLeft, rowY, splitMid - tblLeft, splitH, 'F');
+  doc.setFillColor(...NAVY);
+  doc.rect(splitMid, rowY, tblRight - splitMid, splitH, 'F');
+  txt(`Total quantity  ${qtyTotal} Nos.`, (tblLeft + splitMid) / 2, rowY + 12, { size: 7.2, style: 'bold', color: NAVY_INK, align: 'center' });
+  txt(`GRAND TOTAL  Rs. ${formatMoney(bill.total)}`, splitMid + (tblRight - splitMid) / 2, rowY + 12, { size: 8, style: 'bold', color: WHITE, align: 'center', cs: 0.4 });
+  rowY += splitH;
+
+  // outer frame + column separators over the whole table
+  doc.setDrawColor(...NAVY);
+  doc.setLineWidth(1.1);
+  doc.rect(tblLeft, tblTop, tblW, rowY - tblTop, 'S');
+  line(xItem, tblTop, xItem, rowY, 0.5, BLUE_BORDER);
+  line(xQty, tblTop, xQty, rowY, 0.5, BLUE_BORDER);
+  line(xRate, tblTop, xRate, rowY, 0.5, BLUE_BORDER);
+  line(xPer, tblTop, xPer, rowY, 0.5, BLUE_BORDER);
+  line(splitMid, rowY - splitH, splitMid, rowY, 1.1, NAVY);
+
+  // ================= AMOUNT IN WORDS band =================
+  y = rowY + 10;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(5.8);
+  doc.setTextColor(...NAVY_INK);
+  doc.setCharSpace(1);
+  doc.text('AMOUNT IN WORDS', tblLeft + 8, y + 10);
+  doc.setCharSpace(0);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.8);
+  doc.setTextColor(...INK);
+  const wordsLines = doc.splitTextToSize(amountInWords(bill.total), tblW - 96) as string[];
+  doc.text(wordsLines, tblLeft + 88, y + 10);
+  const wordsH = 15 + (wordsLines.length - 1) * 8;
+  box(tblLeft, y, tblW, wordsH, undefined, BLUE_BORDER, 2);
+  y += wordsH + 7;
+
+  // due callout — red receivable band (reference-style)
+  if (dueAmt > 0.009) {
+    const dueStr = `Amount of Rs. ${formatMoney(dueAmt)} (${amountInWords(dueAmt)}) receivable from party.`;
+    const dl = doc.splitTextToSize(dueStr, tblW - 18) as string[];
+    const dh = 12 + dl.length * 8.2;
+    box(tblLeft, y, tblW, dh, RED_BG, RED_BR, 2);
+    doc.setFillColor(...RED);
+    doc.rect(tblLeft, y, 2.5, dh, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.3);
+    doc.setTextColor(...RED);
+    doc.text(dl, tblLeft + 9, y + 9.5);
+    y += dh + 6;
   }
 
   // ================= TERMS & CONDITIONS (user format preserved) =================
-  // Real bills print the terms in the free band between the totals and the
-  // signature block — exactly what we do here. The user's OWN line-by-line
-  // layout survives intact: every newline / blank line / numbering typed in
-  // Settings lands on the PDF as-is (auto-shrunk only when space runs out).
-  const QR_PIN = H - 104; // QR/signature row stays pinned just above the footer
+  // The user's OWN line-by-line layout survives intact: every newline /
+  // blank line / numbering typed in Settings lands on the PDF as-is
+  // (auto-shrunk only when space runs out). Royal-blue bordered box.
+  const QR_PIN = H - 100; // QR/signature row stays pinned just above the footer
   if (images.termsText && images.termsText.trim()) {
     const rawLines = images.termsText.replace(/\r\n?/g, '\n').split('\n');
     // drop leading/trailing blank lines the user never intended to see
@@ -401,14 +444,14 @@ export async function generateBillPdf(
     while (rawLines.length && !rawLines[rawLines.length - 1].trim()) rawLines.pop();
 
     if (rawLines.length) {
-      const TC_HEADER = 16;
+      const TC_HEADER = 15;
       const heightOf = (fs: number, lines: string[], extra: number) => {
         const lead = fs * 1.32;
         return TC_HEADER + extra + lines.reduce((s, l) => s + (l.trim() ? lead : lead * 0.45), 0);
       };
-      const avail = Math.max(QR_PIN - 8 - y, 24);
-      let fs = 7.2;
-      while (heightOf(fs, rawLines, 0) > avail && fs > 5.2) fs -= 0.2;
+      const avail = Math.max(QR_PIN - 10 - y, 22);
+      let fs = 6.6;
+      while (heightOf(fs, rawLines, 0) > avail && fs > 4.6) fs -= 0.2;
       const lead = fs * 1.32;
       let shown = rawLines;
       let truncated = false;
@@ -417,85 +460,70 @@ export async function generateBillPdf(
         shown = shown.slice(0, -1);
         truncated = true;
       }
+      const tcH = heightOf(fs, shown, truncated ? lead : 0) + 5;
+      box(tblLeft, y, tblW, tcH, undefined, NAVY, 2);
 
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7.2);
-      doc.setTextColor(...BLACK);
-      doc.setCharSpace(0.9);
-      doc.text('TERMS & CONDITIONS', tblLeft, y);
-      doc.setCharSpace(0);
-      line(tblLeft, y + 3, tblLeft + 92, y + 3, 0.6, LINE);
-      y += TC_HEADER;
-
+      txt('TERMS & CONDITIONS', tblLeft + 8, y + 11, { size: 6.2, style: 'bold', color: NAVY_INK, cs: 1 });
+      let ty = y + TC_HEADER + 2;
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(fs);
-      doc.setTextColor(...BODY);
+      doc.setTextColor(...INK);
       for (const l of shown) {
         if (l.trim()) {
-          const wrapped = doc.splitTextToSize(l, tblW) as string[];
-          doc.text(wrapped, tblLeft, y);
-          y += wrapped.length * lead;
+          const wrapped = doc.splitTextToSize(l, tblW - 16) as string[];
+          doc.text(wrapped, tblLeft + 8, ty);
+          ty += wrapped.length * lead;
         } else {
-          y += lead * 0.45;
+          ty += lead * 0.45;
         }
       }
-      if (truncated) doc.text('…', tblLeft, y);
+      if (truncated) doc.text('…', tblLeft + 8, ty);
+      y += tcH + 6;
     }
   }
 
-  // ================= QR + SIGNATURE ROW (pinned near page bottom) =================
+  // ================= QR + BANK + SIGNATURE ROW (pinned near page bottom) =================
   const qrY = Math.max(y + 4, QR_PIN);
   if (images.qrCodeDataUrl) {
     try {
-      const qrSize = 52;
-      doc.addImage(images.qrCodeDataUrl, 'PNG', tblLeft, qrY, qrSize, qrSize);
+      const qrSize = 44;
+      box(tblLeft, qrY - 5, qrSize + 10, qrSize + 10, WHITE, BLUE_BORDER, 2);
+      doc.addImage(images.qrCodeDataUrl, 'PNG', tblLeft + 5, qrY, qrSize, qrSize);
       // UPI caption sits BESIDE the QR (keeps the bottom band compact)
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7);
-      doc.setTextColor(...MUTE);
-      doc.text('Scan to pay', tblLeft + qrSize + 10, qrY + qrSize / 2 - 4);
-      if (images.upiId) doc.text(`UPI: ${images.upiId}`, tblLeft + qrSize + 10, qrY + qrSize / 2 + 6);
+      txt('Scan to Pay', tblLeft + qrSize + 17, qrY + 16, { size: 5.8, style: 'bold', color: BLUE_TEXT, cs: 0.6 });
+      if (images.upiId) txt(`UPI ID: ${images.upiId}`, tblLeft + qrSize + 17, qrY + 25, { size: 5.8, color: INK });
+      if (proprietor) txt(`A/c Holder: ${proprietor}`, tblLeft + qrSize + 17, qrY + 34, { size: 5.8, color: INK });
     } catch {
       // invalid image data — skip QR silently
     }
+  } else if (proprietor) {
+    txt(`A/c Holder: ${proprietor}`, tblLeft, qrY + 10, { size: 6.4, style: 'bold', color: NAVY_INK });
   }
 
   // signature block (right)
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.4);
-  doc.setTextColor(...BODY);
-  doc.text(`For ${shopName}`, W - M, qrY + 2, { align: 'right' });
+  txt(`FOR ${shopName.toUpperCase()}`, W - M, qrY + 2, { size: 7.2, style: 'bold', color: NAVY_INK, align: 'right', cs: 0.5 });
   if (images.signatureDataUrl) {
     try {
-      doc.addImage(images.signatureDataUrl, 'PNG', W - M - 88, qrY + 3, 88, 28);
+      doc.addImage(images.signatureDataUrl, 'PNG', W - M - 80, qrY + 5, 80, 24);
     } catch {
       // invalid image data — skip signature silently
     }
   }
-  line(W - M - 96, qrY + 36, W - M, qrY + 36, 0.7, LINE);
-  if (proprietor) {
-    doc.setFont('times', 'bold');
-    doc.setFontSize(9.4);
-    doc.setTextColor(...BLACK);
-    doc.text(proprietor, W - M, qrY + 45, { align: 'right' });
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6.9);
-    doc.setTextColor(...MUTE);
-    doc.text('Proprietor', W - M, qrY + 54, { align: 'right' });
+  line(W - M - 88, qrY + 34, W - M, qrY + 34, 0.8, NAVY_INK);
+  txt('Authorised Signatory', W - M - 44, qrY + 41, { size: 5.8, color: INK, align: 'center' });
+
+  // ================= THANK-YOU + ROYAL FOOTER (pinned) =================
+  if (images.thankYouNote) {
+    txt(images.thankYouNote, W / 2, H - 32, { size: 6.4, font: 'times', style: 'bolditalic', color: NAVY_INK, align: 'center' });
   }
+  txt(`Generated on ${new Date().toLocaleString('en-GB')} — PS TELECOM App`, W / 2, H - 27, { size: 5.4, color: MUTE, align: 'center' });
 
-  // ================= THANK-YOU + FOOTER (pinned) =================
-  const thanks = images.thankYouNote || 'Thank you for your business!';
-  doc.setFont('times', 'bolditalic');
-  doc.setFontSize(9);
-  doc.setTextColor(...BLACK);
-  doc.text(thanks, W / 2 - 20, H - 44, { align: 'center' });
-
-  line(M, H - 30, W - M, H - 30, 0.5, SOFT);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.4);
-  doc.setTextColor(...MUTE);
-  doc.text(`Generated on ${new Date().toLocaleString('en-GB')} — PS TELECOM App`, W / 2, H - 18, { align: 'center' });
+  // royal navy footer bar — colour to the paper edge
+  doc.setFillColor(...NAVY);
+  doc.rect(0, H - 22, W, 22, 'F');
+  const footLeft = `${shopName}${shop.phone ? `   |   ${shop.phone}` : ''}`;
+  txt(footLeft, 20, H - 8, { size: 6.6, style: 'bold', color: WHITE, cs: 0.4 });
+  txt(bill.billNumber, W - 20, H - 8, { size: 6.6, style: 'bold', color: WHITE, align: 'right', cs: 0.4 });
 
   const blob = doc.output('blob');
   const fileName = `${shopName.replace(/[^a-zA-Z0-9]+/g, '-')}-${bill.billNumber}.pdf`;

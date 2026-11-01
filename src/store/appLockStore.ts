@@ -52,6 +52,10 @@ interface AppLockState {
   requestUnlock: () => Promise<void>;
   /** visibilitychange listener body (background re-lock). */
   handleVisibilityChange: () => void;
+  /** Manual "Lock Now" (Profile button): raise the gate without prompting —
+   *  the unlock prompt fires when the user taps Unlock on the gate. Returns
+   *  false when the device cannot verify (no screen lock / no plugin). */
+  lockNow: () => Promise<boolean>;
   setEnabled: (on: boolean) => void;
 }
 
@@ -149,6 +153,19 @@ export const useAppLockStore = create<AppLockState>()(
       setEnabled: (on) => {
         set({ enabled: on });
         if (!on) set({ locked: false, lastError: null, lastResult: null });
+      },
+
+      lockNow: async () => {
+        if (!appLockSupported()) return false;
+        // no-lockout guarantee — never raise the gate on a device that
+        // cannot verify (no screen lock configured)
+        const ok = await get().probe();
+        if (!ok) return false;
+        // Raise the gate WITHOUT auto-prompting: the owner locks and hands
+        // the phone over; the system screen-lock prompt fires when someone
+        // taps Unlock on the gate (or on resume, if the setting is on).
+        set({ locked: true, lastError: null, lastResult: null, _bgSince: null });
+        return true;
       },
     }),
     {
