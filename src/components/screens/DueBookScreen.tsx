@@ -577,19 +577,29 @@ function EntryTab() {
   };
 
   const applyAutoSplit = () => {
-    const n = Math.floor(Number(splitCount) || 0);
+    // splitCount = MONTHLY AMOUNT (₹) — v2.23.1 bugfix: the old code read the
+    // input as a raw kisti count, so typing the amount 1000 against a ₹3000
+    // due generated 1000 installment rows. Now: rows = ceil(total ÷ monthly).
+    const per = Math.round((Number(splitCount) || 0) * 100) / 100;
     const total = Math.round((Number(form.amount) || 0) * 100) / 100;
-    if (n < 2 || total <= 0) {
+    if (per <= 0 || total <= 0) {
       toast.info(t('deScheduleHint', language));
       return;
     }
-    const per = Math.floor((total / n) * 100) / 100;
+    const n = Math.ceil((total - 0.005) / per);
+    if (n > 60) {
+      toast.error(t('deKistiCap', language).replace('{max}', '60'));
+      return;
+    }
+    // all rows = monthly amount except the last one, which absorbs the
+    // remainder so Σ rows == total exactly.
+    const rowAmt = Math.min(per, Math.floor((total / n) * 100) / 100);
     const start = form.date ? new Date(form.date + 'T00:00:00') : new Date();
     const rows: ScheduleRow[] = [];
     let assigned = 0;
     for (let i = 0; i < n; i++) {
       const isLast = i === n - 1;
-      const amt = isLast ? Math.round((total - assigned) * 100) / 100 : per;
+      const amt = isLast ? Math.round((total - assigned) * 100) / 100 : rowAmt;
       assigned = Math.round((assigned + amt) * 100) / 100;
       rows.push({
         key: `sp-${Date.now().toString(36)}-${i}`,
@@ -1178,11 +1188,11 @@ function EntryTab() {
                     </button>
                     <input
                       type="number"
-                      min="2"
+                      min="1"
                       value={splitCount}
                       onChange={(e) => setSplitCount(e.target.value)}
-                      className="glass-input w-14 px-2 py-2 text-[11px]"
-                      placeholder="6"
+                      className="glass-input w-20 px-2 py-2 text-[11px]"
+                      placeholder="1000"
                       aria-label={t('deAutoSplit', language)}
                     />
                     <button

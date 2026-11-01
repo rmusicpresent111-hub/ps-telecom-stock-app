@@ -236,6 +236,7 @@ export type TranslationKeys = {
   deScheduleHint: string;
   deAddInstallment: string;
   deAutoSplit: string;
+  deKistiCap: string;
   deAutoSplitBtn: string;
   deUnassigned: string;
   deOverAssigned: string;
@@ -582,7 +583,8 @@ const translations: Record<Language, TranslationKeys> = {
     deSchedule: 'পেমেন্ট শিডিউল (কিস্তি)',
     deScheduleHint: 'কিস্তি ঐচ্ছিক — না দিলে সোজা পরিমাণ হিসেবে থাকবে।',
     deAddInstallment: 'কিস্তি যোগ',
-    deAutoSplit: 'মাসিক কিস্তি',
+    deAutoSplit: 'মাসিক কিস্তি (₹)',
+    deKistiCap: 'কিস্তি বেশি হয়ে যাচ্ছে (সর্বোচ্চ {max}) — মাসিক পরিমাণ বাড়ান।',
     deAutoSplitBtn: 'বানান',
     deUnassigned: 'শিডিউলে বাকি: ₹{amount}',
     deOverAssigned: 'শিডিউল মোটের চেয়ে বেশি: ₹{amount}',
@@ -921,7 +923,8 @@ const translations: Record<Language, TranslationKeys> = {
     deSchedule: 'Payment schedule (installments)',
     deScheduleHint: 'Optional — leave empty for a plain amount with no plan.',
     deAddInstallment: 'Add installment',
-    deAutoSplit: 'Monthly split',
+    deAutoSplit: 'Monthly amount (₹)',
+    deKistiCap: 'Too many installments (max {max}) — raise the monthly amount.',
     deAutoSplitBtn: 'Create',
     deUnassigned: 'Not in schedule: ₹{amount}',
     deOverAssigned: 'Schedule exceeds total: ₹{amount}',
@@ -1260,7 +1263,8 @@ const translations: Record<Language, TranslationKeys> = {
     deSchedule: 'भुगतान अनुसूची (किस्ती)',
     deScheduleHint: 'वैकल्पिक — निश्चित योजना न हो तो खाली छोड़ें।',
     deAddInstallment: 'किस्ती जोड़ें',
-    deAutoSplit: 'मासिक किस्ती',
+    deAutoSplit: 'मासिक किस्ती (₹)',
+    deKistiCap: 'किस्ती बहुत अधिक हैं (अधिकतम {max}) — मासिक राशि बढ़ाएँ।',
     deAutoSplitBtn: 'बनाएं',
     deUnassigned: 'शेड्यूल में बाकी: ₹{amount}',
     deOverAssigned: 'शेड्यूल कुल से अधिक: ₹{amount}',
