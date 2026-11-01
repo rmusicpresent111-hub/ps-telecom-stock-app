@@ -306,6 +306,12 @@ const D: Record<string, Entry> = {
   'cart.subtotal': { bn: 'সাবটোটাল', en: 'Subtotal', hi: 'सबटोटल' },
   'cart.inCart': { bn: 'কার্টে', en: 'in cart', hi: 'कार्ट में' },
   'cart.confirmClear': { bn: 'কার্টের সব আইটেম সরিয়ে ফেলবেন?', en: 'Remove all items from the cart?', hi: 'कार्ट के सभी आइटम हटाएं?' },
+  'cart.pendingNote': {
+    bn: 'কার্টের প্রোডাক্ট এখনো বিক্রি হয়নি — স্টক ও হিস্টোরি বদলাবে শুধু "বিক্রি সম্পন্ন করুন" চাপলে',
+    en: 'Cart items are NOT sold yet — stock & history change only after "Complete Sale"',
+    hi: 'कार्ट के प्रोडक्ट अभी बिके नहीं — स्टॉक और इतिहास "बिक्री पूर्ण करें" दबाने पर ही बदलेगा',
+  },
+  'cart.remaining': { bn: 'বাকি', en: 'left', hi: 'शेष' },
   'qsell.address': { bn: 'ঠিকানা (ঐচ্ছিক)', en: 'Address (optional)', hi: 'पता (वैकल्पिक)' },
   'qsell.updatedInCart': { bn: 'এই প্রোডাক্ট আগেই কার্টে আছে — এডিট করুন', en: 'Already in cart — edit its line', hi: 'पहले से कार्ट में — लाइन संपादित करें' },
   'qsell.cartEmptyErr': { bn: 'কার্ট খালি — আগে প্রোডাক্ট যোগ করুন', en: 'Cart is empty — add products first', hi: 'कार्ट खाली — पहले प्रोडक्ट जोड़ें' },

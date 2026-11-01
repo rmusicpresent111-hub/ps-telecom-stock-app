@@ -24,7 +24,7 @@
  * one atomic IndexedDB transaction — no partial sells, ever.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ShoppingCart,
   Search,
@@ -94,12 +94,15 @@ export default function SellCartModal({
   onClose,
   prefill,
   onGoBills,
+  onCartChange,
 }: {
   open: boolean;
   onClose: () => void;
   /** When set (Products-page sell button), the qty/price sheet opens at once. */
   prefill: Product | null;
   onGoBills: () => void;
+  /** Reports the pending cart item count — the header cart badge. */
+  onCartChange?: (count: number) => void;
 }) {
   const lang = useAdminStore((s) => s.language);
   const t = (k: string) => ta(k, lang);
@@ -131,6 +134,14 @@ export default function SellCartModal({
 
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<Bill | null>(null);
+
+  // report the pending cart count upward (header cart badge) — ref keeps the
+  // effect stable even though the parent passes a fresh callback each render
+  const onCartChangeRef = useRef(onCartChange);
+  onCartChangeRef.current = onCartChange;
+  useEffect(() => {
+    onCartChangeRef.current?.(cart.length);
+  }, [cart.length]);
 
   // ── load data every time the dialog opens ────────────────────
   useEffect(() => {
@@ -717,6 +728,12 @@ export default function SellCartModal({
               </div>
             </div>
 
+            {/* the cart is NOT a sale yet — stock & history move only on Complete Sale */}
+            <p className="flex items-start gap-1.5 rounded-lg bg-[var(--psa-hover)] px-3 py-2 text-[11px] leading-snug text-[var(--psa-muted)]">
+              <AlertTriangle size={12} className="mt-0.5 shrink-0 text-[#E8552C]" />
+              {t('cart.pendingNote')}
+            </p>
+
             {!confirmClear && (
               <button
                 type="button"
@@ -840,6 +857,12 @@ export default function SellCartModal({
               </p>
             )}
           </div>
+
+          {/* the cart is NOT a sale yet — stock & history move only on Complete Sale */}
+          <p className="flex items-start gap-1.5 rounded-lg bg-[var(--psa-hover)] px-3 py-2 text-[11px] leading-snug text-[var(--psa-muted)]">
+            <AlertTriangle size={12} className="mt-0.5 shrink-0 text-[#E8552C]" />
+            {t('cart.pendingNote')}
+          </p>
         </div>
       </Modal>
     );
@@ -964,7 +987,7 @@ export default function SellCartModal({
                       )}
                       {inCart && (
                         <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-[var(--psa-soft-green)] px-1.5 py-0.5 text-[10px] font-bold text-[#16A34A]">
-                          <ShoppingCart size={9} /> {t('cart.inCart')} {inCart.quantity}
+                          <ShoppingCart size={9} /> {t('cart.inCart')} {inCart.quantity} · {t('cart.remaining')} {Math.max(0, p.quantity - inCart.quantity)}
                         </span>
                       )}
                     </span>

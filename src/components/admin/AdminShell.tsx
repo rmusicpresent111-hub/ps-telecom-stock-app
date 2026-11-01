@@ -264,6 +264,7 @@ function AdminShellInner() {
   const [shopName, setShopName] = useState('');
   const [qsOpen, setQsOpen] = useState(false);
   const [qsPrefill, setQsPrefill] = useState<import('@/lib/types').Product | null>(null);
+  const [cartCount, setCartCount] = useState(0); // pending (not-yet-sold) cart lines — header badge
 
   /** Opens the cart flow; with a product → its qty/price sheet opens at once. */
   const openQuickSell = (product: import('@/lib/types').Product | null = null) => {
@@ -357,14 +358,20 @@ function AdminShellInner() {
               </p>
             </div>
             <ThemeToggle />
-            {/* cart — the new-sale flow lives here (language moved to the drawer) */}
+            {/* cart — the new-sale flow lives here (language moved to the drawer);
+                the badge counts PENDING cart lines — nothing is sold until "Complete Sale" */}
             <button
               onClick={() => openQuickSell()}
               title={ta('shell.newSale', lang)}
-              aria-label={ta('shell.newSale', lang)}
-              className="w-9 h-9 rounded-lg flex items-center justify-center border border-[var(--psa-border)] bg-[var(--psa-card)] text-[#E8552C] hover:bg-[var(--psa-soft-orange)] hover:border-[#FA6E41]/40 transition-colors shrink-0"
+              aria-label={`${ta('shell.newSale', lang)}${cartCount ? ` (${cartCount})` : ''}`}
+              className="relative w-9 h-9 rounded-lg flex items-center justify-center border border-[var(--psa-border)] bg-[var(--psa-card)] text-[#E8552C] hover:bg-[var(--psa-soft-orange)] hover:border-[#FA6E41]/40 transition-colors shrink-0"
             >
               <ShoppingCart size={17} />
+              {cartCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[17px] h-[17px] px-1 rounded-full bg-[#E8552C] text-white text-[9px] font-black flex items-center justify-center shadow-sm" aria-hidden="true">
+                  {cartCount > 99 ? '99+' : cartCount}
+                </span>
+              )}
             </button>
             <SyncChip />
           </div>
@@ -398,7 +405,7 @@ function AdminShellInner() {
         {/* footer (sticky bottom, Vyapar-style strip) */}
         <footer className="mt-auto hidden lg:block border-t border-[var(--psa-border)] bg-[var(--psa-card)]">
           <div className="max-w-[1200px] mx-auto px-6 py-3 flex items-center justify-between text-[11px] text-[var(--psa-faint)]">
-            <span>PS TELECOM {ta('shell.title', lang)} · v2.25.0</span>
+            <span>PS TELECOM {ta('shell.title', lang)} · v2.25.1</span>
             <span className="flex items-center gap-2">
               <Badge tone="orange">Web Admin</Badge>
               <Badge tone="green">D1 encrypted</Badge>
@@ -446,6 +453,7 @@ function AdminShellInner() {
         open={qsOpen}
         onClose={closeQuickSell}
         prefill={qsPrefill}
+        onCartChange={setCartCount}
         onGoBills={() => {
           setSection('bills');
           if (typeof window !== 'undefined') window.history.replaceState(null, '', '#bills');
