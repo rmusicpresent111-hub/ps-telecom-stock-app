@@ -375,6 +375,7 @@ table.items { width:100%; border-collapse:collapse; border:1.4px solid #1E3A8A; 
 .items tr { page-break-inside:avoid; }
 .items tbody.rows tr:nth-child(even) td { background:#F4F8FD; }
 .sn { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:8.5px; color:#6B7FA6; margin-top:1px; }
+.cat { font-size:8.5px; font-weight:bold; color:#B45309; margin-top:1px; letter-spacing:.03em; }
 .on { font-size:8.3px; color:#8296BC; white-space:nowrap; }
 /* totals inside the grid — light blue rows, then the navy grand plate */
 .items tbody.tots tr.tv td { background:#EFF5FC; font-weight:bold; color:#24355C; }
@@ -474,6 +475,8 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
       const sns = (it.serialNumbers || []).filter(Boolean);
       return (
         `<tr><td class="c">${i + 1}</td><td>${esc(it.name)}${
+          it.categoryName ? `<div class="cat">Category: ${esc(it.categoryName)}</div>` : ''
+        }${
           sns.length ? `<div class="sn">S/N: ${sns.map((s) => esc(s)).join(', ')}</div>` : ''
         }</td><td class="c">${tallyQty(it.quantity)}</td><td class="r">${tallyAmt(
           it.unitPrice
@@ -517,6 +520,7 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
   const buyerLines = [
     `<div class="pname">${esc(bill.customerName || 'Cash Sale')}</div>`,
     bill.customerMobile ? `<div class="pline">☎ ${esc(bill.customerMobile)}</div>` : '',
+    bill.customerAddress ? `<div class="pline">${esc(bill.customerAddress)}</div>` : '',
     supplyState ? `<div class="pline">Place of Supply : ${esc(supplyState)}</div>` : '',
     bill.note ? `<div class="pline">Note : ${esc(bill.note)}</div>` : '',
   ].join('');

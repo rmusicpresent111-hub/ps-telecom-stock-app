@@ -30,7 +30,7 @@ import { getLocalUser, updateLocalUser } from './local-auth';
 import { generateRecordId } from './id';
 import { notifyLocalDataChanged, notifyLocalWipe } from './sync-events';
 import { computeGst, normalizeGstMode, round2 } from './gst';
-import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillingSettings, PaymentMethod, StaffPayment, StaffPaymentKind, Investment, DueEntry, DueScheduleItem } from './types';
+import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillItem, BillingSettings, PaymentMethod, StaffPayment, StaffPaymentKind, Investment, DueEntry, DueScheduleItem } from './types';
 
 // ============ DATE HELPERS (local timezone — never use UTC for business days) ============
 
@@ -2075,6 +2075,8 @@ export async function createBillOffline(data: {
   soldSerials?: string[];
   customerName?: string;
   customerMobile?: string;
+  /** Optional address line — printed in the Bill-To box (v2.25). */
+  customerAddress?: string;
   discountType?: 'amount' | 'percent';
   discountValue?: number;
   paymentMethod?: PaymentMethod;
@@ -2088,6 +2090,19 @@ export async function createBillOffline(data: {
   if (!Number.isFinite(unitPrice) || unitPrice < 0) throw new Error('Price cannot be negative');
 
   const settings = await getBillingSettingsOffline(data.userId);
+
+  // Resolve the product's CATEGORY so the invoice can print it under the
+  // item name ("bill e category ashe"). A missing product/category (e.g.
+  // a transaction pointing at data deleted long ago) simply skips the line.
+  let categoryName = '';
+  try {
+    const db = await getOfflineDB();
+    const prod = await db.get('products', data.productId);
+    if (prod && prod.userId === data.userId && prod.categoryId) {
+      const cat = await db.get('categories', prod.categoryId);
+      if (cat && cat.userId === data.userId) categoryName = String(cat.name || '').trim();
+    }
+  } catch { /* category is cosmetic — never block the bill */ }
 
   const discountType = data.discountType === 'percent' ? 'percent' : 'amount';
   let discountValue = Math.max(0, Number(data.discountValue ?? 0) || 0);
@@ -2137,10 +2152,12 @@ export async function createBillOffline(data: {
     billNumber,
     customerName: (data.customerName ?? '').trim() || 'Walk-in Customer',
     customerMobile: (data.customerMobile ?? '').replace(/[^\d+]/g, ''),
+    ...((data.customerAddress ?? '').trim() ? { customerAddress: (data.customerAddress ?? '').trim() } : {}),
     items: [
       {
         productId: data.productId,
         name: data.productName,
+        ...(categoryName ? { categoryName } : {}),
         quantity: qty,
         unitPrice,
         total: subtotal,
@@ -2176,6 +2193,223 @@ export async function createBillOffline(data: {
   };
 
   void billsOs.put(bill);
+  await tx.done;
+
+  notifyLocalDataChanged(data.userId);
+  return { bill: bill as unknown as Bill };
+}
+
+/**
+ * CART CHECKOUT (v2.25) — sells EVERY cart line in ONE atomic IndexedDB
+ * transaction: all products are validated first (existence, ownership,
+ * stock, serials — including duplicate-serial checks ACROSS lines), then
+ * one SELL transaction is written per product and a single multi-item bill
+ * is minted. Either the whole cart lands or nothing does — a mid-cart
+ * failure can never leave half the stock sold with no bill.
+ */
+export async function createCartBillOffline(data: {
+  userId: string;
+  entries: Array<{
+    productId: string;
+    quantity: number;
+    unitPrice: number;
+    /** Serial(s) of THIS line — required when the product tracks serials. */
+    soldSerials?: string[];
+  }>;
+  customerName?: string;
+  customerMobile?: string;
+  customerAddress?: string;
+  paymentMethod?: PaymentMethod;
+  note?: string;
+  date?: string;
+}): Promise<{ bill: Bill }> {
+  if (!data.entries.length) throw new Error('Cart is empty');
+
+  const entries = data.entries.map((e) => ({
+    productId: String(e.productId),
+    quantity: Math.floor(Number(e.quantity)),
+    unitPrice: Number(e.unitPrice) || 0,
+    soldSerials: normalizeSerialList(e.soldSerials),
+  }));
+  for (const e of entries) {
+    if (!Number.isFinite(e.quantity) || e.quantity <= 0) throw new Error('Quantity must be a positive whole number');
+    if (!Number.isFinite(e.unitPrice) || e.unitPrice < 0) throw new Error('Price cannot be negative');
+  }
+  // The same physical unit can never appear on two cart lines.
+  const seenSerial = new Set<string>();
+  for (const e of entries) {
+    for (const s of e.soldSerials) {
+      const k = s.toLowerCase();
+      if (seenSerial.has(k)) throw new Error(`Serial "${s}" is selected more than once`);
+      seenSerial.add(k);
+    }
+  }
+
+  const settings = await getBillingSettingsOffline(data.userId);
+
+  // ---- validate EVERYTHING before a single byte is written ----
+  const db = await getOfflineDB();
+  const now = new Date().toISOString();
+
+  const prods = new Map<string, OfflineDBSchema['products']['value']>();
+  const catNames = new Map<string, string>();
+  const byProduct = new Map<string, typeof entries>();
+  for (const e of entries) {
+    const list = byProduct.get(e.productId) || [];
+    list.push(e);
+    byProduct.set(e.productId, list);
+  }
+
+  for (const [productId, lines] of byProduct) {
+    const product = await db.get('products', productId);
+    if (!product) throw new Error('Product not found');
+    if (product.userId !== data.userId) throw new Error('Product not found');
+    const totalQty = lines.reduce((s, e) => s + e.quantity, 0);
+    if (product.quantity < totalQty) {
+      throw new Error(`Insufficient stock — ${product.name}: only ${product.quantity} left`);
+    }
+    const inStock = normalizeSerialList(product.serialNumbers);
+    const stockSet = new Set(inStock.map((s) => s.toLowerCase()));
+    const requested = lines.flatMap((e) => e.soldSerials);
+    for (const s of requested) {
+      if (!stockSet.has(s.toLowerCase())) {
+        throw new Error(`Serial "${s}" is not in stock for this product`);
+      }
+    }
+    if (inStock.length > 0 && requested.length !== Math.min(totalQty, inStock.length)) {
+      throw new Error(`Select serial numbers for ${product.name}`);
+    }
+    if (product.categoryId) {
+      const cat = await db.get('categories', product.categoryId);
+      if (cat && cat.userId === data.userId && String(cat.name || '').trim()) {
+        catNames.set(productId, String(cat.name).trim());
+      }
+    }
+    prods.set(productId, product);
+  }
+
+  const gstEnabled = !!settings.gstEnabled && !!settings.gstNumber.trim() && settings.gstRate > 0;
+  const gstMode = normalizeGstMode(settings.gstMode);
+
+  // ---- ONE atomic transaction: transactions + products + bills together ----
+  const tx = db.transaction(['transactions', 'products', 'bills'], 'readwrite');
+  const transactionsStore = tx.objectStore('transactions');
+  const productsStore = tx.objectStore('products');
+  const billsOs = tx.objectStore('bills');
+
+  const items: BillItem[] = [];
+  const createdTxnIds: string[] = [];
+  const date = data.date || localDateStr();
+  const touched = new Map<string, OfflineDBSchema['products']['value']>();
+
+  for (const [productId, lines] of byProduct) {
+    const product = prods.get(productId)!;
+    let remaining = normalizeSerialList(product.serialNumbers);
+    for (const e of lines) {
+      // FIFO cost basis needs the history INSIDE the same atomic tx.
+      const history = await transactionsStore.index('by-userId').getAll(data.userId);
+      const fifoUnitCost = computeFifoUnitCost(product, history, e.quantity);
+      const lineTotal = round2(e.quantity * e.unitPrice);
+
+      const row: OfflineDBSchema['transactions']['value'] = {
+        id: generateRecordId(),
+        productId,
+        type: 'SELL',
+        quantity: e.quantity,
+        unitPrice: e.unitPrice,
+        totalAmount: lineTotal,
+        date,
+        userId: data.userId,
+        createdAt: now,
+        product: {
+          id: product.id,
+          name: product.name,
+          purchasePrice: fifoUnitCost,
+          sellingPrice: product.sellingPrice,
+        },
+        _synced: Date.now(),
+        _dirty: 0,
+      };
+      void transactionsStore.put(row);
+      createdTxnIds.push(row.id);
+
+      items.push({
+        productId,
+        name: product.name,
+        ...(catNames.get(productId) ? { categoryName: catNames.get(productId) } : {}),
+        quantity: e.quantity,
+        unitPrice: e.unitPrice,
+        total: lineTotal,
+        ...(e.soldSerials.length ? { serialNumbers: e.soldSerials } : {}),
+      });
+    }
+
+    // stock + serial bookkeeping for this product (all its lines at once)
+    const totalQty = lines.reduce((s, e) => s + e.quantity, 0);
+    const soldSerials = lines.flatMap((e) => e.soldSerials);
+    if (soldSerials.length) {
+      remaining = remaining.filter((s) => !soldSerials.some((x) => x.toLowerCase() === s.toLowerCase()));
+    }
+    touched.set(productId, {
+      ...product,
+      quantity: product.quantity - totalQty,
+      ...(soldSerials.length ? { serialNumbers: remaining, serialNumber: remaining[0] ?? '' } : {}),
+      updatedAt: now,
+    });
+  }
+  for (const p of touched.values()) void productsStore.put(p);
+
+  const subtotal = round2(items.reduce((s, it) => s + it.total, 0));
+  const breakup = gstEnabled
+    ? computeGst(subtotal, settings.gstRate, gstMode)
+    : { taxable: subtotal, gstAmount: 0, cgst: 0, sgst: 0, total: subtotal };
+  const total = breakup.total;
+
+  const paymentMethod: PaymentMethod = data.paymentMethod ?? 'cash';
+  const paidAmount = paymentMethod === 'due' ? 0 : total;
+  const dueAmount = round2(total - paidAmount);
+
+  const existingBills = await billsOs.index('by-userId').getAll(data.userId);
+  const billNumber = nextBillNumberFromRows(existingBills, settings.billPrefix.trim() || 'PS');
+
+  const bill: OfflineDBSchema['bills']['value'] = {
+    id: generateRecordId(),
+    userId: data.userId,
+    billNumber,
+    customerName: (data.customerName ?? '').trim() || 'Walk-in Customer',
+    customerMobile: (data.customerMobile ?? '').replace(/[^\d+]/g, ''),
+    ...((data.customerAddress ?? '').trim() ? { customerAddress: (data.customerAddress ?? '').trim() } : {}),
+    items,
+    subtotal,
+    discountValue: 0,
+    discountType: 'amount',
+    discountAmount: 0,
+    gstEnabled,
+    gstRate: gstEnabled ? settings.gstRate : 0,
+    gstAmount: breakup.gstAmount,
+    ...(gstEnabled
+      ? { gstMode, taxableValue: breakup.taxable, cgstAmount: breakup.cgst, sgstAmount: breakup.sgst }
+      : {}),
+    total,
+    paymentMethod,
+    paidAmount,
+    dueAmount,
+    note: (data.note ?? '').trim(),
+    transactionId: createdTxnIds[0],
+    shopSnapshot: {
+      name: settings.shopName,
+      proprietorName: settings.proprietorName,
+      address: settings.shopAddress,
+      phone: settings.shopPhone,
+      gstNumber: settings.gstNumber,
+    },
+    date,
+    createdAt: now,
+    updatedAt: now,
+  };
+  void billsOs.put(bill);
+
+  // Commit — ANY failure above rolls back stock, serials, transactions and bill.
   await tx.done;
 
   notifyLocalDataChanged(data.userId);

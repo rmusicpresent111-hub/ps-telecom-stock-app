@@ -28,7 +28,8 @@ import {
   Smartphone,
   Sun,
   Moon,
-  Zap,
+  ShoppingCart,
+  Globe,
   Lock,
   Banknote,
   Sprout,
@@ -39,7 +40,7 @@ import { useAdminStore, type AdminSection } from '@/store/adminStore';
 import { ta, type AdminLang } from '@/lib/admin-i18n';
 import { AdminToaster, Badge, Btn } from './admin-ui';
 import { prefetchAdminData } from './adminCache';
-import QuickSellModal from './QuickSellModal';
+import SellCartModal from './SellCartModal';
 import AdminDashboard from './AdminDashboard';
 import AdminCash from './AdminCash';
 import AdminInvest from './AdminInvest';
@@ -221,7 +222,12 @@ function SidebarInner({ onNavigate, onLogoClick }: { onNavigate?: () => void; on
       </div>
       {/* footer */}
       <div className="border-t border-[var(--psa-line)] p-3 space-y-2">
-        <div className="flex items-center justify-between px-1">
+        {/* language — lives in the drawer (moved out of the top bar) */}
+        <div className="flex items-center justify-between gap-2 px-1">
+          <span className="flex items-center gap-1.5 text-[11px] font-bold text-[var(--psa-faint)]">
+            <Globe size={13} />
+            {ta('shell.language', lang)}
+          </span>
           <LangSwitch />
         </div>
         <button
@@ -259,9 +265,15 @@ function AdminShellInner() {
   const [qsOpen, setQsOpen] = useState(false);
   const [qsPrefill, setQsPrefill] = useState<import('@/lib/types').Product | null>(null);
 
+  /** Opens the cart flow; with a product → its qty/price sheet opens at once. */
   const openQuickSell = (product: import('@/lib/types').Product | null = null) => {
     setQsPrefill(product);
     setQsOpen(true);
+  };
+
+  const closeQuickSell = () => {
+    setQsOpen(false);
+    setQsPrefill(null); // a stray reopen must not jump back to the old product
   };
 
   // boot: local profile + D1 sync engine (shared with the app) + warm data cache
@@ -344,14 +356,16 @@ function AdminShellInner() {
                 {shopName} · {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
               </p>
             </div>
-            <div className="hidden sm:block">
-              <LangSwitch compact />
-            </div>
             <ThemeToggle />
-            <Btn size="sm" onClick={() => openQuickSell()} className="!h-9">
-              <Zap size={15} />
-              <span className="hidden sm:inline">{ta('shell.quickSell', lang)}</span>
-            </Btn>
+            {/* cart — the new-sale flow lives here (language moved to the drawer) */}
+            <button
+              onClick={() => openQuickSell()}
+              title={ta('shell.newSale', lang)}
+              aria-label={ta('shell.newSale', lang)}
+              className="w-9 h-9 rounded-lg flex items-center justify-center border border-[var(--psa-border)] bg-[var(--psa-card)] text-[#E8552C] hover:bg-[var(--psa-soft-orange)] hover:border-[#FA6E41]/40 transition-colors shrink-0"
+            >
+              <ShoppingCart size={17} />
+            </button>
             <SyncChip />
           </div>
         </header>
@@ -384,7 +398,7 @@ function AdminShellInner() {
         {/* footer (sticky bottom, Vyapar-style strip) */}
         <footer className="mt-auto hidden lg:block border-t border-[var(--psa-border)] bg-[var(--psa-card)]">
           <div className="max-w-[1200px] mx-auto px-6 py-3 flex items-center justify-between text-[11px] text-[var(--psa-faint)]">
-            <span>PS TELECOM {ta('shell.title', lang)} · v2.24.1</span>
+            <span>PS TELECOM {ta('shell.title', lang)} · v2.25.0</span>
             <span className="flex items-center gap-2">
               <Badge tone="orange">Web Admin</Badge>
               <Badge tone="green">D1 encrypted</Badge>
@@ -427,10 +441,10 @@ function AdminShellInner() {
 
       <AdminToaster />
 
-      {/* global Quick Sell dialog (top-bar button, dashboard, per-product sell) */}
-      <QuickSellModal
+      {/* global Sell Cart dialog (top-bar cart button, dashboard, per-product sell) */}
+      <SellCartModal
         open={qsOpen}
-        onClose={() => setQsOpen(false)}
+        onClose={closeQuickSell}
         prefill={qsPrefill}
         onGoBills={() => {
           setSection('bills');

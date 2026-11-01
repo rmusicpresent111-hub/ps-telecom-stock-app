@@ -264,6 +264,14 @@ export async function generateBillPdf(
     txt(`Phone: ${bill.customerMobile}`, M + 9, py, { size: 6.6, color: INK });
     py += 7.5;
   }
+  if ((bill.customerAddress || '').trim()) {
+    const addrLines = doc.splitTextToSize(bill.customerAddress!.trim(), pbsW - 18) as string[];
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.6);
+    doc.setTextColor(...INK);
+    doc.text(addrLines, M + 9, py);
+    py += addrLines.length * 7.5;
+  }
   if (shop.gstNumber) {
     txt(`Place of Supply Code: ${shop.gstNumber.slice(0, 2)}`, M + 9, py, { size: 6.6, color: INK });
     py += 7.5;
@@ -326,19 +334,29 @@ export async function generateBillPdf(
 
   let rowY = tblTop + headH;
   const items = bill.items.length ? bill.items : [{ productId: '', name: '—', quantity: 0, unitPrice: 0, total: 0 }];
+  const AMBER_INK: RGB = [180, 83, 9]; // category line — matches the admin A4 sheet
   items.forEach((item, idx) => {
     const nameLines = doc.splitTextToSize(item.name, cItem - 10) as string[];
     const sns = (item.serialNumbers || []).filter(Boolean);
-    const rowH = Math.max(16, nameLines.length * 9 + 7 + (sns.length ? 7 : 0));
+    const catName = (item.categoryName || '').trim();
+    const rowH = Math.max(16, nameLines.length * 9 + 7 + (catName ? 7 : 0) + (sns.length ? 7 : 0));
 
     txt(String(idx + 1), xNo + cNo / 2, rowY + 11.5, { size: 7, color: INK, align: 'center' });
     txt(nameLines, xItem + 5, rowY + 11.5, { size: 7.6, color: NAVY_INK });
+    let subY = rowY + 11.5 + nameLines.length * 9;
+    if (catName) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(5.4);
+      doc.setTextColor(...AMBER_INK);
+      doc.text(`Category: ${catName}`, xItem + 5, subY);
+      subY += 7;
+    }
     if (sns.length) {
       const snTxt = doc.splitTextToSize(`S/N: ${sns.join(', ')}`, cItem - 10) as string[];
       doc.setFont('courier', 'normal');
       doc.setFontSize(5.4);
       doc.setTextColor(...MUTE);
-      doc.text(snTxt, xItem + 5, rowY + 11.5 + nameLines.length * 9);
+      doc.text(snTxt, xItem + 5, subY);
     }
     txt(String(item.quantity), xQty + cQty / 2, rowY + 11.5, { size: 7, color: INK, align: 'center' });
     txt(formatMoney(item.unitPrice), xRate + cRate - 5, rowY + 11.5, { size: 7, color: INK, align: 'right' });
@@ -717,7 +735,8 @@ export function buildBillMessage(bill: Bill, opts?: { withPdfNote?: boolean }): 
   lines.push(`Customer: ${bill.customerName || 'Walk-in Customer'}${bill.customerMobile ? ` (${bill.customerMobile})` : ''}`);
   lines.push('━━━━━━━━━━━━━━━━━━');
   for (const item of bill.items) {
-    lines.push(`• ${item.name} — ${item.quantity} × ₹${formatMoney(item.unitPrice)} = *₹${formatMoney(item.total)}*`);
+    const catTag = item.categoryName ? ` [${item.categoryName}]` : '';
+    lines.push(`• ${item.name}${catTag} — ${item.quantity} × ₹${formatMoney(item.unitPrice)} = *₹${formatMoney(item.total)}*`);
   }
   lines.push('━━━━━━━━━━━━━━━━━━');
   lines.push(`Subtotal: ₹${formatMoney(bill.subtotal)}`);

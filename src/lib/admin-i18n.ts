@@ -25,7 +25,7 @@ const D: Record<string, Entry> = {
   'shell.subtitle': { bn: 'ওয়েব ম্যানেজমেন্ট কনসোল', en: 'Web management console', hi: 'वेब मैनेजमेंट कंसोल' },
   'shell.menu': { bn: 'মেনু', en: 'Menu', hi: 'मेन्यू' },
   'shell.backToApp': { bn: 'অ্যাপে ফিরে যান', en: 'Back to app', hi: 'ऐप पर वापस जाएं' },
-  'shell.langLabel': { bn: 'ভাষা', en: 'Language', hi: 'भाषा' },
+  'shell.language': { bn: 'ভাষা', en: 'Language', hi: 'भाषा' },
 
   // ── dashboard ────────────────────────────────────────────────
   'dash.stockValue': { bn: 'স্টকের মূল্য', en: 'Stock Value', hi: 'स्टॉक मूल्य' },
@@ -285,6 +285,30 @@ const D: Record<string, Entry> = {
   'qsell.changeCategory': { bn: 'বদলান', en: 'Change', hi: 'बदलें' },
   'qsell.noCategory': { bn: 'কোনো ক্যাটাগরি নেই — প্রোডাক্ট পেজ থেকে যোগ করুন', en: 'No categories yet — add one in Products', hi: 'कोई श्रेणी नहीं — प्रोडक्ट पेज में जोड़ें' },
   'qsell.catItems': { bn: '{n} টি প্রোডাক্ট', en: '{n} products', hi: '{n} प्रोडक्ट' },
+
+  // ── sell cart (v2.25) ────────────────────────────────────────
+  'shell.newSale': { bn: 'নতুন বিক্রি', en: 'New Sale', hi: 'नई बिक्री' },
+  'shell.sellThis': { bn: 'এটি বিক্রি করুন', en: 'Sell this', hi: 'यह बेचें' },
+  'cart.title': { bn: 'সেল কার্ট', en: 'Sale Cart', hi: 'सेल कार्ट' },
+  'cart.add': { bn: 'কার্টে যোগ করুন', en: 'Add to Cart', hi: 'कार्ट में जोड़ें' },
+  'cart.update': { bn: 'কার্ট আপডেট করুন', en: 'Update Cart', hi: 'कार्ट अपडेट करें' },
+  'cart.added': { bn: 'কার্টে যোগ হয়েছে', en: 'Added to cart', hi: 'कार्ट में जुड़ गया' },
+  'cart.updated': { bn: 'কার্টে আপডেট হয়েছে', en: 'Cart updated', hi: 'कार्ट अपडेट हुआ' },
+  'cart.removed': { bn: 'কার্ট থেকে সরানো হয়েছে', en: 'Removed from cart', hi: 'कार्ट से हटा दिया' },
+  'cart.cleared': { bn: 'কার্ট খালি করা হয়েছে', en: 'Cart cleared', hi: 'कार्ट खाली किया' },
+  'cart.empty': { bn: 'কার্ট খালি — ক্যাটাগরি বেছে প্রোডাক্ট যোগ করুন', en: 'Cart is empty — pick a category and add products', hi: 'कार्ट खाली है — श्रेणी चुनकर प्रोडक्ट जोड़ें' },
+  'cart.items': { bn: 'আইটেম', en: 'items', hi: 'आइटम' },
+  'cart.edit': { bn: 'এডিট', en: 'Edit', hi: 'संपादित करें' },
+  'cart.remove': { bn: 'সরান', en: 'Remove', hi: 'हटाएं' },
+  'cart.clear': { bn: 'কার্ট খালি করুন', en: 'Clear cart', hi: 'कार्ट खाली करें' },
+  'cart.addMore': { bn: 'আরও প্রোডাক্ট যোগ করুন', en: 'Add more products', hi: 'और प्रोडक्ट जोड़ें' },
+  'cart.checkout': { bn: 'চেকআউট করুন', en: 'Checkout', hi: 'चेकआउट करें' },
+  'cart.subtotal': { bn: 'সাবটোটাল', en: 'Subtotal', hi: 'सबटोटल' },
+  'cart.inCart': { bn: 'কার্টে', en: 'in cart', hi: 'कार्ट में' },
+  'cart.confirmClear': { bn: 'কার্টের সব আইটেম সরিয়ে ফেলবেন?', en: 'Remove all items from the cart?', hi: 'कार्ट के सभी आइटम हटाएं?' },
+  'qsell.address': { bn: 'ঠিকানা (ঐচ্ছিক)', en: 'Address (optional)', hi: 'पता (वैकल्पिक)' },
+  'qsell.updatedInCart': { bn: 'এই প্রোডাক্ট আগেই কার্টে আছে — এডিট করুন', en: 'Already in cart — edit its line', hi: 'पहले से कार्ट में — लाइन संपादित करें' },
+  'qsell.cartEmptyErr': { bn: 'কার্ট খালি — আগে প্রোডাক্ট যোগ করুন', en: 'Cart is empty — add products first', hi: 'कार्ट खाली — पहले प्रोडक्ट जोड़ें' },
 
   // ── category suggestions ─────────────────────────────────────
   'cat.searchOrCreate': { bn: 'ক্যাটাগরি খুঁজুন বা নতুন লিখুন…', en: 'Search or type a new category…', hi: 'श्रेणी खोजें या नई लिखें…' },

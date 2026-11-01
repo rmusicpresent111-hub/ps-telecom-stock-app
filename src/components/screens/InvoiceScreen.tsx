@@ -523,7 +523,12 @@ export default function InvoiceScreen() {
               </div>
               {bill.items.map((item, idx) => (
                 <div key={idx} className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-center py-2.5 border-b border-white/5">
-                  <span className="text-xs text-white/85">{item.name}</span>
+                  <span className="min-w-0">
+                    <span className="block text-xs text-white/85">{item.name}</span>
+                    {item.categoryName && (
+                      <span className="block text-[9px] font-semibold text-amber-400/80 mt-0.5">{item.categoryName}</span>
+                    )}
+                  </span>
                   <span className="text-[11px] text-white/50 text-right">{item.quantity} × {formatMoney(item.unitPrice)}</span>
                   <span className="text-xs font-semibold text-white/90 text-right w-16">₹{formatMoney(item.total)}</span>
                 </div>

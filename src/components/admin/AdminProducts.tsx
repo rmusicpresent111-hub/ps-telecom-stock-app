@@ -14,7 +14,7 @@ import {
   Search,
   Package,
   PackageX,
-  Zap,
+  ShoppingCart,
   Check,
   X,
 } from 'lucide-react';
@@ -586,10 +586,10 @@ export default function AdminProducts({ onQuickSell }: { onQuickSell?: (p: Produ
                       <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => onQuickSell?.(p)}
-                          title={t('shell.quickSell')}
+                          title={t('shell.sellThis')}
                           className="w-8 h-8 rounded-lg flex items-center justify-center text-[#E8552C] hover:bg-[var(--psa-soft-orange)]"
                         >
-                          <Zap size={15} />
+                          <ShoppingCart size={15} />
                         </button>
                         <button
                           onClick={() => {

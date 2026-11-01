@@ -206,6 +206,9 @@ export type PaymentMethod = 'cash' | 'upi' | 'card' | 'due';
 export interface BillItem {
   productId: string;
   name: string;
+  /** Resolved from the product at bill time — printed under the item on the
+   *  invoice ("bill e category ashe"). Undefined on pre-2.25 legacy bills. */
+  categoryName?: string;
   quantity: number;
   unitPrice: number;
   total: number;
@@ -224,6 +227,8 @@ export interface Bill {
   billNumber: string;
   customerName: string;
   customerMobile: string;
+  /** Optional delivery/address line — printed in the Bill-To box (v2.25). */
+  customerAddress?: string;
   items: BillItem[];
   subtotal: number;
   discountValue: number;   // amount or percent depending on discountType

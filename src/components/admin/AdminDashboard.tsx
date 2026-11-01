@@ -20,7 +20,6 @@ import {
   ShoppingCart,
   PiggyBank,
   Banknote,
-  Zap,
 } from 'lucide-react';
 import {
   ComposedChart,
@@ -101,7 +100,7 @@ export default function AdminDashboard({
       {/* quick actions row */}
       <div className="flex items-center justify-end">
         <Btn onClick={onQuickSell}>
-          <Zap size={16} /> {t('shell.quickSell')}
+          <ShoppingCart size={16} /> {t('shell.newSale')}
         </Btn>
       </div>
 
