@@ -2236,3 +2236,22 @@ Stage Summary:
 - Bill design now matches the owner's Royal Blue & White reference on BOTH surfaces: admin print/PDF (A4) and the app's jsPDF invoice — premium navy-on-white look with invoice-no box, payment-status colour panel, amount-in-words band and QR/bank/signature row
 - App lock panel delivered: Profile → "এখনই লক করুন" instantly raises the screen-lock gate (APK only; safe no-op on web)
 - v2.24.0 APKs (debug + release, repo-key signed) built in-sandbox and committed for direct GitHub download
+
+---
+## Task 79 — v2.24.1 — Site gate: 5-minute auto-lock session (owner request)
+Date: 1 Nov (session 5) | Status: DONE (pushed)
+
+Task ID: 79
+Agent: Z.ai Code (main thread)
+Task: "artechnologyapp.com ei domin e probesh korte chaile lock password chaibe ja 5 minite por auto lock hobe eta set koro" — replace the 30-day "stay unlocked" gate with: every entry asks the password + the site re-locks itself after 5 minutes.
+
+Work Log:
+- SESSION MODEL (src/proxy.ts + src/app/api/site-auth/route.ts): gate cookie is now a 5-MINUTE SLIDING SESSION. Value = `${sha256(PIN|salt)}.${issuedAtMs}`; valid only while `now − issuedAt < 300s`. Every authenticated request (page or API, incl. the D1 proxy and GET site-auth) RE-ISSUES the cookie with a fresh timestamp → active admin work is never interrupted; after 5 idle minutes the cookie dies twice over: the browser drops it (Max-Age=300) AND the embedded timestamp makes even a replayed/stolen cookie fail server-side (curl-verified: 10-min-old value → 307, 6-min-old on /api → 401). Old dotless 30-day cookies fail the parser instantly → every existing browser re-authenticates once.
+- CLIENT AUTO-LOCK (src/components/SiteLockGate.tsx): while open, an inactivity guard runs — pointerdown/keydown/wheel/touchstart/scroll re-arm a 5-minute timer; firing raises the opaque overlay instantly (no request needed) and clears the per-tab flag. Returning to a tab hidden ≥5 min locks immediately (same pattern as the app's AppLock background re-lock). The "trusted device" flag moved from localStorage+30d to sessionStorage+per-tab (SiteLockForm.markSiteTrusted / new clearSiteTrusted / exported SITE_TRUST_KEY) — a fresh tab or new session ALWAYS asks for the password.
+- BUGFIX (pre-existing, exposed by the new flow): the gate decided "server says open" from HTTP r.ok alone — the endpoint answers 200 with body {ok:false} for an invalid cookie, so the overlay wrongly marked the tab trusted on the /site-lock page itself. Now parses the JSON body (ok===true) before trusting; verified: fresh load → ss null + overlay renders.
+- COPY (SiteLockForm footnote): "৫ মিনিট নিষ্ক্রিয় থাকলে সাইট আবার নিজে থেকেই লক হয়ে যাবে / Auto-locks after 5 minutes of inactivity · no password recovery — keep it safe."
+- HOUSEKEEPING: AdminShell footer version 2.23.0 → 2.24.1 (missed in Task 78); package.json → 2.24.1. APK untouched (gate is Capacitor-skipped on native; the APK keeps its own AppLock) — web-first release, next APK rebuild picks the version stamp up.
+- VERIFY (dev server): curl — no cookie → 307 /site-lock/; POST correct PIN → 200 + Set-Cookie Max-Age=300 with `.ts`; GET / with cookie → 200 + re-issued `.ts` (sliding); replayed 10-min-old cookie → 307; 6-min-old on /api → 401; wrong PIN → 401. agent-browser E2E — fresh context → /site-lock/ overlay renders (ss null); unlock → ss "1", app opens; IDLE 5m20s untouched (08:01:58 unlock → 08:07:18) → overlay auto-appeared + ss cleared; re-unlock → app back + GET site-auth {ok:true} (fresh cookie). Lint clean.
+
+Stage Summary:
+- artechnologyapp.com (and any server deployment) now behaves like the owner asked: entry → password; the site locks itself again after 5 minutes of inactivity; active use keeps the session alive via sliding renewal; every new tab/session asks for the password. GitHub Pages mirror gets the same behavior client-side; APK unaffected (native lock).

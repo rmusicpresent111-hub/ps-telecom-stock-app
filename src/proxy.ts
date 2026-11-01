@@ -1,10 +1,21 @@
 /**
- * SITE-WIDE PASSWORD GATE (server-enforced).
+ * SITE-WIDE PASSWORD GATE (server-enforced, 5-minute sliding session).
  *
  * artechnologyapp.com is publicly reachable — anyone who knows the domain
  * could otherwise browse the shop's entire stock. This proxy (Next 16's middleware) runs on
  * EVERY request (Vercel / server mode): without a valid gate cookie the
  * visitor is redirected to /site-lock and every API route answers 401.
+ *
+ * SESSION MODEL (v2.24.1 — owner request: "probesh korle password chay,
+ * 5 minute por auto lock"):
+ *   • Unlocking issues a cookie valid for 5 MINUTES.
+ *   • Every authenticated request RENEWS it (sliding window) — active use is
+ *     never interrupted mid-work.
+ *   • After 5 idle minutes the cookie dies (browser drops it via Max-Age AND
+ *     the embedded timestamp makes even a replayed cookie fail server-side).
+ *     The next entry asks for the password again.
+ *   • The value is `${sha256(PIN|salt)}.${issuedAtMs}` so a stolen cookie is
+ *     worthless 5 minutes after it was last issued.
  *
  * The password is the shop PIN (9732881732) and there is deliberately NO
  * reset, no hint and no alternate path — wrong or missing password simply
@@ -13,17 +24,17 @@
  * NOTE: static builds (APK / GitHub Pages) can't run the proxy — the build
  * scripts move this file out before `next build` (output: 'export') and
  * restore it afterwards. In those contexts the client-side gate
- * (src/components/SiteLockGate.tsx) covers the UI instead.
- *
- * The cookie value is sha256(PIN | domain-salt) so the raw PIN never sits
- * in the cookie and a stolen cookie can't be replayed against a site with
- * a different PIN.
+ * (src/components/SiteLockGate.tsx) covers the UI instead, with the same
+ * 5-minute idle auto-lock.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 
 export const GATE_COOKIE = 'ps_site_gate';
 export const GATE_SALT = 'ps-site-gate-v1';
+
+/** Session length in seconds — "5 minite por auto lock". */
+export const GATE_MAX_AGE_S = 5 * 60;
 
 /** Effective PIN: SITE_LOCK_PIN → NEXT_PUBLIC_SYNC_PIN → factory default. */
 function lockPin(): string {
@@ -43,6 +54,37 @@ async function gateKey(): Promise<string> {
     .join('');
 }
 
+/** A freshly-issued cookie value: `<key>.<issuedAtMs>`. */
+async function freshGateValue(): Promise<string> {
+  return `${await gateKey()}.${Date.now()}`;
+}
+
+/**
+ * Valid = right key AND younger than the 5-minute session (sliding — the
+ * proxy re-issues on every authenticated request, so active use never dies).
+ */
+async function gateValid(cookieValue: string | undefined): Promise<boolean> {
+  if (!cookieValue) return false;
+  const dot = cookieValue.lastIndexOf('.');
+  if (dot <= 0) return false;
+  const key = await gateKey();
+  if (cookieValue.slice(0, dot) !== key) return false;
+  const issuedAt = Number(cookieValue.slice(dot + 1));
+  if (!Number.isFinite(issuedAt) || issuedAt <= 0) return false;
+  return Date.now() - issuedAt < GATE_MAX_AGE_S * 1000;
+}
+
+/** Cookie attributes consistent with src/app/api/site-auth/route.ts. */
+function gateCookieOptions(https: boolean) {
+  return {
+    httpOnly: true,
+    sameSite: https ? ('none' as const) : ('lax' as const),
+    secure: https,
+    maxAge: GATE_MAX_AGE_S,
+    path: '/',
+  };
+}
+
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -53,9 +95,14 @@ export async function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const expected = await gateKey();
-  const ok = req.cookies.get(GATE_COOKIE)?.value === expected;
-  if (ok) return NextResponse.next();
+  if (await gateValid(req.cookies.get(GATE_COOKIE)?.value)) {
+    // sliding renewal — every authenticated request restarts the 5-minute
+    // window so active browsing/admin work is never interrupted
+    const https = (req.headers.get('x-forwarded-proto') || '').includes('https');
+    const res = NextResponse.next();
+    res.cookies.set(GATE_COOKIE, await freshGateValue(), gateCookieOptions(https));
+    return res;
+  }
 
   // APIs (incl. the D1 sync proxy!) never leak data without the cookie
   if (clean.startsWith('/api/')) {

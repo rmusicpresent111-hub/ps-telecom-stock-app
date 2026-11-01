@@ -6,10 +6,15 @@
  *
  * Verification order:
  *   1. POST /api/site-auth → server-side check + httpOnly cookie (Vercel /
- *      server mode — the real gate, enforced again by middleware on every
- *      later request).
+ *      server mode — the real gate, a 5-MINUTE sliding session enforced
+ *      again by the proxy on every later request).
  *   2. If the endpoint is missing (static GitHub Pages build), fall back to
  *      a client-side hash check of the build-time PIN.
+ *
+ * Session model (owner request: entry → password, 5-min auto-lock):
+ *   the "trusted" flag lives in sessionStorage (per tab, gone when the tab
+ *   closes) and the gate overlay re-locks after 5 idle minutes — so every
+ *   fresh entry asks for the password again.
  *
  * There is deliberately NO "forgot password" path, hint or reset — the only
  * way in is the shop password.
@@ -33,15 +38,26 @@ async function sha256hex(s: string): Promise<string> {
     .join('');
 }
 
-/** 30-day "trusted device" flag for static hosts (server hosts use cookies). */
+/** sessionStorage key of the per-tab "unlocked in this tab" flag. */
+export const SITE_TRUST_KEY = 'ps-site-gate-ok-v1';
+
+/** Per-tab unlocked flag (sessionStorage — dies with the tab, so every
+ *  fresh entry asks for the password). Static hosts keep their unlock here;
+ *  server hosts ALSO carry the 5-minute cookie alongside. */
 export function markSiteTrusted(): void {
   try {
-    localStorage.setItem(
-      'ps-site-gate-ok-v1',
-      JSON.stringify({ exp: Date.now() + 30 * 24 * 60 * 60 * 1000 })
-    );
+    sessionStorage.setItem(SITE_TRUST_KEY, '1');
   } catch {
     /* storage unavailable — gate re-asks next visit */
+  }
+}
+
+/** Drop the per-tab flag — used when the 5-minute idle auto-lock fires. */
+export function clearSiteTrusted(): void {
+  try {
+    sessionStorage.removeItem(SITE_TRUST_KEY);
+  } catch {
+    /* ignore */
   }
 }
 
@@ -150,9 +166,9 @@ export default function SiteLockForm({ onUnlock }: { onUnlock?: () => void }) {
       </form>
 
       <p className="mt-4 text-center text-[10px] leading-relaxed text-[rgba(255,255,255,0.35)]">
-        পাসওয়ার্ড ভুলে গেলে উদ্ধার করার কোনো উপায় নেই
+        ৫ মিনিট নিষ্ক্রিয় থাকলে সাইট আবার নিজে থেকেই লক হয়ে যাবে
         <br />
-        <span className="text-[9.5px]">No password recovery — keep it safe.</span>
+        <span className="text-[9.5px]">Auto-locks after 5 minutes of inactivity · no password recovery — keep it safe.</span>
       </p>
     </div>
   );
