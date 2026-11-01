@@ -157,6 +157,48 @@ export interface ServiceTransaction {
 
 export type ServiceCategoryType = 'repairing' | 'withdraw-deposit';
 
+// ============ DUE ENTRY (বাকি এন্ট্রি — custom customer credit ledger) ============
+
+/** One scheduled installment (কিস্তি) of a due entry. */
+export interface DueScheduleItem {
+  id: string;
+  dueDate: string;        // YYYY-MM-DD
+  amount: number;         // installment amount (₹)
+  /** How much of THIS installment has been collected so far (₹). */
+  paidAmount: number;
+  /** ISO timestamp — set when the installment is fully collected. */
+  paidAt?: string;
+}
+
+/**
+ * A standalone due entry created from the Admin Panel / Due Book —
+ * customer buys on credit with CUSTOMER + PRODUCT photos, an amount and
+ * an optional payment schedule (kisti). Syncs via the generic D1 store
+ * `dueEntries` (encrypted), independent from bill-based dues.
+ */
+export interface DueEntry {
+  id: string;
+  userId: string;
+  customerName: string;
+  customerMobile: string;
+  /** Compressed JPEG data URL (≤ ~60 KB) — customer's face/KYC photo. */
+  customerPhotoDataUrl?: string;
+  productName: string;
+  /** Compressed JPEG data URL (≤ ~80 KB) — photo of the product sold on credit. */
+  productPhotoDataUrl?: string;
+  /** Total due amount (₹). */
+  amount: number;
+  /** Collected so far (₹) — source of truth, mirrors Σ schedule.paidAmount. */
+  paidAmount: number;
+  /** Payment schedule (কিস্তি) — may be empty when there is no fixed plan. */
+  schedule: DueScheduleItem[];
+  note: string;
+  /** YYYY-MM-DD (local) — the day the credit was given. */
+  date: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ============ BILLING (e-Bill / Invoice) ============
 
 export type PaymentMethod = 'cash' | 'upi' | 'card' | 'due';

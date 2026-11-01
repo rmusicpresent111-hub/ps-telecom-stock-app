@@ -7,9 +7,9 @@
 import { openDB, type IDBPDatabase } from 'idb';
 
 const DB_NAME = 'ps-telecom-offline';
-// v9 (v2.20.0): + 'investments' — Others Invest (cash added into the business
-// for any other purpose; feeds the admin Cash Book).
-const DB_VERSION = 9;
+// v10 (v2.23.0): + 'dueEntries' — custom due ledger (customer/product photos,
+// amount, payment schedule/kisti) managed from the Admin Panel + Due Book.
+const DB_VERSION = 10;
 
 // ============ LOCAL USERS (authentication) ============
 
@@ -250,6 +250,36 @@ export interface OfflineDBSchema {
     };
     indexes: { 'by-userId': string; 'by-dirty': number };
   };
+  dueEntries: {
+    key: string;
+    value: {
+      id: string;
+      userId: string;
+      customerName: string;
+      customerMobile: string;
+      /** Compressed JPEG data URLs — kept small so the encrypted sync
+       *  payload (MAX_PAYLOAD_JSON 200 KB) always fits. */
+      customerPhotoDataUrl?: string;
+      productName: string;
+      productPhotoDataUrl?: string;
+      amount: number;      // total due (₹)
+      paidAmount: number;  // collected so far (₹)
+      schedule: {
+        id: string;
+        dueDate: string;   // YYYY-MM-DD
+        amount: number;
+        paidAmount: number;
+        paidAt?: string;
+      }[];                 // payment schedule (kisti) — may be empty
+      note: string;
+      date: string;        // YYYY-MM-DD (local) — credit given on
+      createdAt: string;
+      updatedAt: string;
+      _synced: number;
+      _dirty: number;
+    };
+    indexes: { 'by-userId': string; 'by-dirty': number };
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<OfflineDBSchema>> | null = null;
@@ -331,6 +361,13 @@ function getDB(): Promise<IDBPDatabase<OfflineDBSchema>> {
           const invStore = db.createObjectStore('investments', { keyPath: 'id' });
           invStore.createIndex('by-userId', 'userId');
           invStore.createIndex('by-dirty', '_dirty');
+        }
+        // v10 (v2.23.0): Due Entry — custom customer credit ledger with photos
+        // and a payment schedule. Additive, safe on every existing device.
+        if (!db.objectStoreNames.contains('dueEntries')) {
+          const dueStore = db.createObjectStore('dueEntries', { keyPath: 'id' });
+          dueStore.createIndex('by-userId', 'userId');
+          dueStore.createIndex('by-dirty', '_dirty');
         }
       },
     }).catch((err) => {
@@ -479,6 +516,20 @@ export const offlineInvestments = {
   delete: (id: string) => deleteItem('investments', id),
 };
 
+// ============ DUE ENTRIES (বাকি এন্ট্রি — custom credit ledger) ============
+
+export const offlineDueEntries = {
+  getAll: (userId: string) => getAllByUser('dueEntries', userId),
+  // ⚡ Direct key get — O(1) for payment recording on one entry
+  getById: async (id: string) => {
+    const db = await getDB();
+    return db.get('dueEntries', id);
+  },
+  put: (row: OfflineDBSchema['dueEntries']['value']) => putItem('dueEntries', row),
+  putBulk: (rows: OfflineDBSchema['dueEntries']['value'][]) => putBulk('dueEntries', rows),
+  delete: (id: string) => deleteItem('dueEntries', id),
+};
+
 // ============ CLEAR ALL ============
 
 // NOTE: the legacy `syncMeta` / `pendingDeletes` object stores are kept in the
@@ -488,7 +539,7 @@ export const offlineInvestments = {
 export async function clearOfflineData(userId: string): Promise<void> {
   const db = await getDB();
   const userStores = (
-    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'syncMeta', 'pendingDeletes', 'serviceTransactions', 'bills', 'staffPayments', 'investments'] as const
+    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'syncMeta', 'pendingDeletes', 'serviceTransactions', 'bills', 'staffPayments', 'investments', 'dueEntries'] as const
   ).filter(s => db.objectStoreNames.contains(s));
   const txStores: (keyof OfflineDBSchema)[] = [...userStores];
   if (db.objectStoreNames.contains('billingSettings')) txStores.push('billingSettings');

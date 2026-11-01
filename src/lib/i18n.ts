@@ -220,6 +220,51 @@ export type TranslationKeys = {
   noDuesDesc: string;
   searchDueCustomer: string;
   dueRemindMsg: string;
+  // Due Entry (custom credit ledger, v2.23.0)
+  deTabBill: string;
+  deTabEntry: string;
+  deAdd: string;
+  deEdit: string;
+  deCustomer: string;
+  deMobile: string;
+  deCustomerPhoto: string;
+  deProduct: string;
+  deProductPhoto: string;
+  deAmount: string;
+  deDate: string;
+  deSchedule: string;
+  deScheduleHint: string;
+  deAddInstallment: string;
+  deAutoSplit: string;
+  deAutoSplitBtn: string;
+  deUnassigned: string;
+  deOverAssigned: string;
+  deNote: string;
+  dePhotoHint: string;
+  deStatusPaid: string;
+  deStatusPartial: string;
+  deStatusPending: string;
+  deNextDue: string;
+  deNoSchedule: string;
+  deRecordPayment: string;
+  deInstallmentPaid: string;
+  deKisti: string;
+  deNoEntries: string;
+  deNoEntriesDesc: string;
+  deDeleteConfirm: string;
+  deDetails: string;
+  deCollected: string;
+  deCollectedOf: string;
+  deCollectKisti: string;
+  dePaidOn: string;
+  deOutstanding: string;
+  deEntryDate: string;
+  deDueOn: string;
+  deChange: string;
+  deUpload: string;
+  deRemove: string;
+  dePartialAmount: string;
+  deFullRemaining: string;
   // CSV data export
   exportCsvTitle: string;
   exportCsvDesc: string;
@@ -523,6 +568,50 @@ const translations: Record<Language, TranslationKeys> = {
     noDuesDesc: 'সব গ্রাহকের হিসাব পরিষ্কার',
     searchDueCustomer: 'নাম বা নম্বর দিয়ে খুঁজুন…',
     dueRemindMsg: 'নমস্কার {name}, আপনার বাকি আছে ₹{amount} ({bills}টি বিল)। অনুগ্রহ করে পরিশোধ করুন। — {shop}',
+    deTabBill: 'বিল বাকি',
+    deTabEntry: 'বাকি এন্ট্রি',
+    deAdd: 'নতুন বাকি',
+    deEdit: 'বাকি এডিট',
+    deCustomer: 'কাস্টমারের নাম',
+    deMobile: 'মোবাইল (ঐচ্ছিক)',
+    deCustomerPhoto: 'কাস্টমারের ছবি',
+    deProduct: 'প্রোডাক্টের নাম',
+    deProductPhoto: 'প্রোডাক্টের ছবি',
+    deAmount: 'বাকির পরিমাণ (₹)',
+    deDate: 'বাকির তারিখ',
+    deSchedule: 'পেমেন্ট শিডিউল (কিস্তি)',
+    deScheduleHint: 'কিস্তি ঐচ্ছিক — না দিলে সোজা পরিমাণ হিসেবে থাকবে।',
+    deAddInstallment: 'কিস্তি যোগ',
+    deAutoSplit: 'মাসিক কিস্তি',
+    deAutoSplitBtn: 'বানান',
+    deUnassigned: 'শিডিউলে বাকি: ₹{amount}',
+    deOverAssigned: 'শিডিউল মোটের চেয়ে বেশি: ₹{amount}',
+    deNote: 'নোট (ঐচ্ছিক)',
+    dePhotoHint: 'JPG/PNG — সিঙ্কের জন্য অটো-কম্প্রেস হবে',
+    deStatusPaid: 'পরিশোধিত',
+    deStatusPartial: 'আংশিক জমা',
+    deStatusPending: 'বাকি আছে',
+    deNextDue: 'পরবর্তী কিস্তি',
+    deNoSchedule: 'শিডিউল নেই',
+    deRecordPayment: 'টাকা জমা নিন',
+    deInstallmentPaid: 'কিস্তি জমা হয়েছে',
+    deKisti: 'কিস্তি',
+    deNoEntries: 'কোনো বাকি এন্ট্রি নেই',
+    deNoEntriesDesc: 'ছবি ও কিস্তি সহ নতুন বাকি এন্ট্রি যোগ করুন',
+    deDeleteConfirm: 'এই বাকি এন্ট্রি মুছে ফেলবেন? সব ডিভাইস থেকে মুছে যাবে।',
+    deDetails: 'বাকির বিস্তারিত',
+    deCollected: 'কালেক্ট হয়েছে',
+    deCollectedOf: 'জমা',
+    deCollectKisti: 'এই কিস্তির টাকা নিন',
+    dePaidOn: 'জমা হয়েছে',
+    deOutstanding: 'মোট বাকি',
+    deEntryDate: 'এন্ট্রির তারিখ',
+    deDueOn: 'জমা দেওয়ার তারিখ',
+    deChange: 'বদলান',
+    deUpload: 'আপলোড',
+    deRemove: 'সরান',
+    dePartialAmount: 'আংশিক পরিমাণ দিন (বাকি: ₹{amount})',
+    deFullRemaining: 'পুরো বাকি (₹{amount}) জমা হিসেবে নেবে?',
     exportCsvTitle: 'ডেটা এক্সপোর্ট (CSV)',
     exportCsvDesc: 'Excel/Gmail-এ খোলা যাবে',
     productsCsv: 'প্রোডাক্ট CSV',
@@ -818,6 +907,50 @@ const translations: Record<Language, TranslationKeys> = {
     noDuesDesc: 'Every customer is fully settled',
     searchDueCustomer: 'Search name or number…',
     dueRemindMsg: 'Hello {name}, you have ₹{amount} due ({bills} bills) at {shop}. Kindly pay at your earliest convenience.',
+    deTabBill: 'Bill Dues',
+    deTabEntry: 'Due Entry',
+    deAdd: 'New Due',
+    deEdit: 'Edit Due',
+    deCustomer: 'Customer name',
+    deMobile: 'Mobile (optional)',
+    deCustomerPhoto: 'Customer photo',
+    deProduct: 'Product name',
+    deProductPhoto: 'Product photo',
+    deAmount: 'Due amount (₹)',
+    deDate: 'Due date',
+    deSchedule: 'Payment schedule (installments)',
+    deScheduleHint: 'Optional — leave empty for a plain amount with no plan.',
+    deAddInstallment: 'Add installment',
+    deAutoSplit: 'Monthly split',
+    deAutoSplitBtn: 'Create',
+    deUnassigned: 'Not in schedule: ₹{amount}',
+    deOverAssigned: 'Schedule exceeds total: ₹{amount}',
+    deNote: 'Note (optional)',
+    dePhotoHint: 'JPG/PNG — auto-compressed for sync',
+    deStatusPaid: 'Paid',
+    deStatusPartial: 'Partially paid',
+    deStatusPending: 'Pending',
+    deNextDue: 'Next installment',
+    deNoSchedule: 'No schedule',
+    deRecordPayment: 'Record payment',
+    deInstallmentPaid: 'Installment collected',
+    deKisti: 'Installment',
+    deNoEntries: 'No due entries yet',
+    deNoEntriesDesc: 'Add one with customer & product photos',
+    deDeleteConfirm: 'Delete this due entry? It will be removed from all devices.',
+    deDetails: 'Due details',
+    deCollected: 'Collected',
+    deCollectedOf: 'collected',
+    deCollectKisti: 'Collect this installment',
+    dePaidOn: 'collected on',
+    deOutstanding: 'Outstanding',
+    deEntryDate: 'Entry date',
+    deDueOn: 'Due on',
+    deChange: 'Change',
+    deUpload: 'Upload',
+    deRemove: 'Remove',
+    dePartialAmount: 'Enter a partial amount (due: ₹{amount})',
+    deFullRemaining: 'Record the full due (₹{amount}) as paid?',
     exportCsvTitle: 'Data Export (CSV)',
     exportCsvDesc: 'Opens in Excel / Google Sheets',
     productsCsv: 'Products CSV',
@@ -1113,6 +1246,50 @@ const translations: Record<Language, TranslationKeys> = {
     noDuesDesc: 'सभी ग्राहकों का हिसाब साफ़',
     searchDueCustomer: 'नाम या नंबर से खोजें…',
     dueRemindMsg: 'नमस्ते {name}, आपका ₹{amount} बकाया है ({bills} बिल)। कृपया भुगतान करें। — {shop}',
+    deTabBill: 'बिल उधार',
+    deTabEntry: 'उधार एंट्री',
+    deAdd: 'नई उधार',
+    deEdit: 'उधार बदलें',
+    deCustomer: 'ग्राहक का नाम',
+    deMobile: 'मोबाइल (वैकल्पिक)',
+    deCustomerPhoto: 'ग्राहक की फोटो',
+    deProduct: 'प्रोडक्ट का नाम',
+    deProductPhoto: 'प्रोडक्ट की फोटो',
+    deAmount: 'उधार राशि (₹)',
+    deDate: 'उधार दिनांक',
+    deSchedule: 'भुगतान अनुसूची (किस्ती)',
+    deScheduleHint: 'वैकल्पिक — निश्चित योजना न हो तो खाली छोड़ें।',
+    deAddInstallment: 'किस्ती जोड़ें',
+    deAutoSplit: 'मासिक किस्ती',
+    deAutoSplitBtn: 'बनाएं',
+    deUnassigned: 'शेड्यूल में बाकी: ₹{amount}',
+    deOverAssigned: 'शेड्यूल कुल से अधिक: ₹{amount}',
+    deNote: 'नोट (वैकल्पिक)',
+    dePhotoHint: 'JPG/PNG — सिंक के लिए कंप्रेस होगा',
+    deStatusPaid: 'भुगतान हुआ',
+    deStatusPartial: 'आंशिक भुगतान',
+    deStatusPending: 'बाकी है',
+    deNextDue: 'अगली किस्ती',
+    deNoSchedule: 'कोई शेड्यूल नहीं',
+    deRecordPayment: 'भुगतान दर्ज करें',
+    deInstallmentPaid: 'किस्ती जमा हुई',
+    deKisti: 'किस्ती',
+    deNoEntries: 'कोई उधार एंट्री नहीं',
+    deNoEntriesDesc: 'फोटो और किस्ती के साथ नई उधार एंट्री जोड़ें',
+    deDeleteConfirm: 'यह उधार एंट्री हटाएं? सभी डिवाइस से हट जाएगी।',
+    deDetails: 'उधार विवरण',
+    deCollected: 'वसूल हुआ',
+    deCollectedOf: 'जमा',
+    deCollectKisti: 'यह किस्ती वसूलें',
+    dePaidOn: 'जमा हुआ',
+    deOutstanding: 'कुल बाकी',
+    deEntryDate: 'एंट्री तिथि',
+    deDueOn: 'देय तिथि',
+    deChange: 'बदलें',
+    deUpload: 'अपलोड',
+    deRemove: 'हटाएं',
+    dePartialAmount: 'आंशिक राशि दर्ज करें (बाकी: ₹{amount})',
+    deFullRemaining: 'पूरा उधार (₹{amount}) भुगतान दर्ज करें?',
     exportCsvTitle: 'डेटा एक्सपोर्ट (CSV)',
     exportCsvDesc: 'Excel/Google Sheets में खुलेगा',
     productsCsv: 'प्रोडक्ट CSV',

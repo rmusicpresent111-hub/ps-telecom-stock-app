@@ -21,6 +21,7 @@ import {
   offlineBills,
   offlineStaffPayments,
   offlineInvestments,
+  offlineDueEntries,
   clearOfflineData,
   getOfflineDB,
   type OfflineDBSchema,
@@ -29,7 +30,7 @@ import { getLocalUser, updateLocalUser } from './local-auth';
 import { generateRecordId } from './id';
 import { notifyLocalDataChanged, notifyLocalWipe } from './sync-events';
 import { computeGst, normalizeGstMode, round2 } from './gst';
-import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillingSettings, PaymentMethod, StaffPayment, StaffPaymentKind, Investment } from './types';
+import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillingSettings, PaymentMethod, StaffPayment, StaffPaymentKind, Investment, DueEntry, DueScheduleItem } from './types';
 
 // ============ DATE HELPERS (local timezone — never use UTC for business days) ============
 
@@ -88,7 +89,7 @@ function stripSync<T>(row: Record<string, unknown>): T {
  * the cloud on device B.
  */
 async function recordPendingDelete(
-  storeName: 'products' | 'expenses' | 'cashEntries' | 'serviceTransactions' | 'bills' | 'staffPayments' | 'investments',
+  storeName: 'products' | 'expenses' | 'cashEntries' | 'serviceTransactions' | 'bills' | 'staffPayments' | 'investments' | 'dueEntries',
   itemId: string,
   userId: string
 ): Promise<void> {
@@ -934,6 +935,267 @@ export async function deleteInvestmentOffline(id: string, userId: string): Promi
   await recordPendingDelete('investments', id, userId);
   notifyLocalDataChanged(userId);
   return { success: true };
+}
+
+// ============ DUE ENTRIES (বাকি এন্ট্রি — custom credit ledger, Local) ============
+
+/** Rupee rounding tolerance for "fully collected" checks. */
+const DUE_EPS = 0.009;
+
+/** Coerce/repair a raw schedule array (create/update/import all funnel here):
+ *  clamps amounts, generates missing ids, drops empty rows, sorts by date. */
+function normalizeSchedule(raw: unknown): DueScheduleItem[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((it, ix): DueScheduleItem => {
+      const r = (it && typeof it === 'object' ? it : {}) as Record<string, unknown>;
+      const amount = round2(Math.max(0, Number(r.amount) || 0));
+      const paidAmount = round2(Math.min(amount, Math.max(0, Number(r.paidAmount) || 0)));
+      const item: DueScheduleItem = {
+        id: typeof r.id === 'string' && r.id ? r.id : `k${ix}-${Date.now().toString(36)}-${ix}`,
+        dueDate: typeof r.dueDate === 'string' ? r.dueDate.slice(0, 10) : '',
+        amount,
+        paidAmount,
+      };
+      if (amount > 0 && paidAmount >= amount - DUE_EPS) {
+        item.paidAt = typeof r.paidAt === 'string' && r.paidAt ? r.paidAt : new Date().toISOString();
+      }
+      return item;
+    })
+    .filter(it => it.amount > DUE_EPS || it.paidAmount > DUE_EPS)
+    .sort((a, b) => (a.dueDate || '9999-99-99').localeCompare(b.dueDate || '9999-99-99'));
+}
+
+/** Remaining un-collected amount of a due entry. */
+export function dueEntryOutstanding(e: Pick<DueEntry, 'amount' | 'paidAmount'>): number {
+  return round2(Math.max(0, (Number(e.amount) || 0) - (Number(e.paidAmount) || 0)));
+}
+
+export async function getDueEntriesOffline(userId: string): Promise<DueEntry[]> {
+  const rows = await offlineDueEntries.getAll(userId);
+  return rows
+    .map(r => stripSync<DueEntry>(r))
+    .map(e => ({ ...e, schedule: normalizeSchedule(e.schedule) }))
+    .sort((a, b) => {
+      if (a.date !== b.date) return b.date.localeCompare(a.date);
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+}
+
+export async function createDueEntryOffline(data: {
+  userId: string;
+  customerName: string;
+  customerMobile?: string;
+  customerPhotoDataUrl?: string;
+  productName: string;
+  productPhotoDataUrl?: string;
+  amount: number;
+  /** Installment plan — {dueDate, amount} rows; ids/progress are assigned here. */
+  schedule?: { dueDate: string; amount: number }[];
+  note?: string;
+  date?: string;
+}): Promise<{ dueEntry: DueEntry }> {
+  const amount = round2(Number(data.amount));
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Due amount must be greater than 0');
+  const customerName = (data.customerName || '').trim();
+  const productName = (data.productName || '').trim();
+  if (!customerName) throw new Error('Customer name is required');
+  if (!productName) throw new Error('Product name is required');
+
+  const now = new Date().toISOString();
+  const row: OfflineDBSchema['dueEntries']['value'] = {
+    id: generateRecordId(),
+    userId: data.userId,
+    customerName,
+    customerMobile: (data.customerMobile || '').trim(),
+    customerPhotoDataUrl: data.customerPhotoDataUrl || '',
+    productName,
+    productPhotoDataUrl: data.productPhotoDataUrl || '',
+    amount,
+    paidAmount: 0,
+    schedule: normalizeSchedule(data.schedule),
+    note: (data.note || '').trim(),
+    date: data.date || localDateStr(),
+    createdAt: now,
+    updatedAt: now,
+    _synced: Date.now(),
+    _dirty: 0,
+  };
+
+  await offlineDueEntries.put(row);
+  notifyLocalDataChanged(data.userId);
+  return { dueEntry: stripSync<DueEntry>(row) };
+}
+
+export async function updateDueEntryOffline(
+  id: string,
+  updates: {
+    customerName?: string;
+    customerMobile?: string;
+    customerPhotoDataUrl?: string;
+    productName?: string;
+    productPhotoDataUrl?: string;
+    amount?: number;
+    /** Full replacement plan; per-item collection progress is carried over by id. */
+    schedule?: { id?: string; dueDate: string; amount: number }[];
+    note?: string;
+    date?: string;
+  },
+  userId: string
+): Promise<{ dueEntry: DueEntry }> {
+  const row = await offlineDueEntries.getById(id);
+  if (!row || row.userId !== userId) throw new Error('Due entry not found');
+
+  if (updates.customerName !== undefined && !updates.customerName.trim()) throw new Error('Customer name is required');
+  if (updates.productName !== undefined && !updates.productName.trim()) throw new Error('Product name is required');
+
+  let amount = row.amount;
+  if (updates.amount !== undefined) {
+    amount = round2(Number(updates.amount));
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error('Due amount must be greater than 0');
+  }
+
+  // Collection progress lives on the entry (payments only ever go through
+  // recordDueEntryPaymentOffline) — an edit can lower the total, never the
+  // already-collected amount.
+  const paidAmount = round2(Math.min(amount, Number(row.paidAmount) || 0));
+
+  let schedule = row.schedule;
+  if (updates.schedule !== undefined) {
+    const prevById = new Map(row.schedule.map(it => [it.id, it]));
+    schedule = normalizeSchedule(
+      updates.schedule.map(it => ({
+        id: typeof it.id === 'string' && it.id ? it.id : undefined,
+        dueDate: it.dueDate,
+        amount: it.amount,
+        paidAmount: 0,
+      }))
+    );
+    // Carry each previously-collected installment's progress over by id.
+    schedule = schedule.map(it => {
+      const prev = prevById.get(it.id);
+      const carried = prev ? Math.min(it.amount, prev.paidAmount) : 0;
+      const out: DueScheduleItem = { ...it, paidAmount: round2(carried) };
+      if (carried >= it.amount - DUE_EPS) out.paidAt = prev?.paidAt || new Date().toISOString();
+      return out;
+    });
+    // If the trimmed plan now accounts for MORE progress than the entry has
+    // collected, shed the difference from the LAST items (predictable, rare).
+    let excess = round2(schedule.reduce((s, it) => s + it.paidAmount, 0) - paidAmount);
+    if (excess > 0) {
+      schedule = [...schedule].reverse().map(it => {
+        if (excess <= 0 || it.paidAmount <= 0) return it;
+        const take = Math.min(it.paidAmount, excess);
+        excess = round2(excess - take);
+        const left = round2(it.paidAmount - take);
+        const out: DueScheduleItem = { ...it, paidAmount: left };
+        if (left < it.amount - DUE_EPS) delete out.paidAt;
+        return out;
+      }).reverse();
+    }
+  }
+
+  const next: OfflineDBSchema['dueEntries']['value'] = {
+    ...row,
+    ...(updates.customerName !== undefined ? { customerName: updates.customerName.trim() } : {}),
+    ...(updates.customerMobile !== undefined ? { customerMobile: updates.customerMobile.trim() } : {}),
+    ...(updates.customerPhotoDataUrl !== undefined ? { customerPhotoDataUrl: updates.customerPhotoDataUrl } : {}),
+    ...(updates.productName !== undefined ? { productName: updates.productName.trim() } : {}),
+    ...(updates.productPhotoDataUrl !== undefined ? { productPhotoDataUrl: updates.productPhotoDataUrl } : {}),
+    amount,
+    paidAmount,
+    schedule,
+    ...(updates.note !== undefined ? { note: updates.note.trim() } : {}),
+    ...(updates.date ? { date: updates.date } : {}),
+    updatedAt: new Date().toISOString(),
+  };
+
+  await offlineDueEntries.put(next);
+  notifyLocalDataChanged(userId);
+  return { dueEntry: stripSync<DueEntry>(next) };
+}
+
+export async function deleteDueEntryOffline(id: string, userId: string): Promise<{ success: boolean }> {
+  const row = await offlineDueEntries.getById(id);
+  if (!row || row.userId !== userId) throw new Error('Due entry not found');
+  await offlineDueEntries.delete(id);
+  await recordPendingDelete('dueEntries', id, userId);
+  notifyLocalDataChanged(userId);
+  return { success: true };
+}
+
+/**
+ * Record a collection against a due entry.
+ *  - `opts.scheduleItemId` → pay THAT installment's remaining balance first.
+ *  - otherwise            → fill unpaid installments chronologically.
+ * Any leftover (advance payment / no fixed schedule) lands on the entry itself.
+ */
+export async function recordDueEntryPaymentOffline(
+  id: string,
+  userId: string,
+  amount?: number,
+  opts?: { scheduleItemId?: string }
+): Promise<{ dueEntry: DueEntry }> {
+  const row = await offlineDueEntries.getById(id);
+  if (!row || row.userId !== userId) throw new Error('Due entry not found');
+
+  const total = round2(Number(row.amount) || 0);
+  const paid = round2(Number(row.paidAmount) || 0);
+  const outstanding = round2(total - paid);
+  if (outstanding <= DUE_EPS) throw new Error('This due is already fully settled');
+
+  let schedule = (row.schedule || []).map(it => ({ ...it }));
+
+  // Resolve the pay amount FIRST: a per-installment tap with no explicit
+  // amount collects exactly THAT kisti's balance (never the whole due —
+  // the old behaviour swept the remaining outstanding in as "advance").
+  let pay: number;
+  if (opts?.scheduleItemId) {
+    const target = schedule.find(it => it.id === opts.scheduleItemId);
+    if (!target) throw new Error('Installment not found');
+    const itemRemaining = round2(target.amount - (Number(target.paidAmount) || 0));
+    if (itemRemaining <= DUE_EPS) throw new Error('This installment is already settled');
+    pay = amount === undefined ? itemRemaining : round2(Math.max(0, Number(amount) || 0));
+  } else {
+    pay = amount === undefined ? outstanding : round2(Math.max(0, Number(amount) || 0));
+  }
+  pay = Math.min(pay, outstanding);
+  if (pay <= DUE_EPS) throw new Error('Payment amount must be greater than 0');
+
+  let left = pay;
+
+  if (opts?.scheduleItemId) {
+    const item = schedule.find(it => it.id === opts.scheduleItemId);
+    if (!item) throw new Error('Installment not found');
+    const itemRemaining = round2(item.amount - (Number(item.paidAmount) || 0));
+    if (itemRemaining <= DUE_EPS) throw new Error('This installment is already settled');
+    const take = Math.min(left, itemRemaining);
+    item.paidAmount = round2((Number(item.paidAmount) || 0) + take);
+    if (item.paidAmount >= item.amount - DUE_EPS) item.paidAt = new Date().toISOString();
+    left = round2(left - take);
+  } else {
+    const sorted = [...schedule].sort((a, b) => (a.dueDate || '9999-99-99').localeCompare(b.dueDate || '9999-99-99'));
+    for (const item of sorted) {
+      if (left <= DUE_EPS) break;
+      const remaining = round2(item.amount - (Number(item.paidAmount) || 0));
+      if (remaining <= DUE_EPS) continue;
+      const take = Math.min(left, remaining);
+      item.paidAmount = round2((Number(item.paidAmount) || 0) + take);
+      if (item.paidAmount >= item.amount - DUE_EPS) item.paidAt = new Date().toISOString();
+      left = round2(left - take);
+    }
+  }
+
+  const next: OfflineDBSchema['dueEntries']['value'] = {
+    ...row,
+    paidAmount: round2(paid + pay),
+    schedule,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await offlineDueEntries.put(next);
+  notifyLocalDataChanged(userId);
+  return { dueEntry: stripSync<DueEntry>(next) };
 }
 
 // ============ CASH BOOK (Local — admin Cash section) ============
@@ -2002,7 +2264,7 @@ export async function markBillPaidOffline(
 // ============ BACKUP (Local) ============
 
 export async function exportBackupOffline(userId: string) {
-  const [localCategories, localProducts, localTransactions, localExpenses, localCashEntries, localServiceTxns, localBills, localStaffPayments, localInvestments, billingSettings] = await Promise.all([
+  const [localCategories, localProducts, localTransactions, localExpenses, localCashEntries, localServiceTxns, localBills, localStaffPayments, localInvestments, localDueEntries, billingSettings] = await Promise.all([
     offlineCategories.getAll(userId),
     offlineProducts.getAll(userId),
     offlineTransactions.getAll(userId),
@@ -2012,6 +2274,7 @@ export async function exportBackupOffline(userId: string) {
     offlineBills.getAll(userId),
     offlineStaffPayments.getAll(userId),
     offlineInvestments.getAll(userId),
+    offlineDueEntries.getAll(userId),
     getBillingSettingsOffline(userId),
   ]);
 
@@ -2027,6 +2290,7 @@ export async function exportBackupOffline(userId: string) {
     bills: localBills.map(b => b),
     staffPayments: localStaffPayments.map(p => stripSync(p)),
     investments: localInvestments.map(i => stripSync(i)),
+    dueEntries: localDueEntries.map(d => stripSync(d)),
     billingSettings,
     exportedAt: new Date().toISOString(),
   };
@@ -2042,6 +2306,7 @@ export async function importBackupOffline(userId: string, backupData: {
   bills?: unknown[];
   staffPayments?: unknown[];
   investments?: unknown[];
+  dueEntries?: unknown[];
   billingSettings?: unknown;
 }) {
   const now = Date.now();
@@ -2096,11 +2361,12 @@ export async function importBackupOffline(userId: string, backupData: {
   const bills = asRows(backupData.bills || []);
   const staffPayments = asRows(backupData.staffPayments || []);
   const investments = asRows(backupData.investments || []);
+  const dueEntries = asRows(backupData.dueEntries || []);
   const billingSettings = (backupData.billingSettings && typeof backupData.billingSettings === 'object')
     ? backupData.billingSettings as Record<string, unknown>
     : null;
 
-  if (categories.length === 0 && products.length === 0 && transactions.length === 0 && expenses.length === 0 && cashEntries.length === 0 && serviceTransactions.length === 0 && bills.length === 0 && staffPayments.length === 0 && investments.length === 0 && !billingSettings) {
+  if (categories.length === 0 && products.length === 0 && transactions.length === 0 && expenses.length === 0 && cashEntries.length === 0 && serviceTransactions.length === 0 && bills.length === 0 && staffPayments.length === 0 && investments.length === 0 && dueEntries.length === 0 && !billingSettings) {
     // A settings-only backup (fresh shop, no rows yet) is legitimate — only
     // reject a file that has literally nothing usable.
     throw new Error('Backup file contains no valid data');
@@ -2191,16 +2457,39 @@ export async function importBackupOffline(userId: string, backupData: {
       note: typeof row.note === 'string' ? row.note : '',
     }, { amount: 'num' }) as OfflineDBSchema['investments']['value']
   );
+  const dueRows: OfflineDBSchema['dueEntries']['value'][] = dueEntries.map(
+    (row) => {
+      const coerced = coerce({
+        ...fixDates(row),
+        date: isoStr(row.date) || localDateStr(),
+        userId,
+        customerName: typeof row.customerName === 'string' ? row.customerName : '',
+        customerMobile: typeof row.customerMobile === 'string' ? row.customerMobile : '',
+        customerPhotoDataUrl: typeof row.customerPhotoDataUrl === 'string' ? row.customerPhotoDataUrl : '',
+        productName: typeof row.productName === 'string' ? row.productName : '',
+        productPhotoDataUrl: typeof row.productPhotoDataUrl === 'string' ? row.productPhotoDataUrl : '',
+        note: typeof row.note === 'string' ? row.note : '',
+        schedule: normalizeSchedule(row.schedule),
+        createdAt: isoStr(row.createdAt) || nowIso,
+        updatedAt: isoStr(row.updatedAt) || nowIso,
+        _synced: now,
+        _dirty: 0,
+      }, { amount: 'num', paidAmount: 'num' });
+      // Collected can never exceed the total.
+      coerced.paidAmount = Math.min(Number(coerced.paidAmount) || 0, Number(coerced.amount) || 0);
+      return coerced as OfflineDBSchema['dueEntries']['value'];
+    }
+  );
 
   // 2. One readwrite transaction across ALL stores: wipe this user's rows,
   //    write the imported ones, swap billingSettings — all or nothing.
   const db = await getOfflineDB();
   const tx = db.transaction(
-    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills', 'staffPayments', 'investments', 'billingSettings'],
+    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills', 'staffPayments', 'investments', 'dueEntries', 'billingSettings'],
     'readwrite'
   );
 
-  for (const store of ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills', 'staffPayments', 'investments'] as const) {
+  for (const store of ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills', 'staffPayments', 'investments', 'dueEntries'] as const) {
     const os = tx.objectStore(store);
     const keys = await os.index('by-userId').getAllKeys(userId);
     for (const key of keys) void os.delete(key);
@@ -2215,6 +2504,7 @@ export async function importBackupOffline(userId: string, backupData: {
   for (const row of billRows) void tx.objectStore('bills').put(row);
   for (const row of staffRows) void tx.objectStore('staffPayments').put(row);
   for (const row of invRows) void tx.objectStore('investments').put(row);
+  for (const row of dueRows) void tx.objectStore('dueEntries').put(row);
 
   if (billingSettings) {
     void tx.objectStore('billingSettings').put({

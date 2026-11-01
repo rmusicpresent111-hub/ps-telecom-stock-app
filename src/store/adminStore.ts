@@ -18,6 +18,7 @@ export type AdminSection =
   | 'products'
   | 'bills'
   | 'due'
+  | 'dueentry'
   | 'expenses'
   | 'parties'
   | 'staff'
@@ -72,6 +73,7 @@ export const useAdminStore = create<AdminState>()(
           'products',
           'bills',
           'due',
+          'dueentry',
           'expenses',
           'parties',
           'staff',

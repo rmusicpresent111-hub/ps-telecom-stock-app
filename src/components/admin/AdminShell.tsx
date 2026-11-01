@@ -16,6 +16,7 @@ import {
   Package,
   ReceiptText,
   Wallet,
+  WalletCards,
   Coins,
   Users,
   UserCog,
@@ -45,6 +46,7 @@ import AdminInvest from './AdminInvest';
 import AdminProducts from './AdminProducts';
 import AdminBills from './AdminBills';
 import AdminDueBook from './AdminDueBook';
+import AdminDueEntry from './AdminDueEntry';
 import AdminExpenses from './AdminExpenses';
 import AdminParties from './AdminParties';
 import AdminStaffPayments from './AdminStaffPayments';
@@ -60,6 +62,7 @@ const NAV: { key: AdminSection; icon: React.ComponentType<{ size?: number | stri
   { key: 'products', icon: Package, navKey: 'nav.products' },
   { key: 'bills', icon: ReceiptText, navKey: 'nav.bills' },
   { key: 'due', icon: Wallet, navKey: 'nav.due' },
+  { key: 'dueentry', icon: WalletCards, navKey: 'nav.dueEntry' },
   { key: 'parties', icon: Users, navKey: 'nav.parties' },
   { key: 'expenses', icon: Coins, navKey: 'nav.expenses' },
   { key: 'staff', icon: UserCog, navKey: 'nav.staff' },
@@ -77,6 +80,7 @@ const SECTION_TITLE: Record<AdminSection, string> = {
   products: 'nav.products',
   bills: 'nav.bills',
   due: 'nav.due',
+  dueentry: 'nav.dueEntry',
   parties: 'nav.parties',
   expenses: 'nav.expenses',
   staff: 'nav.staff',
@@ -368,6 +372,7 @@ function AdminShellInner() {
           {section === 'products' && <AdminProducts onQuickSell={(p) => openQuickSell(p)} />}
           {section === 'bills' && <AdminBills />}
           {section === 'due' && <AdminDueBook />}
+          {section === 'dueentry' && <AdminDueEntry />}
           {section === 'parties' && <AdminParties />}
           {section === 'expenses' && <AdminExpenses />}
           {section === 'staff' && <AdminStaffPayments />}
@@ -379,7 +384,7 @@ function AdminShellInner() {
         {/* footer (sticky bottom, Vyapar-style strip) */}
         <footer className="mt-auto hidden lg:block border-t border-[var(--psa-border)] bg-[var(--psa-card)]">
           <div className="max-w-[1200px] mx-auto px-6 py-3 flex items-center justify-between text-[11px] text-[var(--psa-faint)]">
-            <span>PS TELECOM {ta('shell.title', lang)} · v2.20.0</span>
+            <span>PS TELECOM {ta('shell.title', lang)} · v2.23.0</span>
             <span className="flex items-center gap-2">
               <Badge tone="orange">Web Admin</Badge>
               <Badge tone="green">D1 encrypted</Badge>
