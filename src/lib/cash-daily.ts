@@ -82,3 +82,56 @@ export function buildCashDaily(entries: CashDailyInput[]): CashDailyPoint[] {
   }
   return points;
 }
+
+// ── DUE daily (Due Book history) ────────────────────────────────
+
+export interface DueDailyInput {
+  date: string; // YYYY-MM-DD
+  dueMade: number; // new credit given that day (+)
+  collected: number; // due money recovered that day (−)
+}
+
+export interface DueDailyPoint {
+  date: string; // YYYY-MM-DD
+  dueMade: number;
+  collected: number;
+  net: number; // dueMade − collected (did outstanding grow or shrink)
+  endDue: number; // running outstanding due at day end
+}
+
+/**
+ * Day-by-day outstanding-due points from ANY order of due events.
+ * Gap days are filled flat (carried endDue); walk always ends today.
+ * Note: endDue is EXACT by today — it converges to the current real
+ * outstanding total even when per-day created/collected is best-effort.
+ */
+export function buildDueDaily(items: DueDailyInput[]): DueDailyPoint[] {
+  if (items.length === 0) return [];
+
+  const byDay = new Map<string, { made: number; got: number }>();
+  for (const e of items) {
+    if (!e.date) continue;
+    const day = byDay.get(e.date) ?? { made: 0, got: 0 };
+    day.made += Number(e.dueMade) || 0;
+    day.got += Number(e.collected) || 0;
+    byDay.set(e.date, day);
+  }
+  if (byDay.size === 0) return [];
+
+  const today = dailyLocalDateStr();
+  const firstDay = [...byDay.keys()].sort()[0];
+  if (firstDay > today) return [];
+
+  const points: DueDailyPoint[] = [];
+  let outstanding = 0;
+  let cursor = firstDay;
+  for (let i = 0; i < 4000 && cursor <= today; i++) {
+    const day = byDay.get(cursor);
+    const dueMade = r2(day?.made ?? 0);
+    const collected = r2(day?.got ?? 0);
+    outstanding = r2(outstanding + dueMade - collected);
+    points.push({ date: cursor, dueMade, collected, net: r2(dueMade - collected), endDue: outstanding });
+    cursor = nextDay(cursor);
+  }
+  return points;
+}
