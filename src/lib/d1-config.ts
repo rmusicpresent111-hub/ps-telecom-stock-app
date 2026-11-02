@@ -71,10 +71,131 @@ export const DEFAULT_SYNC_CONFIGURED =
   DEFAULT_SYNC_PIN.length >= 4 &&
   !/paste[._-]?your|change[._-]?me/i.test(`${DEFAULT_SYNC_ID} ${DEFAULT_SYNC_PIN}`);
 
+// ─────────────────────────────────────────────────────────────────────────
+// User-supplied D1 credential override (in-app token rotation, v2.27.1)
+// ─────────────────────────────────────────────────────────────────────────
+// A baked API token can die (expiry / manual revocation / leak-scan
+// auto-revoke). When that happens every sync cycle fails with
+// "Authentication error" and only a NEW token fixes it. This override lets
+// the shop owner paste fresh D1 credentials from inside the app
+// (Admin → Sync): they are stored in localStorage — never in git — and the
+// sync engine uses them immediately on every platform (APK direct + web
+// proxy) WITHOUT a rebuild or a server redeploy.
+
+/** A full D1 credential triple as pasted by the user. */
+export interface D1Creds {
+  accountId: string;
+  databaseId: string;
+  apiToken: string;
+}
+
+/** The credentials a sync call should use right now. */
+export interface D1EffectiveCreds extends D1Creds {
+  /** True when the user's pasted override (not the build's baked values) won. */
+  overridden: boolean;
+}
+
+export interface D1Override extends D1Creds {
+  /** Epoch ms when the override was saved. */
+  at: number;
+}
+
+const OVERRIDE_KEY = 'ps-d1-override-v1';
+
+const credOk = (v: string): boolean =>
+  v.length > 0 && !/paste[._-]?your|change[._-]?me/i.test(v);
+
+/** Read the user's saved override, or null when absent/invalid. */
+export function getD1Override(): D1Override | null {
+  try {
+    const raw = localStorage.getItem(OVERRIDE_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as Partial<D1Override>;
+    if (!p || typeof p.apiToken !== 'string' || !credOk(p.apiToken.trim())) return null;
+    if (typeof p.accountId !== 'string' || !credOk(p.accountId.trim())) return null;
+    if (typeof p.databaseId !== 'string' || !credOk(p.databaseId.trim())) return null;
+    return {
+      accountId: p.accountId.trim(),
+      databaseId: p.databaseId.trim(),
+      apiToken: p.apiToken.trim(),
+      at: typeof p.at === 'number' ? p.at : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Save a credential override. All three fields must be non-placeholder.
+ * Returns false (and saves nothing) when validation fails.
+ */
+export function setD1Override(creds: D1Creds): boolean {
+  const clean = {
+    accountId: creds.accountId.trim(),
+    databaseId: creds.databaseId.trim(),
+    apiToken: creds.apiToken.trim(),
+  };
+  if (!credOk(clean.accountId) || !credOk(clean.databaseId) || !credOk(clean.apiToken)) {
+    return false;
+  }
+  try {
+    localStorage.setItem(
+      OVERRIDE_KEY,
+      JSON.stringify({ ...clean, at: Date.now() })
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Drop the override — the build's baked credentials take over again. */
+export function clearD1Override(): void {
+  try {
+    localStorage.removeItem(OVERRIDE_KEY);
+  } catch {
+    /* non-fatal */
+  }
+}
+
+export function isD1Overridden(): boolean {
+  return getD1Override() !== null;
+}
+
+/**
+ * Credentials the sync engine should use right now: the user's pasted
+ * override when present, otherwise the build's baked values (possibly empty
+ * on server-env-only web builds — those rely on the /api/cloud/d1 proxy's
+ * own CLOUDFLARE_* environment variables).
+ */
+export function d1EffectiveCreds(): D1EffectiveCreds {
+  const ov = getD1Override();
+  if (ov) {
+    return {
+      accountId: ov.accountId,
+      databaseId: ov.databaseId,
+      apiToken: ov.apiToken,
+      overridden: true,
+    };
+  }
+  return {
+    accountId: D1_ACCOUNT_ID,
+    databaseId: D1_DATABASE_ID,
+    apiToken: D1_API_TOKEN,
+    overridden: false,
+  };
+}
+
+/** Query URL for an arbitrary account/database pair (native transport). */
+export function d1QueryUrlFor(accountId: string, databaseId: string): string {
+  return (
+    `https://api.cloudflare.com/client/v4/accounts/${accountId}` +
+    `/d1/database/${databaseId}/query`
+  );
+}
+
 /** Direct Cloudflare REST endpoint (native/APK transport only). */
-export const D1_QUERY_URL =
-  `https://api.cloudflare.com/client/v4/accounts/${D1_ACCOUNT_ID}` +
-  `/d1/database/${D1_DATABASE_ID}/query`;
+export const D1_QUERY_URL = d1QueryUrlFor(D1_ACCOUNT_ID, D1_DATABASE_ID);
 
 // ─────────────────────────────────────────────────────────────────────────
 // Sync account (this device's cloud identity)

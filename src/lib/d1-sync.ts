@@ -59,11 +59,10 @@ import { getOfflineDB, type OfflineDBSchema } from './offline-db';
 import { onLocalDataChanged, onLocalWipe } from './sync-events';
 import { DEFAULT_USER_ID } from './local-auth';
 import {
-  D1_QUERY_URL,
-  D1_API_TOKEN,
-  D1_ACCOUNT_ID,
-  D1_DATABASE_ID,
-  CLOUD_CREDS_CONFIGURED,
+  d1EffectiveCreds,
+  d1QueryUrlFor,
+  type D1Creds,
+  type D1EffectiveCreds,
   DEFAULT_SYNC_ID,
   DEFAULT_SYNC_PIN,
   DEFAULT_SYNC_CONFIGURED,
@@ -176,15 +175,19 @@ interface D1ResponseShape {
 }
 
 /**
- * True when the compiled-in environment carries real Cloudflare credentials
- * (NEXT_PUBLIC_CF_* from .env). Web builds WITHOUT them still sync — the
- * same-origin /api/cloud/d1 proxy falls back to the server's own
- * CLOUDFLARE_* environment variables, so empty credentials are relayed and
- * the proxy fills them in server-side. APK builds hard-fail at build time
- * without them (scripts/build-apk.js preflight) because the native transport
- * calls api.cloudflare.com directly and needs the baked token.
+ * Cloudflare auth failure classifier (v2.27.1).
+ *
+ * A dead API token (expiry / revocation / leak-scan auto-revoke) surfaces as
+ * "Authentication error" (code 10000) or "Invalid API Token" (code 1000).
+ * The UI uses this to offer the in-app token update form instead of a dead
+ * generic retry.
  */
-const cloudCredsConfigured = CLOUD_CREDS_CONFIGURED;
+export function isD1AuthError(msg?: string): boolean {
+  if (!msg) return false;
+  return /authentication error|invalid api token|api ?token.*(invalid|expired|revoked)|not authorized|unauthorized/i.test(
+    msg
+  );
+}
 
 /** Cached native-runtime probe (CapacitorHttp patches fetch → CORS-free). */
 let nativeRt: boolean | null = null;
@@ -201,7 +204,9 @@ async function isNativeRuntime(): Promise<boolean> {
 }
 
 /**
- * One D1 statement per request (the API rejects statement arrays).
+ * One D1 statement per request (the API rejects statement arrays), using the
+ * given credential triple (v2.27.1: the user's pasted override when present,
+ * otherwise the build's baked values).
  *
  * Transport:
  *  - Native (APK): plain fetch — CapacitorHttp patches fetch natively, so the
@@ -211,22 +216,26 @@ async function isNativeRuntime(): Promise<boolean> {
  *    relayed through the same-origin /api/cloud/d1 proxy instead, which answers
  *    the normalized { ok, rows } shape.
  */
-async function d1Query<T = Row>(sql: string, params: unknown[] = []): Promise<T[]> {
+async function d1QueryWith<T = Row>(
+  creds: D1EffectiveCreds,
+  sql: string,
+  params: unknown[] = []
+): Promise<T[]> {
   const native = await isNativeRuntime();
-  // APK builds MUST bake real credentials (build-apk.js preflight). A native
-  // runtime without them has no transport at all — fail fast with a stable,
-  // actionable message instead of a garbage URL request.
-  if (native && !cloudCredsConfigured) {
+  // A native runtime needs SOME token to talk to api.cloudflare.com (baked at
+  // build time or pasted later via the in-app override). Without one there is
+  // no transport at all — fail fast with a stable, actionable message.
+  if (native && !creds.apiToken) {
     throw new Error('D1: cloud sync is not configured on this build (.env missing)');
   }
   // Timeout via Promise.race (NOT AbortController): CapacitorHttp's native
   // fetch on Android ignores abort signals — race works identically everywhere.
   const exec = (async () => {
     const res = native
-      ? await fetch(D1_QUERY_URL, {
+      ? await fetch(d1QueryUrlFor(creds.accountId, creds.databaseId), {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${D1_API_TOKEN}`,
+            Authorization: `Bearer ${creds.apiToken}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ sql, params }),
@@ -234,13 +243,13 @@ async function d1Query<T = Row>(sql: string, params: unknown[] = []): Promise<T[
       : await fetch('/api/cloud/d1', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          // Real client creds (self-hosted/APK-adjacent builds): relay them.
+          // Real client creds (baked builds + user override): relay them.
           // Env-only builds (Vercel): send EMPTY creds → the proxy falls back
           // to the deployment's own CLOUDFLARE_* environment variables.
           body: JSON.stringify({
-            accountId: cloudCredsConfigured ? D1_ACCOUNT_ID : '',
-            databaseId: cloudCredsConfigured ? D1_DATABASE_ID : '',
-            apiToken: cloudCredsConfigured ? D1_API_TOKEN : '',
+            accountId: creds.accountId,
+            databaseId: creds.databaseId,
+            apiToken: creds.apiToken,
             sql,
             params,
           }),
@@ -274,6 +283,27 @@ async function d1Query<T = Row>(sql: string, params: unknown[] = []): Promise<T[
     setTimeout(() => reject(new Error('D1: request timeout')), REQUEST_TIMEOUT_MS);
   });
   return Promise.race([exec, timeout]);
+}
+
+/** Live statement against the CURRENT effective credentials (baked/override). */
+async function d1Query<T = Row>(sql: string, params: unknown[] = []): Promise<T[]> {
+  return d1QueryWith<T>(d1EffectiveCreds(), sql, params);
+}
+
+/**
+ * Probe a candidate credential triple with a harmless `SELECT 1` (v2.27.1).
+ * Used by the Admin → Sync token form to validate a new token BEFORE saving
+ * it. Never throws — returns { ok:false, error } on any failure.
+ */
+export async function d1TestCreds(
+  creds: D1Creds
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await d1QueryWith({ ...creds, overridden: true }, 'SELECT 1 AS one', []);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error)?.message || 'D1: test failed' };
+  }
 }
 
 /** Query with automatic schema repair + one retry (survives table drops). */
