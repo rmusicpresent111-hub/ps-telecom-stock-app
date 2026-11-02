@@ -273,6 +273,6 @@ export interface BillingSettings {
   billPrefix: string;       // e.g. 'PS'
   thankYouNote: string;
   termsText: string;
-  adminPin: string;         // admin panel security PIN ('' → DEFAULT_ADMIN_PIN)
+  adminPin: string;         // legacy field (lock system removed v2.29.0) — kept so old synced rows decode
   updatedAt: string;
 }

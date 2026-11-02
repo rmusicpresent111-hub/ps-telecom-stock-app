@@ -30,7 +30,6 @@ import {
   Moon,
   ShoppingCart,
   Globe,
-  Lock,
   Banknote,
   Sprout,
 } from 'lucide-react';
@@ -54,7 +53,6 @@ import AdminStaffPayments from './AdminStaffPayments';
 import AdminReports from './AdminReports';
 import AdminBillSettings from './AdminBillSettings';
 import AdminSync from './AdminSync';
-import AdminPinGate, { lockAdminPanel } from './AdminPinGate';
 
 const NAV: { key: AdminSection; icon: React.ComponentType<{ size?: number | string }>; navKey: string }[] = [
   { key: 'dashboard', icon: LayoutDashboard, navKey: 'nav.dashboard' },
@@ -230,16 +228,6 @@ function SidebarInner({ onNavigate, onLogoClick }: { onNavigate?: () => void; on
           </span>
           <LangSwitch />
         </div>
-        <button
-          onClick={() => {
-            lockAdminPanel(); // clear the unlock flag…
-            if (typeof window !== 'undefined') window.location.reload(); // …the gate then takes over
-          }}
-          className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold text-[var(--psa-muted)] hover:bg-[var(--psa-hover2)] transition-colors"
-        >
-          <Lock size={17} />
-          {ta('lock.relock', lang)}
-        </button>
         <a
           href="./"
           className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold text-[var(--psa-muted)] hover:bg-[var(--psa-hover2)] transition-colors"
@@ -464,15 +452,10 @@ function AdminShellInner() {
 }
 
 /**
- * Exported shell = the PIN gate wrapping the real console.
- * While locked, NOTHING below the gate mounts — AdminShellInner's boot
- * effects (default profile + D1 sync) only run after a successful unlock,
- * so a stranger's device never receives shop data.
+ * Exported shell — the console renders directly (v2.29.0: the PIN gate and
+ * every other lock were removed at the owner's request; the admin panel opens
+ * immediately and D1 sync boot effects run on mount as normal).
  */
 export default function AdminShell() {
-  return (
-    <AdminPinGate>
-      <AdminShellInner />
-    </AdminPinGate>
-  );
+  return <AdminShellInner />;
 }

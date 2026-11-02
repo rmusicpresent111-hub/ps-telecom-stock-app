@@ -2,15 +2,13 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
-import { useAppLockStore } from '@/store/appLockStore';
-import { appLockSupported } from '@/lib/app-lock';
 import { t } from '@/lib/i18n';
 import { getProfileOffline, updateProfileOffline, exportBackupOffline, importBackupOffline, resetDataOffline, localDateStr, getProductsOffline, getBillsOffline } from '@/lib/offline-service';
 import { registerBackModal } from '@/lib/modal-back';
 import { subscribeD1Status, getD1SyncStatus, syncNowD1, type D1SyncStatus } from '@/lib/d1-sync';
 import { getSyncAccount, type SyncAccount } from '@/lib/d1-config';
 import { motion } from 'framer-motion';
-import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, Receipt, ReceiptText, RefreshCw, CloudUpload, Lock, LockKeyhole, HandCoins, FileSpreadsheet, Monitor } from 'lucide-react';
+import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, Receipt, ReceiptText, RefreshCw, CloudUpload, HandCoins, FileSpreadsheet, Monitor } from 'lucide-react';
 import { toast } from 'sonner';
 import type { User as UserType, Category } from '@/lib/types';
 
@@ -127,42 +125,6 @@ export default function ProfileScreen() {
 
   const handleLanguageChange = () => {
     navigateTo('language');
-  };
-
-  // App Lock (APK): toggle the device screen-lock gate. Turning it ON is only
-  // allowed when the phone actually has a screen lock / biometrics — otherwise
-  // the user could never satisfy the gate.
-  const appLockEnabled = useAppLockStore((s) => s.enabled);
-  const appLockAvailableState = useAppLockStore((s) => s.available);
-  const handleAppLockToggle = async () => {
-    const lockStore = useAppLockStore.getState();
-    if (!lockStore.enabled) {
-      const ok = lockStore.available !== null ? lockStore.available : await lockStore.probe();
-      if (!ok) {
-        toast.error(t('appLockUnavailable', language));
-        return;
-      }
-      lockStore.setEnabled(true);
-      toast.success(t('appLockOnToast', language));
-    } else {
-      lockStore.setEnabled(false);
-      toast.success(t('appLockOffToast', language));
-    }
-  };
-
-  // Probe availability once so the toggle shows the right hint on this device.
-  useEffect(() => {
-    if (appLockSupported() && useAppLockStore.getState().available === null) {
-      void useAppLockStore.getState().probe();
-    }
-  }, []);
-
-  // Manual "Lock Now" — raise the gate instantly (hand the phone to staff /
-  // step away). The gate never engages on devices without a screen lock.
-  const handleLockNow = async () => {
-    const ok = await useAppLockStore.getState().lockNow();
-    if (ok) toast.success(t('lockNowToast', language));
-    else toast.error(t('lockNowFailToast', language));
   };
 
   const handleBackup = async () => {
@@ -392,46 +354,6 @@ export default function ProfileScreen() {
             </div>
             <span className="text-xs text-white/40 uppercase">{language}</span>
           </button>
-
-          {/* App Lock — APK only: device screen-lock (fingerprint / PIN) gate */}
-          {appLockSupported() && (
-            <button
-              onClick={() => void handleAppLockToggle()}
-              className="glass-card w-full p-4 flex items-center justify-between"
-            >
-              <div className="flex items-center gap-3">
-                <Lock size={18} className="text-emerald-400" />
-                <div className="text-left">
-                  <span className="text-sm block">{t('appLock', language)}</span>
-                  <span className="text-[10px] text-white/40">
-                    {appLockAvailableState === false
-                      ? t('appLockUnavailable', language)
-                      : t('appLockDesc', language)}
-                  </span>
-                </div>
-              </div>
-              <div className={`w-10 h-5 rounded-full transition-all ${appLockEnabled ? 'bg-emerald-500/40' : 'bg-white/20'} relative`}>
-                <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-all ${appLockEnabled ? 'left-[22px]' : 'left-0.5'}`} />
-              </div>
-            </button>
-          )}
-
-          {/* Lock Now — raise the lock gate instantly (APK only) */}
-          {appLockSupported() && (
-            <button
-              onClick={() => void handleLockNow()}
-              className="glass-card w-full p-4 flex items-center justify-between active:scale-[0.99] transition-transform"
-            >
-              <div className="flex items-center gap-3">
-                <LockKeyhole size={18} className="text-red-400" />
-                <div className="text-left">
-                  <span className="text-sm block">{t('lockNow', language)}</span>
-                  <span className="text-[10px] text-white/40">{t('lockNowDesc', language)}</span>
-                </div>
-              </div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-red-300/80">ON</span>
-            </button>
-          )}
 
           {/* Billing Settings */}
           <button
