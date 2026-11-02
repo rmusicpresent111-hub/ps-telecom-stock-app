@@ -189,7 +189,7 @@ export async function generateBillPdf(
     else if (stroke) doc.roundedRect(x, yy, w, h, r, r, 'S');
   };
   const txt = (
-    s: string,
+    s: string | string[],
     x: number,
     yy: number,
     o: { align?: 'left' | 'center' | 'right'; font?: 'helvetica' | 'times' | 'courier'; style?: 'normal' | 'bold' | 'italic' | 'bolditalic'; size?: number; color?: RGB; cs?: number } = {}

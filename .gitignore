@@ -95,3 +95,6 @@ firebase-debug.*.log
 # (Cloudflare D1 credentials now live in the git-ignored .env file —
 #  the old git-ignored src/lib/d1-secrets.ts file was removed in v2.19.0)
 .vercel
+
+# legacy D1 secrets file (v2.28.0 removed it from the repo; keep it out forever)
+src/lib/d1-secrets.ts

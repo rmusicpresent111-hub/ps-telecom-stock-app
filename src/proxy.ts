@@ -89,9 +89,16 @@ export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // the lock screen and its auth endpoint are always reachable
-  // (trailingSlash: true adds a "/" — normalize before matching)
+  // (trailingSlash: true adds a "/" — normalize before matching).
+  // /api/cloud/d1 is exempt too: the APK has no cookies, and that route
+  // carries its OWN auth (sync PIN + rate limit) in route.ts — letting it
+  // through here is what makes server-managed sync work on native.
   const clean = pathname.replace(/\/+$/, '') || '/';
-  if (clean === '/site-lock' || clean === '/api/site-auth') {
+  if (
+    clean === '/site-lock' ||
+    clean === '/api/site-auth' ||
+    clean === '/api/cloud/d1'
+  ) {
     return NextResponse.next();
   }
 

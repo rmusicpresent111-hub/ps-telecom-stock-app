@@ -59,10 +59,7 @@ import { getOfflineDB, type OfflineDBSchema } from './offline-db';
 import { onLocalDataChanged, onLocalWipe } from './sync-events';
 import { DEFAULT_USER_ID } from './local-auth';
 import {
-  d1EffectiveCreds,
-  d1QueryUrlFor,
-  type D1Creds,
-  type D1EffectiveCreds,
+  SYNC_SERVER_BASE,
   DEFAULT_SYNC_ID,
   DEFAULT_SYNC_PIN,
   DEFAULT_SYNC_CONFIGURED,
@@ -168,27 +165,6 @@ function isNetworkError(msg?: string): boolean {
   return /timeout|failed to fetch|network|offline|unavailable|aborted|dns|socket/i.test(msg);
 }
 
-interface D1ResponseShape {
-  result?: { results?: unknown[]; success?: boolean }[];
-  success?: boolean;
-  errors?: { code?: number; message?: string }[];
-}
-
-/**
- * Cloudflare auth failure classifier (v2.27.1).
- *
- * A dead API token (expiry / revocation / leak-scan auto-revoke) surfaces as
- * "Authentication error" (code 10000) or "Invalid API Token" (code 1000).
- * The UI uses this to offer the in-app token update form instead of a dead
- * generic retry.
- */
-export function isD1AuthError(msg?: string): boolean {
-  if (!msg) return false;
-  return /authentication error|invalid api token|api ?token.*(invalid|expired|revoked)|not authorized|unauthorized/i.test(
-    msg
-  );
-}
-
 /** Cached native-runtime probe (CapacitorHttp patches fetch → CORS-free). */
 let nativeRt: boolean | null = null;
 async function isNativeRuntime(): Promise<boolean> {
@@ -204,106 +180,56 @@ async function isNativeRuntime(): Promise<boolean> {
 }
 
 /**
- * One D1 statement per request (the API rejects statement arrays), using the
- * given credential triple (v2.27.1: the user's pasted override when present,
- * otherwise the build's baked values).
+ * One D1 statement per request — ALWAYS through the /api/cloud/d1 proxy
+ * (v2.28.0: the app carries ZERO cloud credentials; the proxy injects the
+ * SERVER's own CLOUDFLARE_* env vars. The old direct-to-Cloudflare native
+ * path is gone, so an expired/revoked token can never be baked into a
+ * build again — rotating the token is a Vercel env change, not an APK rebuild).
  *
  * Transport:
- *  - Native (APK): plain fetch — CapacitorHttp patches fetch natively, so the
- *    direct api.cloudflare.com call bypasses WebView CORS entirely.
- *  - Browser (dev server / Vercel / Workers hosting): plain fetch CANNOT call
- *    api.cloudflare.com (no CORS headers + 405 preflight) — the statement is
- *    relayed through the same-origin /api/cloud/d1 proxy instead, which answers
- *    the normalized { ok, rows } shape.
+ *  - Web (dev server / Vercel): same-origin fetch — the proxy is right there.
+ *  - Native (APK): the same proxy on the deployed server
+ *    (NEXT_PUBLIC_SYNC_API_URL, e.g. https://artechnologyapp.com) via plain
+ *    fetch — CapacitorHttp patches fetch natively, so the cross-origin call
+ *    bypasses WebView CORS entirely.
+ *
+ * Every request carries the device's sync PIN: same-origin calls don't need
+ * it, but the proxy requires it from cross-origin callers (the APK) and from
+ * any non-browser client — that is the anti-abuse gate protecting the
+ * server-side credentials from random SQL relay abuse.
  */
-async function d1QueryWith<T = Row>(
-  creds: D1EffectiveCreds,
-  sql: string,
-  params: unknown[] = []
-): Promise<T[]> {
+async function d1Query<T = Row>(sql: string, params: unknown[] = []): Promise<T[]> {
   const native = await isNativeRuntime();
-  // A native runtime needs SOME token to talk to api.cloudflare.com (baked at
-  // build time or pasted later via the in-app override). Without one there is
-  // no transport at all — fail fast with a stable, actionable message.
-  if (native && !creds.apiToken) {
-    throw new Error('D1: cloud sync is not configured on this build (.env missing)');
+  const base = native ? SYNC_SERVER_BASE : '';
+  if (native && !base) {
+    throw new Error('D1: sync server URL missing in this build (NEXT_PUBLIC_SYNC_API_URL)');
   }
+  const pin = getSyncAccount()?.pin || DEFAULT_SYNC_PIN;
   // Timeout via Promise.race (NOT AbortController): CapacitorHttp's native
   // fetch on Android ignores abort signals — race works identically everywhere.
   const exec = (async () => {
-    const res = native
-      ? await fetch(d1QueryUrlFor(creds.accountId, creds.databaseId), {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${creds.apiToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ sql, params }),
-        })
-      : await fetch('/api/cloud/d1', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          // Real client creds (baked builds + user override): relay them.
-          // Env-only builds (Vercel): send EMPTY creds → the proxy falls back
-          // to the deployment's own CLOUDFLARE_* environment variables.
-          body: JSON.stringify({
-            accountId: creds.accountId,
-            databaseId: creds.databaseId,
-            apiToken: creds.apiToken,
-            sql,
-            params,
-          }),
-        });
-    const body = (await res
-      .json()
-      .catch(() => null)) as (D1ResponseShape & {
+    const res = await fetch(`${base}/api/cloud/d1/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sql, params, pin }),
+    });
+    const body = (await res.json().catch(() => null)) as {
       ok?: boolean;
       rows?: Record<string, unknown>[];
       error?: string;
-    }) | null;
-    if (!res.ok || !body) {
-      const apiMsg = body?.error || body?.errors?.[0]?.message || `HTTP ${res.status}`;
+      errorCode?: string;
+    } | null;
+    if (!res.ok || !body || typeof body.ok !== 'boolean') {
+      const apiMsg = body?.error || `HTTP ${res.status}`;
       throw new Error(`D1: ${apiMsg}`);
     }
-    // Browser path → same-origin proxy answers the normalized shape.
-    if (typeof body.ok === 'boolean') {
-      if (body.ok !== true) throw new Error(`D1: ${body.error || 'statement failed'}`);
-      return (body.rows ?? []) as T[];
-    }
-    // Native path → raw Cloudflare response.
-    if (body.success !== true) {
-      const apiMsg = body?.errors?.[0]?.message || 'D1: request failed';
-      throw new Error(`D1: ${apiMsg}`);
-    }
-    const first = body?.result?.[0];
-    if (!first || first.success !== true) throw new Error('D1: statement failed');
-    return (first.results ?? []) as T[];
+    if (body.ok !== true) throw new Error(`D1: ${body.error || 'statement failed'}`);
+    return (body.rows ?? []) as T[];
   })();
   const timeout = new Promise<never>((_, reject) => {
     setTimeout(() => reject(new Error('D1: request timeout')), REQUEST_TIMEOUT_MS);
   });
   return Promise.race([exec, timeout]);
-}
-
-/** Live statement against the CURRENT effective credentials (baked/override). */
-async function d1Query<T = Row>(sql: string, params: unknown[] = []): Promise<T[]> {
-  return d1QueryWith<T>(d1EffectiveCreds(), sql, params);
-}
-
-/**
- * Probe a candidate credential triple with a harmless `SELECT 1` (v2.27.1).
- * Used by the Admin → Sync token form to validate a new token BEFORE saving
- * it. Never throws — returns { ok:false, error } on any failure.
- */
-export async function d1TestCreds(
-  creds: D1Creds
-): Promise<{ ok: boolean; error?: string }> {
-  try {
-    await d1QueryWith({ ...creds, overridden: true }, 'SELECT 1 AS one', []);
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: (err as Error)?.message || 'D1: test failed' };
-  }
 }
 
 /** Query with automatic schema repair + one retry (survives table drops). */
@@ -558,11 +484,12 @@ export async function connectSync(
     const msg = (err as Error)?.message || 'connect failed';
     setStatus({ state: isNetworkError(msg) ? 'offline' : 'error', lastError: msg });
     if (isNetworkError(msg)) return { ok: false, error: 'offline' };
-    // Deployment has no cloud credentials at all (preview URL / local clone
-    // without CLOUDFLARE_* env vars — the proxy answers "Missing accountId,
-    // databaseId or apiToken (and no server-managed cloud is configured)").
-    // Distinct, actionable code instead of a generic "fail".
-    if (/missing accountId|server-managed cloud/i.test(msg)) return { ok: false, error: 'no-server-cloud' };
+    // Deployment has no cloud credentials at all (the proxy answers
+    // "Cloud sync is not configured on this server ..."). Distinct,
+    // actionable code instead of a generic "fail".
+    if (/not configured on this server|missing accountId|server-managed cloud/i.test(msg)) {
+      return { ok: false, error: 'no-server-cloud' };
+    }
     return { ok: false, error: 'fail' };
   }
 }

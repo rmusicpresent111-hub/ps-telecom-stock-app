@@ -11,7 +11,7 @@
  * so later price edits never rewrite historical profit.
  */
 
-import { buildCashDaily } from './cash-daily';
+import { buildCashDaily, type CashDailyPoint } from './cash-daily';
 import {
   offlineCategories,
   offlineProducts,
@@ -1063,7 +1063,9 @@ export async function updateDueEntryOffline(
 
   let schedule = row.schedule;
   if (updates.schedule !== undefined) {
-    const prevById = new Map(row.schedule.map(it => [it.id, it]));
+    const prevById = new Map(
+      (row.schedule as DueScheduleItem[]).map((it) => [it.id, it] as const)
+    );
     schedule = normalizeSchedule(
       updates.schedule.map(it => ({
         id: typeof it.id === 'string' && it.id ? it.id : undefined,

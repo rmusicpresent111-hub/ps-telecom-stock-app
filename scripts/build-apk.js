@@ -116,16 +116,17 @@ function capCmd(args) {
   return success;
 }
 
-// Step 0: Cloud secrets preflight — the APK calls api.cloudflare.com DIRECTLY
-// (no server inside the bundle), so the client-build credentials MUST be
-// baked from the git-ignored .env file (v2.19.0: replaces src/lib/d1-secrets.ts).
+// Step 0: Sync preflight — v2.28.0 carries ZERO cloud credentials in the
+// app. All D1 traffic is relayed by the deployed server's /api/cloud/d1
+// proxy (the CLOUDFLARE_* env vars live ONLY on Vercel). The APK needs just
+// the sync account (ID + PIN) and the deployment URL to reach the proxy.
 const ENV_FILE = path.join(ROOT, '.env');
 if (!exists(ENV_FILE)) {
-  console.error('\n❌ Missing .env (cloud sync credentials).');
+  console.error('\n❌ Missing .env (sync account + deployment URL).');
   console.error('   Fix: copy the template and paste your real values:\n');
   console.error('     cp .env.example .env');
-  console.error('     # then open .env and fill the NEXT_PUBLIC_CF_* values\n');
-  console.error('   (This file is git-ignored — the token never enters git.)');
+  console.error('     # then open .env and fill NEXT_PUBLIC_SYNC_ID / NEXT_PUBLIC_SYNC_PIN / NEXT_PUBLIC_SYNC_API_URL\n');
+  console.error('   (This file is git-ignored.)');
   process.exit(1);
 }
 const envProbe = fs.readFileSync(ENV_FILE, 'utf8');
@@ -135,15 +136,34 @@ const readEnvVar = (name) => {
   return m[0].split('=').slice(1).join('=').trim();
 };
 const isPlaceholderVal = (v) => !v || /PASTE[._-]?YOUR|CHANGE[._-]?ME/i.test(v);
-const requiredClientVars = ['NEXT_PUBLIC_CF_ACCOUNT_ID', 'NEXT_PUBLIC_CF_DATABASE_ID', 'NEXT_PUBLIC_CF_API_TOKEN'];
+// FORBIDDEN: any NEXT_PUBLIC_CF_* value would bake the cloud keys into the
+// APK bundle — the exact thing v2.28.0 removes. Hard-fail so a stale .env
+// can never leak credentials into a shipped binary again.
+const forbidden = ['NEXT_PUBLIC_CF_ACCOUNT_ID', 'NEXT_PUBLIC_CF_DATABASE_ID', 'NEXT_PUBLIC_CF_API_TOKEN']
+  .filter((n) => !isPlaceholderVal(readEnvVar(n)));
+if (forbidden.length > 0) {
+  console.error(`\n❌ .env still carries client-side cloud keys: ${forbidden.join(', ')}`);
+  console.error('   v2.28.0 keeps credentials on the server (Vercel env vars).');
+  console.error('   Delete those lines from .env — the APK talks to the deployed');
+  console.error('   /api/cloud/d1 proxy instead, so no token is needed in the app.');
+  process.exit(1);
+}
+const requiredClientVars = ['NEXT_PUBLIC_SYNC_ID', 'NEXT_PUBLIC_SYNC_PIN', 'NEXT_PUBLIC_SYNC_API_URL'];
 const missing = requiredClientVars.filter((n) => isPlaceholderVal(readEnvVar(n)));
 if (missing.length > 0) {
   console.error(`\n❌ .env is missing real values for: ${missing.join(', ')}`);
-  console.error('   Open .env and paste your real Cloudflare Account ID / Database ID / API Token.');
-  console.error('   (The APK talks to Cloudflare directly — without these the sync cannot work.)');
+  console.error('   NEXT_PUBLIC_SYNC_ID        your sync account (e.g. PS-MUAG-JEEB)');
+  console.error('   NEXT_PUBLIC_SYNC_PIN       the sync/admin PIN');
+  console.error('   NEXT_PUBLIC_SYNC_API_URL   the deployment origin, e.g. https://artechnologyapp.com');
   process.exit(1);
 }
-console.log('✓ Cloud sync credentials found (.env, git-ignored)');
+const syncApiUrl = readEnvVar('NEXT_PUBLIC_SYNC_API_URL');
+if (!/^https:\/\/\S+$/i.test(syncApiUrl)) {
+  console.error('\n❌ NEXT_PUBLIC_SYNC_API_URL must be the deployment origin, e.g. https://artechnologyapp.com');
+  process.exit(1);
+}
+console.log(`✓ Server-managed sync configured (proxy: ${syncApiUrl.replace(/\/+$/, '')}/api/cloud/d1)`);
+console.log('✓ No cloud credentials will be baked into the APK');
 
 const movedMw = [];
 function moveMwAside() {

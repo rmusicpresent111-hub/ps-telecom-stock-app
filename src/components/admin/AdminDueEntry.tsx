@@ -343,7 +343,7 @@ export default function AdminDueEntry() {
     for (const r of form.schedule) {
       if (!(Number(r.amount) > 0) || !r.dueDate) { adminToast(t('c.required'), 'err'); return; }
     }
-    if (scheduleDiff < 0) { adminToast(t('dentry.overAssigned', { amount: fmtMoney(Math.abs(scheduleDiff)) }), 'err'); return; }
+    if (scheduleDiff < 0) { adminToast(taf('dentry.overAssigned', lang, { amount: fmtMoney(Math.abs(scheduleDiff)) }), 'err'); return; }
 
     setBusy(true);
     try {
@@ -619,9 +619,9 @@ export default function AdminDueEntry() {
               <span className="text-xs font-semibold text-[var(--psa-sub)]">{t('dentry.schedule')}</span>
               <span className={`text-[11px] font-semibold tabular-nums ${scheduleDiff < 0 ? 'text-[#DC2626]' : 'text-[var(--psa-muted)]'}`}>
                 {scheduleDiff > 0.009
-                  ? t('dentry.unassigned', { amount: fmtMoney(scheduleDiff) })
+                  ? taf('dentry.unassigned', lang, { amount: fmtMoney(scheduleDiff) })
                   : scheduleDiff < -0.009
-                    ? t('dentry.overAssigned', { amount: fmtMoney(Math.abs(scheduleDiff)) })
+                    ? taf('dentry.overAssigned', lang, { amount: fmtMoney(Math.abs(scheduleDiff)) })
                     : ''}
               </span>
             </div>
@@ -709,10 +709,10 @@ export default function AdminDueEntry() {
             </p>
             {!payModal.partial ? (
               <p className="text-xs text-[var(--psa-muted)] bg-[var(--psa-soft-green)] rounded-lg p-3">
-                {ta('bills.markPaidFull', lang, { amount: fmtMoney(dueEntryOutstanding(payModal.entry)) })}
+                {taf('bills.markPaidFull', lang, { amount: fmtMoney(dueEntryOutstanding(payModal.entry)) })}
               </p>
             ) : (
-              <Field label={ta('bills.markPaidPartial', lang, { amount: fmtMoney(dueEntryOutstanding(payModal.entry)) })}>
+              <Field label={taf('bills.markPaidPartial', lang, { amount: fmtMoney(dueEntryOutstanding(payModal.entry)) })}>
                 <TextInput
                   type="number"
                   min="0"

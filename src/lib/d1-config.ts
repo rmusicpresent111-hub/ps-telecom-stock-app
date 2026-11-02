@@ -2,38 +2,43 @@
  * Cloudflare D1 configuration — PS TELECOM cloud database.
  *
  * ─────────────────────────────────────────────────────────────────────────
- * SECURITY MODEL (v3 — env-only credentials, zero keys in source code)
+ * SECURITY MODEL (v2.28.0 — server-managed sync, ZERO credentials in app)
  * ─────────────────────────────────────────────────────────────────────────
- * Every credential now comes from ENVIRONMENT VARIABLES — nothing is
- * hardcoded in the repository (the old git-ignored d1-secrets.ts file is
- * gone). Fill them in `.env` (git-ignored, see .env.example):
+ * The app bundle (APK / web) carries NO Cloudflare credentials at all.
+ * Every D1 statement is relayed through the /api/cloud/d1 proxy of the
+ * deployed Next.js server, which injects the SERVER's own env vars:
  *
- *   NEXT_PUBLIC_CF_ACCOUNT_ID    Account ID  (client build: APK direct sync)
- *   NEXT_PUBLIC_CF_DATABASE_ID   Database ID (client build)
- *   NEXT_PUBLIC_CF_API_TOKEN     D1 API token (client build)
+ *   CLOUDFLARE_ACCOUNT_ID        server-side only (Vercel env)
+ *   CLOUDFLARE_D1_DATABASE_ID    server-side only (Vercel env)
+ *   CLOUDFLARE_D1_API_TOKEN      server-side only (Vercel env)
+ *   SYNC_PIN                     server-side only — auth for cross-origin
+ *                                proxy callers (the APK); falls back to
+ *                                NEXT_PUBLIC_SYNC_PIN when unset
+ *
+ * What the CLIENT build keeps (not secrets — account identity only):
  *   NEXT_PUBLIC_SYNC_ID          default Sync ID for auto-connect
- *   NEXT_PUBLIC_SYNC_PIN         default Sync PIN for auto-connect
- *   CLOUDFLARE_ACCOUNT_ID        server-side only (/api/cloud/d1 proxy)
- *   CLOUDFLARE_D1_DATABASE_ID    server-side only
- *   CLOUDFLARE_D1_API_TOKEN      server-side only
+ *   NEXT_PUBLIC_SYNC_PIN         default Sync PIN (admin PIN — doubles as
+ *                                the AES-256-GCM key source AND the proxy
+ *                                auth pin; it is already the app's admin
+ *                                password, so baking it adds no exposure)
+ *   NEXT_PUBLIC_SYNC_API_URL     deployment origin for the APK's proxy calls
+ *                                (e.g. https://artechnologyapp.com) — just
+ *                                a URL, no credentials
  *
  * Transport:
- *  - Web (Vercel / any Next.js server): the browser never needs the keys —
- *    queries are relayed through the same-origin /api/cloud/d1 proxy, which
- *    injects the deployment's own CLOUDFLARE_* env vars. Client builds made
- *    WITHOUT the NEXT_PUBLIC_CF_* vars simply send empty credentials and the
- *    proxy fills them in server-side.
- *  - APK (Capacitor): no Next.js server exists inside the bundle → the app
- *    calls api.cloudflare.com directly using the NEXT_PUBLIC_CF_* values
- *    baked at build time (the APK build hard-fails when they are missing —
- *    scripts/build-apk.js preflight).
+ *  - Web (Vercel / any Next.js server): same-origin /api/cloud/d1.
+ *  - APK (Capacitor): no Next.js server inside the bundle → the app calls
+ *    `${NEXT_PUBLIC_SYNC_API_URL}/api/cloud/d1` (CapacitorHttp-patched
+ *    fetch — no WebView CORS) with the sync PIN for the proxy's auth gate.
  *
- * RESIDUAL RISK (documented): values baked into a client build can be
- * extracted from the bundle. That is survivable because every synced payload
- * is AES-256-GCM encrypted (sync-crypto.ts) and forged/tampered cloud rows
- * fail AES-GCM authentication and are skipped. A token holder can still
- * WRITE/DELETE garbage rows (DoS on the cloud copy) — devices self-heal by
- * re-asserting their copies at boot / every 6h.
+ * RESIDUAL RISK (documented): the sync PIN can be extracted from the APK by
+ * a determined attacker, exactly like the old baked-token. That is
+ * survivable because every synced payload is AES-256-GCM encrypted
+ * (sync-crypto.ts) and forged/tampered cloud rows fail AES-GCM
+ * authentication and are skipped. A pin-holder can still WRITE/DELETE
+ * garbage rows (DoS on the cloud copy) — devices self-heal by re-asserting
+ * their copies at boot / every 6h. The API token itself never leaves the
+ * server.
  *
  * The per-shop sync account (Sync ID + PIN) is stored in this device's
  * localStorage after the FIRST auto-connect; the PIN is required anyway to
@@ -41,21 +46,6 @@
  */
 
 const envVal = (v: string | undefined): string => (v ?? '').trim();
-
-/** Client-build Cloudflare credentials (baked from .env at build time). */
-export const D1_ACCOUNT_ID = envVal(process.env.NEXT_PUBLIC_CF_ACCOUNT_ID);
-export const D1_DATABASE_ID = envVal(process.env.NEXT_PUBLIC_CF_DATABASE_ID);
-export const D1_API_TOKEN = envVal(process.env.NEXT_PUBLIC_CF_API_TOKEN);
-
-/**
- * True when the build carries real (non-placeholder) Cloudflare credentials.
- * Web builds can be cloud-ready even when this is false — the /api/cloud/d1
- * proxy falls back to the server's own CLOUDFLARE_* environment variables.
- */
-export const CLOUD_CREDS_CONFIGURED =
-  [D1_ACCOUNT_ID, D1_DATABASE_ID, D1_API_TOKEN].every(
-    (v) => v.length > 0 && !/paste[._-]?your|change[._-]?me/i.test(v)
-  );
 
 /** Default sync account for auto-connect (no sign-in UI anywhere). */
 export const DEFAULT_SYNC_ID = envVal(process.env.NEXT_PUBLIC_SYNC_ID);
@@ -72,130 +62,20 @@ export const DEFAULT_SYNC_CONFIGURED =
   !/paste[._-]?your|change[._-]?me/i.test(`${DEFAULT_SYNC_ID} ${DEFAULT_SYNC_PIN}`);
 
 // ─────────────────────────────────────────────────────────────────────────
-// User-supplied D1 credential override (in-app token rotation, v2.27.1)
+// Sync server (the deployment that runs the /api/cloud/d1 proxy)
 // ─────────────────────────────────────────────────────────────────────────
-// A baked API token can die (expiry / manual revocation / leak-scan
-// auto-revoke). When that happens every sync cycle fails with
-// "Authentication error" and only a NEW token fixes it. This override lets
-// the shop owner paste fresh D1 credentials from inside the app
-// (Admin → Sync): they are stored in localStorage — never in git — and the
-// sync engine uses them immediately on every platform (APK direct + web
-// proxy) WITHOUT a rebuild or a server redeploy.
-
-/** A full D1 credential triple as pasted by the user. */
-export interface D1Creds {
-  accountId: string;
-  databaseId: string;
-  apiToken: string;
-}
-
-/** The credentials a sync call should use right now. */
-export interface D1EffectiveCreds extends D1Creds {
-  /** True when the user's pasted override (not the build's baked values) won. */
-  overridden: boolean;
-}
-
-export interface D1Override extends D1Creds {
-  /** Epoch ms when the override was saved. */
-  at: number;
-}
-
-const OVERRIDE_KEY = 'ps-d1-override-v1';
-
-const credOk = (v: string): boolean =>
-  v.length > 0 && !/paste[._-]?your|change[._-]?me/i.test(v);
-
-/** Read the user's saved override, or null when absent/invalid. */
-export function getD1Override(): D1Override | null {
-  try {
-    const raw = localStorage.getItem(OVERRIDE_KEY);
-    if (!raw) return null;
-    const p = JSON.parse(raw) as Partial<D1Override>;
-    if (!p || typeof p.apiToken !== 'string' || !credOk(p.apiToken.trim())) return null;
-    if (typeof p.accountId !== 'string' || !credOk(p.accountId.trim())) return null;
-    if (typeof p.databaseId !== 'string' || !credOk(p.databaseId.trim())) return null;
-    return {
-      accountId: p.accountId.trim(),
-      databaseId: p.databaseId.trim(),
-      apiToken: p.apiToken.trim(),
-      at: typeof p.at === 'number' ? p.at : 0,
-    };
-  } catch {
-    return null;
-  }
-}
 
 /**
- * Save a credential override. All three fields must be non-placeholder.
- * Returns false (and saves nothing) when validation fails.
+ * Origin of the Next.js deployment that hosts the /api/cloud/d1 proxy
+ * (e.g. "https://artechnologyapp.com"). Used ONLY by the native APK shell,
+ * which has no same-origin server of its own. Web builds ignore it and call
+ * the proxy same-origin; an empty value on a native build means cloud sync
+ * is unavailable (clear runtime error, never a crash).
  */
-export function setD1Override(creds: D1Creds): boolean {
-  const clean = {
-    accountId: creds.accountId.trim(),
-    databaseId: creds.databaseId.trim(),
-    apiToken: creds.apiToken.trim(),
-  };
-  if (!credOk(clean.accountId) || !credOk(clean.databaseId) || !credOk(clean.apiToken)) {
-    return false;
-  }
-  try {
-    localStorage.setItem(
-      OVERRIDE_KEY,
-      JSON.stringify({ ...clean, at: Date.now() })
-    );
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Drop the override — the build's baked credentials take over again. */
-export function clearD1Override(): void {
-  try {
-    localStorage.removeItem(OVERRIDE_KEY);
-  } catch {
-    /* non-fatal */
-  }
-}
-
-export function isD1Overridden(): boolean {
-  return getD1Override() !== null;
-}
-
-/**
- * Credentials the sync engine should use right now: the user's pasted
- * override when present, otherwise the build's baked values (possibly empty
- * on server-env-only web builds — those rely on the /api/cloud/d1 proxy's
- * own CLOUDFLARE_* environment variables).
- */
-export function d1EffectiveCreds(): D1EffectiveCreds {
-  const ov = getD1Override();
-  if (ov) {
-    return {
-      accountId: ov.accountId,
-      databaseId: ov.databaseId,
-      apiToken: ov.apiToken,
-      overridden: true,
-    };
-  }
-  return {
-    accountId: D1_ACCOUNT_ID,
-    databaseId: D1_DATABASE_ID,
-    apiToken: D1_API_TOKEN,
-    overridden: false,
-  };
-}
-
-/** Query URL for an arbitrary account/database pair (native transport). */
-export function d1QueryUrlFor(accountId: string, databaseId: string): string {
-  return (
-    `https://api.cloudflare.com/client/v4/accounts/${accountId}` +
-    `/d1/database/${databaseId}/query`
-  );
-}
-
-/** Direct Cloudflare REST endpoint (native/APK transport only). */
-export const D1_QUERY_URL = d1QueryUrlFor(D1_ACCOUNT_ID, D1_DATABASE_ID);
+export const SYNC_SERVER_BASE = envVal(process.env.NEXT_PUBLIC_SYNC_API_URL).replace(
+  /\/+$/, 
+  ''
+);
 
 // ─────────────────────────────────────────────────────────────────────────
 // Sync account (this device's cloud identity)

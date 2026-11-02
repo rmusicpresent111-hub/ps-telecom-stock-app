@@ -1,53 +1,75 @@
 /**
- * Cloudflare D1 proxy — the ONLY server-side piece of the cloud backup feature.
+ * Cloudflare D1 proxy — the ONLY piece of the cloud that holds credentials.
  *
- * The client (src/lib/d1-sync.ts) posts { accountId?, databaseId?, apiToken?, sql, params } —
- * and this route forwards the query to the official Cloudflare REST API:
+ * The client (src/lib/d1-sync.ts / src/lib/cloud-d1.ts) posts
+ * { sql, params, pin } and this route forwards the statement to the official
+ * Cloudflare REST API:
  *
  *   POST {base}/accounts/{accountId}/d1/database/{databaseId}/query
  *
- * Why a proxy instead of calling Cloudflare directly from the browser?
- *  - No CORS issues (api.cloudflare.com blocks browser calls).
- *  - Credentials are only relayed per request.
+ * SERVER-MANAGED MODE (v2.28.0 — the only mode):
+ *  Credentials come EXCLUSIVELY from the deployment's environment variables
+ *  (CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_D1_DATABASE_ID, CLOUDFLARE_D1_API_TOKEN).
+ *  The app bundle — APK or web — carries no Cloudflare keys at all, so an
+ *  expired/revoked token is fixed by a Vercel env change, never an APK
+ *  rebuild, and the token can never be extracted from a client.
  *
- * SERVER-MANAGED MODE (env fallback):
- *  When the request body carries no credentials, the route falls back to the
- *  deployment's own environment variables (CLOUDFLARE_ACCOUNT_ID,
- *  CLOUDFLARE_D1_DATABASE_ID, CLOUDFLARE_D1_API_TOKEN). A Vercel deployment
- *  with those three vars set gets a working cloud backup out of the box — the
- *  shop owner never has to paste keys on every new device/browser, and the
- *  token never reaches the browser bundle (it stays server-side).
+ * AUTH (who may relay SQL through this route?):
+ *  - Same-origin browser calls (the Vercel site itself): allowed — they are
+ *    the user's own app, already behind the site password gate.
+ *  - EVERYTHING else (the APK shell, curl, other sites): must present
+ *    body.pin === SYNC_PIN (falls back to NEXT_PUBLIC_SYNC_PIN). The PIN is
+ *    compared timing-safely. Wrong/missing pin → 403.
  *
  * Hardening:
- *  - Same-origin gate: cross-origin browser calls are refused (403).
- *  - Per-IP in-memory rate limit: 30 requests / rolling 60s window (429).
+ *  - Per-IP in-memory rate limit: 90 requests / rolling 60s window (429).
  *  - SQL payload capped at 1 MB; bound params strictly validated.
+ *  - CORS: preflight + permissive ACAO so the APK WebView fallback and any
+ *    future cross-origin FIRST-PARTY host can call it; the pin gate above is
+ *    what actually protects the endpoint.
  *
  * CLOUDFLARE_API_BASE env var can override the API base (used by the local
  * d1-mock mini-service for end-to-end testing). Defaults to the real API.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 const CF_BASE = process.env.CLOUDFLARE_API_BASE || 'https://api.cloudflare.com/client/v4';
 const TIMEOUT_MS = 30_000;
 const MAX_SQL_LENGTH = 1_000_000;
 
 interface D1RequestBody {
+  /** Ignored — credentials are server-side only since v2.28.0. */
   accountId?: string;
   databaseId?: string;
   apiToken?: string;
   sql?: string;
   params?: unknown[];
+  /** Sync PIN — required from cross-origin / non-browser callers. */
+  pin?: string;
+}
+
+// ---- CORS (APK / first-party cross-origin callers) ----
+
+const CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Max-Age': '86400',
+  Vary: 'Origin',
+};
+
+export async function OPTIONS(): Promise<NextResponse> {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
 }
 
 // ---- Per-IP rate limiting (module-scope; in-memory, pruned opportunistically) ----
 
 const RATE_WINDOW_MS = 60_000;
-// v2.17.0: 30 -> 90. A live sync device spends ~18 req/min on the normal
-// cycle (pull + push + clock) plus ONE integrity id-list per minute — 30
-// caused self-inflicted 429s ("Connection failed") whenever a device synced
-// a couple of minutes. 90/IP/min is still far too tight for abuse.
+// A live sync device spends ~18 req/min on the normal cycle (pull + push +
+// clock) plus ONE integrity id-list per minute. 90/IP/min leaves headroom
+// while keeping brute-force pin guessing impractical (10-digit space).
 const RATE_MAX_REQUESTS = 90;
 
 const rateMap = new Map<string, { count: number; resetAt: number }>();
@@ -90,16 +112,49 @@ interface D1Response {
   status?: number;
 }
 
-function json(payload: D1Response, status = 200, extraHeaders?: Record<string, string>): NextResponse {
+function json(payload: D1Response, status = 200): NextResponse {
   return NextResponse.json(payload, {
     status,
-    headers: { 'Cache-Control': 'no-store', ...extraHeaders },
+    headers: { 'Cache-Control': 'no-store', ...CORS_HEADERS },
   });
+}
+
+// ---- Auth helpers ----
+
+/**
+ * Same-origin evidence from a real browser: Sec-Fetch-Site is set by modern
+ * browsers and cannot be spoofed by page JS. When absent we fall back to an
+ * Origin/host match (older browsers); requests with NEITHER header (native
+ * shells, curl) are treated as NOT same-origin and must present the pin.
+ */
+function isSameOrigin(req: NextRequest): boolean {
+  const secFetchSite = (req.headers.get('sec-fetch-site') || '').toLowerCase();
+  if (secFetchSite === 'same-origin' || secFetchSite === 'same-site') return true;
+  if (secFetchSite === 'cross-site') return false;
+
+  // No Sec-Fetch-Site — older browser or non-browser client.
+  const origin = req.headers.get('origin');
+  if (!origin) return false; // curl / native / no Origin → needs pin
+  try {
+    const originHost = new URL(origin).host;
+    const hostHeader = (req.headers.get('host') || '').trim();
+    const fwdHost = (req.headers.get('x-forwarded-host') || '').trim().split(',')[0];
+    return originHost === hostHeader || (fwdHost !== '' && originHost === fwdHost);
+  } catch {
+    return false;
+  }
+}
+
+/** Constant-time pin comparison (both sides hashed to fixed length first). */
+function pinMatches(candidate: string, serverPin: string): boolean {
+  const a = createHash('sha256').update(candidate).digest();
+  const b = createHash('sha256').update(serverPin).digest();
+  return timingSafeEqual(a, b);
 }
 
 /**
  * Stable error codes the client UI maps to translated, friendly messages.
- * Keep in sync with the d1-sync native path and the i18n keys.
+ * Keep in sync with the d1-sync/cloud-d1 clients and the i18n keys.
  */
 type CloudErrorCode = 'ids_wrong' | 'token_invalid' | 'ids_malformed' | 'rate_limit' | 'missing_creds';
 
@@ -117,13 +172,13 @@ function friendlyCloudflareError(
   const lower = `${cfMsg} ${rawText}`.toLowerCase();
 
   if (status === 404 || cfCode === 7003 || lower.includes('could not route')) {
-    return { message: `Account ID or Database ID is wrong — please re-copy both from Cloudflare${cfMsg ? ` (${cfMsg})` : ''}`, code: 'ids_wrong' };
+    return { message: `Cloudflare Account ID or Database ID is wrong (server env)${cfMsg ? ` (${cfMsg})` : ''}`, code: 'ids_wrong' };
   }
   if (status === 403 || cfCode === 9109 || cfCode === 10000 || lower.includes('authentication error') || lower.includes('unauthorized')) {
-    return { message: `API token is invalid, expired, or missing the "D1 Edit" permission${cfMsg ? ` (${cfMsg})` : ''}`, code: 'token_invalid' };
+    return { message: `The server's Cloudflare API token is invalid or expired — update the CLOUDFLARE_D1_API_TOKEN env var on the deployment${cfMsg ? ` (${cfMsg})` : ''}`, code: 'token_invalid' };
   }
   if (status === 400 && lower.includes('invalid')) {
-    return { message: `Account ID or Database ID looks malformed — paste the ID only, without any extra text${cfMsg ? ` (${cfMsg})` : ''}`, code: 'ids_malformed' };
+    return { message: `Cloudflare Account ID or Database ID looks malformed (server env)${cfMsg ? ` (${cfMsg})` : ''}`, code: 'ids_malformed' };
   }
   if (status === 429) {
     return { message: 'Cloudflare rate limit reached — please wait a minute and try again', code: 'rate_limit' };
@@ -137,40 +192,10 @@ function friendlyCloudflareError(
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  // ---- Same-origin gate: block cross-site BROWSER calls ----
-  // Modern browsers always send Sec-Fetch-Site and JavaScript cannot spoof it,
-  // so it is the most reliable signal — and it survives reverse proxies that
-  // rewrite the Host header (which broke legit calls with a bare "Forbidden").
-  const secFetchSite = (req.headers.get('sec-fetch-site') || '').toLowerCase();
-  if (secFetchSite === 'cross-site') {
-    return json({ ok: false, error: 'Cross-origin requests are not allowed' }, 403);
-  }
-  if (!secFetchSite) {
-    // Older browser / unknown client — fall back to comparing Origin with the
-    // forwarded/original host (either may carry the public domain).
-    const origin = req.headers.get('origin');
-    if (origin) {
-      let blocked = true;
-      try {
-        const originHost = new URL(origin).host;
-        const hostHeader = (req.headers.get('host') || '').trim();
-        const fwdHost = (req.headers.get('x-forwarded-host') || '').trim().split(',')[0];
-        if (originHost === hostHeader || (fwdHost && originHost === fwdHost)) blocked = false;
-      } catch {
-        blocked = true;
-      }
-      if (blocked) {
-        return json({ ok: false, error: 'Cross-origin requests are not allowed' }, 403);
-      }
-    }
-  }
-
-  // ---- Per-IP rate limit ----
+  // ---- Per-IP rate limit (also throttles pin guessing) ----
   const limit = checkRateLimit(clientIp(req));
   if (!limit.allowed) {
-    return json({ ok: false, error: 'Too many requests' }, 429, {
-      'Retry-After': String(limit.retryAfterS),
-    });
+    return json({ ok: false, error: 'Too many requests' }, 429);
   }
 
   let body: D1RequestBody;
@@ -180,34 +205,33 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return json({ ok: false, error: 'Invalid request body' });
   }
 
-  // ---- Credential resolution: request body first, deployment env fallback ----
-  // The client sends empty strings when it has no locally saved keys (the
-  // "server-managed" mode); per-field fallback keeps manual keys working even
-  // alongside env vars (e.g. a personal token overriding the shared one).
-  //
-  // Placeholder junk (stale template values like PASTE_YOUR_*
-  // relayed by an old build, or pasted by mistake into the manual form)
-  // counts as "not provided" so the env fallback can rescue the request
-  // instead of Cloudflare answering "Could not route to /accounts/PASTE_YOUR_…".
-  const isPlaceholderJunk = (v: string): boolean => /paste[_\s-]?your/i.test(v);
-  const bodyAccountId = (body.accountId || '').trim();
-  const bodyDatabaseId = (body.databaseId || '').trim();
-  const bodyApiToken = (body.apiToken || '').trim();
+  // ---- Auth gate: same-origin browsers pass; everyone else needs the pin ----
+  if (!isSameOrigin(req)) {
+    const serverPin = (process.env.SYNC_PIN || process.env.NEXT_PUBLIC_SYNC_PIN || '').trim();
+    if (!serverPin) {
+      return json(
+        { ok: false, error: 'Sync server auth is not configured (set SYNC_PIN in the deployment env vars)', errorCode: 'pin_unconfigured' },
+        403
+      );
+    }
+    const pin = typeof body.pin === 'string' ? body.pin.trim() : '';
+    if (!pin || !pinMatches(pin, serverPin)) {
+      return json({ ok: false, error: 'Invalid sync PIN', errorCode: 'pin_invalid' }, 403);
+    }
+  }
 
-  const envAccountId = (process.env.CLOUDFLARE_ACCOUNT_ID || '').trim();
-  const envDatabaseId = (process.env.CLOUDFLARE_D1_DATABASE_ID || '').trim();
-  const envApiToken = (process.env.CLOUDFLARE_D1_API_TOKEN || '').trim();
+  // ---- Credentials: SERVER ENV ONLY (the client never sends any) ----
+  const accountId = (process.env.CLOUDFLARE_ACCOUNT_ID || '').trim();
+  const databaseId = (process.env.CLOUDFLARE_D1_DATABASE_ID || '').trim();
+  const apiToken = (process.env.CLOUDFLARE_D1_API_TOKEN || '').trim();
 
-  const accountId = (bodyAccountId && !isPlaceholderJunk(bodyAccountId) ? bodyAccountId : '') || envAccountId;
-  const databaseId = (bodyDatabaseId && !isPlaceholderJunk(bodyDatabaseId) ? bodyDatabaseId : '') || envDatabaseId;
-  const apiToken = (bodyApiToken && !isPlaceholderJunk(bodyApiToken) ? bodyApiToken : '') || envApiToken;
   const sql = (body.sql || '').trim();
   const params = Array.isArray(body.params) ? body.params : undefined;
 
   if (!accountId || !databaseId || !apiToken) {
     return json({
       ok: false,
-      error: 'Missing accountId, databaseId or apiToken (and no server-managed cloud is configured)',
+      error: 'Cloud sync is not configured on this server (CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_D1_DATABASE_ID / CLOUDFLARE_D1_API_TOKEN env vars missing)',
       errorCode: 'missing_creds',
     });
   }
@@ -260,7 +284,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (!res.ok || !parsed || parsed.success === false) {
       const fe = friendlyCloudflareError(res.status, parsed, text);
       // Server-side diagnosis: dev.log now shows WHY a cloud call failed
-      // (never log the token or SQL contents).
+      // (never log the token, the pin, or SQL contents).
       console.log(`[d1-proxy] FAIL http=${res.status} code=${fe.code || 'unknown'}`);
       return json({ ok: false, error: fe.message, errorCode: fe.code, status: res.status });
     }
