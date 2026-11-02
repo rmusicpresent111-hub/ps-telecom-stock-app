@@ -11,6 +11,7 @@
  * so later price edits never rewrite historical profit.
  */
 
+import { buildCashDaily } from './cash-daily';
 import {
   offlineCategories,
   offlineProducts,
@@ -1200,6 +1201,8 @@ export async function recordDueEntryPaymentOffline(
 
 // ============ CASH BOOK (Local — admin Cash section) ============
 
+export type { CashDailyPoint } from './cash-daily';
+
 export interface CashLedgerEntry {
   id: string;
   kind: 'sale' | 'invest' | 'expense';
@@ -1221,6 +1224,7 @@ export interface CashBook {
   todayIn: number;
   todayOut: number;
   entries: CashLedgerEntry[];
+  daily: CashDailyPoint[]; // ascending day-by-day points for the growth graph + daily history
 }
 
 /**
@@ -1351,6 +1355,7 @@ export async function getCashBookOffline(userId: string, options?: { limit?: num
     todayIn: round2(todayIn),
     todayOut: round2(todayOut),
     entries: entries.slice(0, options?.limit ?? 400),
+    daily: buildCashDaily(entries), // FULL history (not the display-sliced ledger)
   };
 }
 
