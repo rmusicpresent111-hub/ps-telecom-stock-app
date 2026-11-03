@@ -302,6 +302,7 @@ const D: Record<string, Entry> = {
   'sync.csvProducts': { bn: 'প্রোডাক্ট CSV', en: 'Products CSV', hi: 'प्रोडक्ट CSV' },
   'sync.csvBills': { bn: 'বিল CSV', en: 'Bills CSV', hi: 'बिल CSV' },
   'sync.csvDone': { bn: 'CSV ডাউনলোড হয়েছে', en: 'CSV downloaded', hi: 'CSV डाउनलोड हुआ' },
+  'sync.pdfDone': { bn: 'PDF ডাউনলোড হয়েছে', en: 'PDF downloaded', hi: 'PDF डाउनलोड हुआ' },
   'sync.shop': { bn: 'দোকানের নাম', en: 'Shop name', hi: 'दुकान का नाम' },
   'sync.autoNote': { bn: 'সংযুক্ত থাকলে প্রতিটি পরিবর্তন ~১ সেকেন্ডে ক্লাউডে চলে যায়, অন্য ডিভাইস সর্বোচ্চ ১২ সেকেন্ডে পায়।', en: 'When connected, every change reaches the cloud in ~1s; other devices get it within 12s.', hi: 'जुड़े होने पर हर बदलाव ~1s में क्लाउड तक पहुंचता है; दूसरे डिवाइस 12s में पाते हैं।' },
 
@@ -604,6 +605,8 @@ const D: Record<string, Entry> = {
   },
   'rep.restockQty': { bn: 'রিস্টক প্রয়োজন', en: 'Restock needed', hi: 'रीस्टॉक आवश्यक' },
   'rep.downloadCsv': { bn: 'CSV ডাউনলোড', en: 'Download CSV', hi: 'CSV डाउनलोड' },
+  'rep.downloadPdf': { bn: 'PDF ডাউনলোড', en: 'Download PDF', hi: 'PDF डाउनलोड' },
+  'rep.pdfFail': { bn: 'PDF ডাউনলোড করা যায়নি — আবার চেষ্টা করুন', en: 'PDF download failed — please try again', hi: 'PDF डाउनलोड विफल — फिर कोशिश करें' },
   'rep.lowStockItems': { bn: 'কম স্টক আইটেম', en: 'Low stock items', hi: 'कम स्टॉक आइटम' },
   'rep.categoriesAffected': { bn: 'ক্ষতিগ্রস্ত ক্যাটাগরি', en: 'Categories affected', hi: 'प्रभावित श्रेणियाँ' },
   'rep.purchases': { bn: 'কেনাকাটা', en: 'Purchases', hi: 'खरीद' },

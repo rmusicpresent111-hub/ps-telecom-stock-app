@@ -185,6 +185,92 @@ export function printHtml(html: string): void {
   window.setTimeout(fire, 300);
 }
 
+// ── PDF download engine — a REAL .pdf file, no print dialog ─────
+//
+// The browser print dialog ("Save as PDF") is manual, and window.print()
+// does nothing inside the Android WebView — so reports can also be DOWNLOADED
+// as a PDF file directly. The report HTML (same build the printer uses) is
+// rendered on an off-screen stage with its stylesheet SCOPED to the stage
+// (the app document is never touched), rasterized with html2canvas — Bangla
+// and Hindi render correctly through the app's own fonts — and split into
+// A4 pages by jsPDF.
+
+/** Prefix every selector of a flat CSS sheet with a scope selector;
+ *  `body`/`html` selectors become the scope element itself. */
+function scopeCss(css: string, scope: string): string {
+  return css.replace(/(^|\})([^{}@]+)\{/g, (_m, brace: string, sel: string) => {
+    const scoped = sel
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => (s === 'body' || s === 'html' ? scope : `${scope} ${s}`))
+      .join(', ');
+    return `${brace} ${scoped}{`;
+  });
+}
+
+/** Render a standalone report document (as produced by pageShell) and download
+ *  it as a paginated A4 PDF file. Throws when rendering fails so the caller
+ *  can toast the error. */
+export async function downloadHtmlAsPdf(html: string, filename: string): Promise<void> {
+  if (typeof window === 'undefined') return;
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+    import('html2canvas'),
+    import('jspdf'),
+  ]);
+
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const stage = document.createElement('div');
+  stage.id = 'ps-pdf-stage';
+  stage.setAttribute('aria-hidden', 'true');
+  stage.style.cssText =
+    'position:fixed;left:-10000px;top:0;width:794px;background:#fff;z-index:-1;';
+
+  const style = document.createElement('style');
+  style.textContent = scopeCss(doc.querySelector('style')?.textContent || '', '#ps-pdf-stage');
+  stage.appendChild(style);
+
+  const content = document.createElement('div');
+  content.innerHTML = doc.body.innerHTML;
+  stage.appendChild(content);
+  document.body.appendChild(stage);
+
+  try {
+    try {
+      await document.fonts.ready; // Bangla/Hindi webfonts must be painted before rasterizing
+    } catch {
+      /* font API unavailable — the 120 ms settle wait below still covers most cases */
+    }
+    await new Promise((r) => setTimeout(r, 120)); // let images / layout settle
+
+    const canvas = await html2canvas(stage, {
+      scale: 2,
+      backgroundColor: '#ffffff',
+      useCORS: true,
+      logging: false,
+    });
+
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const imgW = pageW;
+    const imgH = (canvas.height * imgW) / canvas.width;
+    const data = canvas.toDataURL('image/jpeg', 0.92);
+
+    let offset = 0;
+    let page = 0;
+    while (offset < imgH - 1) {
+      if (page > 0) pdf.addPage();
+      pdf.addImage(data, 'JPEG', 0, -offset, imgW, imgH, undefined, 'FAST');
+      offset += pageH;
+      page += 1;
+    }
+    pdf.save(filename);
+  } finally {
+    stage.remove();
+  }
+}
+
 const PRINT_CSS = `
 @page { size: A4; margin: 10mm; }
 * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -833,6 +919,8 @@ export interface GenericReportOpts {
   tables: ReportTable[];
   note?: string;
   settings?: BillingSettings | null;
+  /** Download-file name (without extension) used when the report is fetched as a PDF file. */
+  pdfName?: string;
 }
 
 /** Escape helper for report cell values (callers build their own cell HTML). */
@@ -925,9 +1013,12 @@ ${opts.note ? `<p style="font-size:10.5px;color:#6B7280;margin:10px 0 0">${esc(o
   return pageShell(`${shop.name} — ${opts.title}`, body);
 }
 
-/** One-call generic report printer (loads Bill Settings for the shop header). */
+/** One-call generic report printer (loads Bill Settings for the shop header).
+ *  mode='print' → hidden-iframe browser print dialog (manual "Save as PDF");
+ *  mode='pdf'   → direct .pdf FILE download (works in the Android WebView too). */
 export async function printGenericReport(
-  opts: Omit<GenericReportOpts, 'settings'>
+  opts: Omit<GenericReportOpts, 'settings'>,
+  mode: 'print' | 'pdf' = 'print'
 ): Promise<void> {
   let settings: BillingSettings | null = null;
   try {
@@ -935,7 +1026,12 @@ export async function printGenericReport(
   } catch {
     /* fall back to the default header */
   }
-  printHtml(buildGenericReportHtml({ ...opts, settings }));
+  const html = buildGenericReportHtml({ ...opts, settings });
+  if (mode === 'pdf') {
+    await downloadHtmlAsPdf(html, `${opts.pdfName || 'ps-report'}.pdf`);
+    return;
+  }
+  printHtml(html);
 }
 
 // ── one-call printers (load Bill Settings, then print) ─────────

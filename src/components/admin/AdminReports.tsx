@@ -22,6 +22,8 @@ import {
   Wallet,
   Award,
   Printer,
+  FileDown,
+  Loader2,
   Layers,
   Hash,
   AlertTriangle,
@@ -57,6 +59,7 @@ import { useAdminStore } from '@/store/adminStore';
 import { ta } from '@/lib/admin-i18n';
 import { useAdminDataTick } from './useAdminData';
 import { printGenericReport, escHtml } from './print';
+import type { GenericReportOpts } from './print';
 import { downloadCsvFile } from './csv';
 import {
   AdminCard,
@@ -133,6 +136,7 @@ export default function AdminReports() {
   const [staffPayments, setStaffPayments] = useState<StaffPayment[]>([]);
   const [expenseTotal, setExpenseTotal] = useState(0);
   const [lowCatOpen, setLowCatOpen] = useState<string | null>(null); // expanded category row (low-stock summary)
+  const [pdfBusy, setPdfBusy] = useState(false); // PDF download in progress
 
   const range = rangeFor(period, customFrom, customTo);
 
@@ -355,13 +359,31 @@ export default function AdminReports() {
     adminToast(t('sync.csvDone'));
   };
 
-  // ── per-tab print builders ────────────────────────────────────────
-  const printTab = () => {
+  // ── per-tab print / PDF builders ───────────────────────────────
+  /** Print the current tab through the browser print dialog (mode='print')
+   *  or download it as a real .pdf FILE (mode='pdf' — no dialog needed). */
+  const printTab = (mode: 'print' | 'pdf' = 'print') => {
     const tabLabel = t(TABS.find((x) => x.key === tab)?.labelKey || 'rep.title');
+    const emit = (o: Omit<GenericReportOpts, 'settings'>) => {
+      const pdfName = `ps-${tab === 'lowstock' ? 'low-stock-summary' : tab}-report-${localDateStr()}`;
+      printGenericReport({ ...o, pdfName }, mode)
+        .then(() => {
+          if (mode === 'pdf') {
+            setPdfBusy(false);
+            adminToast(t('sync.pdfDone'));
+          }
+        })
+        .catch(() => {
+          if (mode === 'pdf') {
+            setPdfBusy(false);
+            adminToast(t('rep.pdfFail'), 'err');
+          }
+        });
+    };
     if (tab === 'category') {
       const totalBuy = catAgg.reduce((s, r) => s + r.buyValue, 0);
       const totalSale = catAgg.reduce((s, r) => s + r.saleValue, 0);
-      void printGenericReport({
+      emit({
         title: `${tabLabel} — ${t('rep.tab.categorySub')}`,
         periodLabel: `${t('rep.asOn')}: ${fmtDate(localDateStr())}`,
         lang,
@@ -396,7 +418,7 @@ export default function AdminReports() {
       return;
     }
     if (tab === 'catqty') {
-      void printGenericReport({
+      emit({
         title: tabLabel,
         periodLabel,
         lang,
@@ -424,7 +446,7 @@ export default function AdminReports() {
     if (tab === 'catprofit') {
       const totalRevenue = catAgg.reduce((s, r) => s + r.revenue, 0);
       const totalCost = catAgg.reduce((s, r) => s + r.cost, 0);
-      void printGenericReport({
+      emit({
         title: tabLabel,
         periodLabel,
         lang,
@@ -454,7 +476,7 @@ export default function AdminReports() {
     }
     if (tab === 'lowstock') {
       const out = lowProducts.filter((p) => (p.quantity || 0) === 0);
-      void printGenericReport({
+      emit({
         title: tabLabel,
         periodLabel: `${t('rep.asOn')}: ${fmtDate(localDateStr())}`,
         lang,
@@ -521,7 +543,7 @@ export default function AdminReports() {
         .sort((a, b) => (a.date === b.date ? String(b.createdAt).localeCompare(String(a.createdAt)) : b.date.localeCompare(a.date)))
         .slice(0, 50);
       const total = ins.reduce((s, x) => s + (x.totalAmount || 0), 0);
-      void printGenericReport({
+      emit({
         title: tabLabel,
         periodLabel: t('rep.recentN'),
         lang,
@@ -556,7 +578,7 @@ export default function AdminReports() {
     if (tab === 'expense') {
       const byCat = new Map<string, number>();
       for (const e of expenses) byCat.set(e.category || '—', (byCat.get(e.category || '—') || 0) + (e.amount || 0));
-      void printGenericReport({
+      emit({
         title: tabLabel,
         periodLabel,
         lang,
@@ -603,7 +625,7 @@ export default function AdminReports() {
       const byStaff = new Map<string, number>();
       for (const p of staffPayments) byStaff.set(p.staffName, (byStaff.get(p.staffName) || 0) + (p.amount || 0));
       const total = staffPayments.reduce((s, p) => s + (p.amount || 0), 0);
-      void printGenericReport({
+      emit({
         title: tabLabel,
         periodLabel,
         lang,
@@ -650,7 +672,7 @@ export default function AdminReports() {
       return;
     }
     // sales tab
-    void printGenericReport({
+    emit({
       title: t('bills.soldReport'),
       periodLabel,
       lang,
@@ -677,15 +699,28 @@ export default function AdminReports() {
 
   const showPeriod = !PERIODLESS.includes(tab);
 
+  /** One-click PDF download of the current report tab (no print dialog). */
+  const downloadPdf = () => {
+    if (pdfBusy) return;
+    setPdfBusy(true);
+    printTab('pdf');
+  };
+
   return (
     <div>
       <PageHeader
         title={t('rep.title')}
         sub={t('rep.sub')}
         action={
-          <Btn variant="outline" onClick={printTab}>
-            <Printer size={16} /> <span className="hidden sm:inline">{t('bills.print')}</span>
-          </Btn>
+          <div className="flex gap-2">
+            <Btn variant="outline" onClick={downloadPdf} disabled={pdfBusy} title={t('rep.downloadPdf')}>
+              {pdfBusy ? <Loader2 size={16} className="animate-spin" /> : <FileDown size={16} />}
+              <span className="hidden sm:inline">{t('rep.downloadPdf')}</span>
+            </Btn>
+            <Btn variant="outline" onClick={() => printTab('print')}>
+              <Printer size={16} /> <span className="hidden sm:inline">{t('bills.print')}</span>
+            </Btn>
+          </div>
         }
       />
 
@@ -991,10 +1026,16 @@ export default function AdminReports() {
             }
             action={
               lowStockAgg.length > 0 ? (
-                <Btn variant="outline" size="sm" onClick={downloadLowCatCsv} title={t('rep.downloadCsv')}>
-                  <Download size={14} />
-                  <span className="hidden sm:inline">{t('rep.downloadCsv')}</span>
-                </Btn>
+                <div className="flex gap-1.5">
+                  <Btn variant="outline" size="sm" onClick={downloadPdf} disabled={pdfBusy} title={t('rep.downloadPdf')}>
+                    {pdfBusy ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />}
+                    <span className="hidden sm:inline">PDF</span>
+                  </Btn>
+                  <Btn variant="outline" size="sm" onClick={downloadLowCatCsv} title={t('rep.downloadCsv')}>
+                    <Download size={14} />
+                    <span className="hidden sm:inline">{t('rep.downloadCsv')}</span>
+                  </Btn>
+                </div>
               ) : undefined
             }
           >

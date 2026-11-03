@@ -2323,3 +2323,20 @@ Work Log:
 Stage Summary:
 - Low Stock report now answers "কোন ক্যাটাগরিতে কী ঘাটতি" at a glance: per-category out/low counts + units needed to reach threshold, expandable to the exact products, printable as a two-table PDF and downloadable as two Excel-ready CSVs — all inside the desktop admin console.
 - Console footer can no longer go stale (APP_VERSION constant).
+
+---
+## Task 83 — v2.34.0 — Direct PDF download for Category-wise Low Stock summary (bugfix: sales-branch PDF bypass)
+Date: 3 Nov (session 9) | Status: DONE (pushed)
+
+Task ID: 83
+Agent: Z.ai Code (main thread)
+Task: "hochhena cetagori wish low stock summery pdf downlode hochhena fix koro"
+
+Work Log:
+- ROOT CAUSE: v2.33.0 shipped only CSV downloads + a Print button — the "PDF" existed only as the browser print dialog's manual "Save as PDF" (and window.print() does nothing inside the Android WebView), so there was NO direct PDF download for the category-wise low stock summary.
+- PDF DOWNLOAD ENGINE (print.ts): downloadHtmlAsPdf() — parses the report's standalone HTML, SCOPES its stylesheet to an off-screen #ps-pdf-stage stage (regex scoper prefixes every selector, body→scope; the app document is never touched), rasterizes with html2canvas (scale 2, white bg — Bangla/Hindi render through the app's own fonts, no jsPDF glyph problem) and splits the canvas across A4 pages in jsPDF (JPEG 0.92, compress). Dynamic-imported (html2canvas added as direct dep; jspdf already present) so the main bundle stays lean.
+- printGenericReport(opts, mode): mode='print' (default) keeps the hidden-iframe print dialog; mode='pdf' streams the same report to a real .pdf FILE via pdfName (ps-low-stock-summary-<date>.pdf for the lowstock tab).
+- AdminReports: printTab(mode) threads the mode through a shared emit() wrapper — .then resets the busy state + toasts "PDF ডাউনলোড হয়েছে", .catch toasts "rep.pdfFail". BUGFIX found during E2E: the sales fall-through branch still called printGenericReport directly (4-space indent dodged the mechanical emit() rewrite) → on the Sales tab the PDF click opened the print dialog instead, and pdfBusy stuck TRUE (button frozen disabled). Now all 8 branches emit().
+- BUTTONS: header "PDF ডাউনলোড" (works on every tab, Loader2 spinner while busy, disabled during generation) beside Print; the Category-wise Low Stock card got its own "PDF" button next to "Download CSV".
+- i18n: rep.downloadPdf / sync.pdfDone / rep.pdfFail (bn/en/hi). APP_VERSION + package.json → 2.34.0.
+- VERIFY: tsc + eslint clean; agent-browser E2E with seeded demo data (8 products / 5 categories incl. a deleted-category "Unknown" bucket): stat cards 4 out / 3 low / 8 products / 5 categories exact; PDF intercepted at blob level — %PDF-1.3 magic, 206 KB, decoded and visually inspected: shop header, 4 chips (4/3/5/30), category table with সর্বমোট 8/4/3/30, detail list with স্টক শেষ/কম স্টক statuses, signature + footer — ONE A4 page, Bangla perfect; sales-tab PDF (the fixed branch) generates too; CSV still downloads; print still creates the iframe; busy state resets; EN + mobile 390px + desktop 1366px screenshots clean; no console/page errors. Sandbox "Error" sync chip = CF env vars absent in dev (pre-existing, unrelated).
