@@ -606,6 +606,11 @@ const D: Record<string, Entry> = {
   'rep.restockQty': { bn: 'রিস্টক প্রয়োজন', en: 'Restock needed', hi: 'रीस्टॉक आवश्यक' },
   'rep.downloadCsv': { bn: 'CSV ডাউনলোড', en: 'Download CSV', hi: 'CSV डाउनलोड' },
   'rep.downloadPdf': { bn: 'PDF ডাউনলোড', en: 'Download PDF', hi: 'PDF डाउनलोड' },
+  'rep.downloadCatPdf': {
+    bn: 'শুধু এই ক্যাটাগরির কম স্টক PDF ডাউনলোড',
+    en: "Download only this category's low-stock PDF",
+    hi: 'केवल इस श्रेणी का कम-स्टॉक PDF डाउनलोड करें',
+  },
   'rep.pdfFail': { bn: 'PDF ডাউনলোড করা যায়নি — আবার চেষ্টা করুন', en: 'PDF download failed — please try again', hi: 'PDF डाउनलोड विफल — फिर कोशिश करें' },
   'rep.lowStockItems': { bn: 'কম স্টক আইটেম', en: 'Low stock items', hi: 'कम स्टॉक आइटम' },
   'rep.categoriesAffected': { bn: 'ক্ষতিগ্রস্ত ক্যাটাগরি', en: 'Categories affected', hi: 'प्रभावित श्रेणियाँ' },

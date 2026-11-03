@@ -2340,3 +2340,17 @@ Work Log:
 - BUTTONS: header "PDF ডাউনলোড" (works on every tab, Loader2 spinner while busy, disabled during generation) beside Print; the Category-wise Low Stock card got its own "PDF" button next to "Download CSV".
 - i18n: rep.downloadPdf / sync.pdfDone / rep.pdfFail (bn/en/hi). APP_VERSION + package.json → 2.34.0.
 - VERIFY: tsc + eslint clean; agent-browser E2E with seeded demo data (8 products / 5 categories incl. a deleted-category "Unknown" bucket): stat cards 4 out / 3 low / 8 products / 5 categories exact; PDF intercepted at blob level — %PDF-1.3 magic, 206 KB, decoded and visually inspected: shop header, 4 chips (4/3/5/30), category table with সর্বমোট 8/4/3/30, detail list with স্টক শেষ/কম স্টক statuses, signature + footer — ONE A4 page, Bangla perfect; sales-tab PDF (the fixed branch) generates too; CSV still downloads; print still creates the iframe; busy state resets; EN + mobile 390px + desktop 1366px screenshots clean; no console/page errors. Sandbox "Error" sync chip = CF env vars absent in dev (pre-existing, unrelated).
+
+---
+## Task 84 — v2.35.0 — Per-category PDF download on every Low Stock category row
+Date: 3 Nov (session 9) | Status: DONE (pushed)
+
+Task ID: 84
+Agent: Z.ai Code (main thread)
+Task: "abar o vul baniyecho ... protyekta low stock category er pase ekta kore pdf downlode option thakbe, jodi low stock category mobile er paser pdf downlode e click kori tahole sudhu joto gulo mobile er stock low seigulo downlode hobe"
+
+Work Log:
+- PER-ROW PDF BUTTON: the Category-wise Low Stock table gained a dedicated "PDF" column — every category row now carries its own compact FileDown icon button (aria-label "শুধু এই ক্যাটাগরির কম স্টক PDF ডাউনলোড — <category>", bn/en/hi via new rep.downloadCatPdf key). e.stopPropagation() keeps the click from toggling the row's expand state; the grand-total row and the expanded nested row (colSpan 8) got the extra cell; table min-width 680→720px.
+- SCOPED PAYLOAD: downloadCategoryPdf(cat) builds a per-category report from lowByCat — title "কম স্টক সারসংক্ষেপ — <category>", 4 chips (affected products / out / low / restock-needed = Σ(threshold−qty)) and ONE table listing ONLY that category's low/out-of-stock products (#, name, qty, threshold, স্টক শেষ|কম স্টক status). File name ps-low-stock-<ascii-slug>-<date>.pdf — Bangla category names slugify to cat<N> so the download name stays ASCII-safe.
+- BUSY MODEL: separate catPdfBusy (category name | null) — the clicked row's button shows a Loader2 spinner, ALL row buttons disable while a per-category PDF generates, everything re-enables on then/catch with the shared pdfDone/pdfFail toasts. The header "PDF ডাউনলোড" (full report, all categories) and per-row buttons are independent.
+- VERIFY: tsc + eslint clean; agent-browser E2E with re-seeded demo data (8 products / 5 categories): 5 row buttons rendered (Mobile / Tempered Glass / Ear Pods / অজানা ক্যাটাগরি / Charger); Mobile PDF decoded + visually inspected — title "— MOBILE", chips 2/1/1/6, EXACTLY Samsung A15 Display (0/3, স্টক শেষ) + Redmi Note 13 Battery (2/5, কম স্টক), healthy Vivo Screen Guard and every other category absent; Charger PDF cross-check — chips 1/0/1/3, only Type-C Charger 33W; busy state resets (all buttons re-enabled), no accidental row expansion, EN aria-label switch verified, desktop 1366px + mobile 390px screenshots clean, no console/page errors.

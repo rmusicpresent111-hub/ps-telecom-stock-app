@@ -137,6 +137,7 @@ export default function AdminReports() {
   const [expenseTotal, setExpenseTotal] = useState(0);
   const [lowCatOpen, setLowCatOpen] = useState<string | null>(null); // expanded category row (low-stock summary)
   const [pdfBusy, setPdfBusy] = useState(false); // PDF download in progress
+  const [catPdfBusy, setCatPdfBusy] = useState<string | null>(null); // per-category PDF download in progress
 
   const range = rangeFor(period, customFrom, customTo);
 
@@ -706,6 +707,65 @@ export default function AdminReports() {
     printTab('pdf');
   };
 
+  /** Per-category PDF (v2.35.0): downloads ONLY the low/out-of-stock products of
+   *  ONE category — the button lives on every category row of the summary table. */
+  const downloadCategoryPdf = (catName: string) => {
+    if (catPdfBusy) return;
+    const items = lowByCat.get(catName);
+    if (!items || items.length === 0) return;
+    setCatPdfBusy(catName);
+    const out = items.filter((p) => (p.quantity || 0) === 0).length;
+    const restock = items.reduce((s, p) => s + Math.max(0, (p.lowStockThreshold ?? 0) - (p.quantity || 0)), 0);
+    const idx = lowStockAgg.findIndex((x) => x.name === catName);
+    // file name must stay ASCII — Bangla category names fall back to cat<N>
+    const ascii =
+      catName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || `cat${idx + 1}`;
+    printGenericReport(
+      {
+        title: `${t('rep.tab.lowstock')} — ${catName}`,
+        periodLabel: `${t('rep.asOn')}: ${fmtDate(localDateStr())}`,
+        lang,
+        chips: [
+          { k: t('prod.products'), v: String(items.length) },
+          { k: t('rep.outOfStock'), v: String(out) },
+          { k: t('rep.lowStock'), v: String(items.length - out) },
+          { k: t('rep.restockQty'), v: String(restock) },
+        ],
+        tables: [
+          {
+            columns: [
+              { label: '#', width: '34px' },
+              { label: t('prod.name') },
+              { label: t('prod.qty'), right: true },
+              { label: t('rep.threshold'), right: true },
+              { label: t('rep.status') },
+            ],
+            rows: items.map((p, j) => [
+              String(j + 1),
+              escHtml(p.name),
+              String(p.quantity || 0),
+              String(p.lowStockThreshold ?? 0),
+              escHtml((p.quantity || 0) === 0 ? t('rep.outOfStock') : t('rep.lowStock')),
+            ]),
+          },
+        ],
+        pdfName: `ps-low-stock-${ascii}-${localDateStr()}`,
+      },
+      'pdf',
+    )
+      .then(() => {
+        setCatPdfBusy(null);
+        adminToast(t('sync.pdfDone'));
+      })
+      .catch(() => {
+        setCatPdfBusy(null);
+        adminToast(t('rep.pdfFail'), 'err');
+      });
+  };
+
   return (
     <div>
       <PageHeader
@@ -1045,7 +1105,7 @@ export default function AdminReports() {
               </div>
             ) : (
               <div className="overflow-x-auto max-h-[52vh] overflow-y-auto">
-                <table className="w-full min-w-[680px]">
+                <table className="w-full min-w-[720px]">
                   <thead className="bg-[var(--psa-hover)] sticky top-0 z-10">
                     <tr>
                       <Th className="w-9" />
@@ -1055,6 +1115,7 @@ export default function AdminReports() {
                       <Th className="text-right">{t('rep.outOfStock')}</Th>
                       <Th className="text-right">{t('rep.lowStock')}</Th>
                       <Th className="text-right">{t('rep.restockQty')}</Th>
+                      <Th className="w-10 text-center">PDF</Th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1081,10 +1142,25 @@ export default function AdminReports() {
                               {r.low}
                             </Td>
                             <Td className="text-right tabular-nums text-[var(--psa-sub)]">{r.restock}</Td>
+                            <Td className="w-10 text-center">
+                              <button
+                                type="button"
+                                aria-label={`${t('rep.downloadCatPdf')} — ${r.name}`}
+                                title={t('rep.downloadCatPdf')}
+                                disabled={catPdfBusy !== null}
+                                onClick={(e) => {
+                                  e.stopPropagation(); // a row click expands — the PDF button must not
+                                  downloadCategoryPdf(r.name);
+                                }}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--psa-border)] bg-[var(--psa-card)] text-[var(--psa-sub)] transition-colors hover:border-[#FA6E41]/60 hover:bg-[var(--psa-hover)] hover:text-[#E8552C] disabled:pointer-events-none disabled:opacity-50"
+                              >
+                                {catPdfBusy === r.name ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />}
+                              </button>
+                            </Td>
                           </tr>
                           {open && (
                             <tr>
-                              <td colSpan={7} className="px-4 sm:px-8 py-3 bg-[var(--psa-hover)]/60 border-b border-[var(--psa-line)]">
+                              <td colSpan={8} className="px-4 sm:px-8 py-3 bg-[var(--psa-hover)]/60 border-b border-[var(--psa-line)]">
                                 <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--psa-faint)] mb-2">
                                   {t('rep.lowStockItems')} — {r.name} ({items.length})
                                 </p>
@@ -1134,6 +1210,7 @@ export default function AdminReports() {
                       <Td className="text-right tabular-nums font-bold text-[#DC2626]">{lowTotals.out}</Td>
                       <Td className="text-right tabular-nums font-bold text-[#B45309]">{lowTotals.low}</Td>
                       <Td className="text-right tabular-nums font-bold">{lowTotals.restock}</Td>
+                      <Td />
                     </tr>
                   </tbody>
                 </table>
