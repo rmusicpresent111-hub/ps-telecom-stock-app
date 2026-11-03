@@ -31,6 +31,7 @@ import { DEFAULT_USER_ID, getLocalUser } from '@/lib/local-auth';
 import { useAdminStore } from '@/store/adminStore';
 import { ta } from '@/lib/admin-i18n';
 import { useAdminDataTick } from './useAdminData';
+import { csvEscape, downloadBlob } from './csv'; // v2.33.0: shared CSV helpers (were local copies)
 import {
   AdminCard,
   Badge,
@@ -39,23 +40,6 @@ import {
   adminToast,
   fmtDateTime,
 } from './admin-ui';
-
-function csvEscape(v: unknown): string {
-  const s = String(v ?? '');
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-function downloadBlob(content: string, filename: string, mime: string) {
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 500);
-}
 
 export default function AdminSync() {
   const lang = useAdminStore((s) => s.language);

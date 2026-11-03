@@ -122,6 +122,7 @@ const D: Record<string, Entry> = {
   'prod.confirmDelete': { bn: 'প্রোডাক্টটি মুছে ফেলবেন?', en: 'Delete this product?', hi: 'यह प्रोडक्ट हटाएं?' },
   'prod.deleteNote': { bn: 'পুরোনো বিক্রির ইতিহাস রিপোর্টে রেকর্ড থাকবে (স্ন্যাপশটসহ)।', en: 'Past sales history is kept and still counts in reports.', hi: 'पुराना बिक्री इतिहास रिपोर्ट में रहेगा।' },
   'prod.qty': { bn: 'পরিমাণ', en: 'Qty', hi: 'मात्रा' },
+  'prod.products': { bn: 'প্রোডাক্ট', en: 'Products', hi: 'उत्पाद' }, // v2.33.0: was missing → raw key showed on Low Stock card
   'prod.rate': { bn: 'দর', en: 'Rate', hi: 'दर' },
   'prod.rateHint': { bn: 'স্টক ইনে নতুন কেনা দাম (খালি রাখলে পুরোনো থাকবে)', en: 'New purchase price for this stock-in (blank = keep old)', hi: 'इस स्टॉक इन का नया खरीद मूल्य (खाली = पुराना)' },
 
@@ -594,6 +595,17 @@ const D: Record<string, Entry> = {
   'rep.threshold': { bn: 'সতর্ক সীমা', en: 'Alert threshold', hi: 'अलर्ट सीमा' },
   'rep.status': { bn: 'অবস্থা', en: 'Status', hi: 'स्थिति' },
   'rep.stockHealthy': { bn: 'দারুণ! সব প্রোডাক্টের স্টক ঠিক আছে', en: 'Great! All products are well stocked', hi: 'बहुत बढ़िया! सभी उत्पादों का स्टॉक ठीक है' },
+  // v2.33.0 — category-wise low stock summary (view + CSV download)
+  'rep.catWiseLow': { bn: 'ক্যাটাগরি অনুযায়ী কম স্টক', en: 'Category-wise Low Stock', hi: 'श्रेणी वार कम स्टॉक' },
+  'rep.catWiseLowSub': {
+    bn: 'কোন ক্যাটাগরিতে কতটা স্টক শেষ / কম — সারিতে ক্লিক করে প্রোডাক্ট দেখুন',
+    en: 'Out-of-stock / low-stock per category — tap a row to see its products',
+    hi: 'प्रति श्रेणी स्टॉक समाप्त / कम — उत्पाद देखने के लिए पंक्ति पर टैप करें',
+  },
+  'rep.restockQty': { bn: 'রিস্টক প্রয়োজন', en: 'Restock needed', hi: 'रीस्टॉक आवश्यक' },
+  'rep.downloadCsv': { bn: 'CSV ডাউনলোড', en: 'Download CSV', hi: 'CSV डाउनलोड' },
+  'rep.lowStockItems': { bn: 'কম স্টক আইটেম', en: 'Low stock items', hi: 'कम स्टॉक आइटम' },
+  'rep.categoriesAffected': { bn: 'ক্ষতিগ্রস্ত ক্যাটাগরি', en: 'Categories affected', hi: 'प्रभावित श्रेणियाँ' },
   'rep.purchases': { bn: 'কেনাকাটা', en: 'Purchases', hi: 'खरीद' },
   'rep.totalPurchase': { bn: 'মোট কেনা', en: 'Total Purchase', hi: 'कुल खरीद' },
   'rep.recentN': { bn: 'সর্বশেষ ৫০টি কেনাকাটা', en: 'Latest 50 purchases', hi: 'नवीनतम 50 खरीद' },

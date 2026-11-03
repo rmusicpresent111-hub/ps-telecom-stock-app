@@ -7,13 +7,15 @@
  *  3. Category-wise Quantity (stock vs purchased vs sold per category)
  *  4. Category-wise Profit (revenue / cost / profit per category)
  *  5. Low Stock Summary (out-of-stock + below threshold products)
+ *     v2.33.0: category-wise low stock breakdown — expandable per-category
+ *     summary (out / low / restock-needed) + CSV download for summary & details
  *  6. Recent Purchases (latest stock-in transactions)
  *  7. Expense Report (list + by-category, period filtered)
  *  8. Staff Payment Report (list + per-staff totals, period filtered)
  * Every table is printable / PDF-able through the generic report printer.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   TrendingUp,
   PiggyBank,
@@ -27,6 +29,9 @@ import {
   ReceiptText,
   UserCog,
   BarChart3,
+  ChevronDown,
+  ChevronRight,
+  Download,
 } from 'lucide-react';
 import {
   ComposedChart,
@@ -52,6 +57,7 @@ import { useAdminStore } from '@/store/adminStore';
 import { ta } from '@/lib/admin-i18n';
 import { useAdminDataTick } from './useAdminData';
 import { printGenericReport, escHtml } from './print';
+import { downloadCsvFile } from './csv';
 import {
   AdminCard,
   Badge,
@@ -63,6 +69,7 @@ import {
   Td,
   Th,
   TextInput,
+  adminToast,
   fmtMoney,
   fmtDate,
   ADMIN_COLORS,
@@ -125,6 +132,7 @@ export default function AdminReports() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [staffPayments, setStaffPayments] = useState<StaffPayment[]>([]);
   const [expenseTotal, setExpenseTotal] = useState(0);
+  const [lowCatOpen, setLowCatOpen] = useState<string | null>(null); // expanded category row (low-stock summary)
 
   const range = rangeFor(period, customFrom, customTo);
 
@@ -265,12 +273,87 @@ export default function AdminReports() {
     return list;
   }, [products, prodCat, allTxns, txns, t]);
 
+  // ── category-wise LOW STOCK aggregation (v2.33.0) ───────────────
+  /** All low/out-of-stock products, most critical first. */
+  const lowProducts = useMemo(
+    () =>
+      products
+        .filter((p) => (p.quantity || 0) <= (p.lowStockThreshold ?? 0))
+        .slice()
+        .sort((a, b) => (a.quantity || 0) - (b.quantity || 0) || a.name.localeCompare(b.name)),
+    [products],
+  );
+  /** Low products grouped by category name (uncategorised → rep.unknownCat). */
+  const lowByCat = useMemo(() => {
+    const m = new Map<string, Product[]>();
+    for (const p of lowProducts) {
+      const name = prodCat.get(p.id) || t('rep.unknownCat');
+      const arr = m.get(name);
+      if (arr) arr.push(p);
+      else m.set(name, [p]);
+    }
+    return m;
+  }, [lowProducts, prodCat, t]);
+  /** One row per affected category: totals + restock deficit (threshold − qty). */
+  const lowStockAgg = useMemo(() => {
+    const totalByCat = new Map<string, number>();
+    for (const p of products) {
+      const name = prodCat.get(p.id) || t('rep.unknownCat');
+      totalByCat.set(name, (totalByCat.get(name) || 0) + 1);
+    }
+    const rows = [...lowByCat.entries()].map(([name, items]) => ({
+      name,
+      products: totalByCat.get(name) || items.length,
+      out: items.filter((p) => (p.quantity || 0) === 0).length,
+      low: items.filter((p) => (p.quantity || 0) > 0).length,
+      restock: items.reduce((s, p) => s + Math.max(0, (p.lowStockThreshold ?? 0) - (p.quantity || 0)), 0),
+    }));
+    rows.sort((a, b) => b.out + b.low - (a.out + a.low) || b.out - a.out || a.name.localeCompare(b.name));
+    return rows;
+  }, [products, lowByCat, prodCat, t]);
+
   const chartData = useMemo(() => {
     if (salesStats.byDay.length <= 15) return salesStats.byDay;
     return salesStats.byDay.filter((_, i) => i % 2 === 0 || i === salesStats.byDay.length - 1);
   }, [salesStats.byDay]);
 
   const periodLabel = `${fmtDate(range.from)} → ${fmtDate(range.to)}`;
+
+  // ── low-stock CSV downloads (v2.33.0) ───────────────────────────
+  const lowTotals = useMemo(
+    () => ({
+      out: lowStockAgg.reduce((s, r) => s + r.out, 0),
+      low: lowStockAgg.reduce((s, r) => s + r.low, 0),
+      restock: lowStockAgg.reduce((s, r) => s + r.restock, 0),
+    }),
+    [lowStockAgg],
+  );
+
+  /** Category-wise low stock summary CSV (Excel/Sheets-ready, BOM included). */
+  const downloadLowCatCsv = () => {
+    downloadCsvFile(`ps-low-stock-category-summary-${localDateStr()}.csv`, [
+      [t('prod.category'), t('prod.products'), t('rep.outOfStock'), t('rep.lowStock'), t('rep.restockQty')],
+      ...lowStockAgg.map((r) => [r.name, r.products, r.out, r.low, r.restock]),
+      [t('bills.grandTotal'), products.length, lowTotals.out, lowTotals.low, lowTotals.restock],
+    ]);
+    adminToast(t('sync.csvDone'));
+  };
+
+  /** Product-level low stock CSV (every affected product with its category). */
+  const downloadLowProductsCsv = () => {
+    downloadCsvFile(`ps-low-stock-products-${localDateStr()}.csv`, [
+      ['#', t('prod.name'), t('prod.category'), t('prod.qty'), t('rep.threshold'), t('rep.status')],
+      ...lowProducts.map((p, i) => [
+        i + 1,
+        p.name,
+        prodCat.get(p.id) || '—',
+        p.quantity || 0,
+        p.lowStockThreshold ?? 0,
+        (p.quantity || 0) === 0 ? t('rep.outOfStock') : t('rep.lowStock'),
+      ]),
+    ]);
+    adminToast(t('sync.csvDone'));
+  };
 
   // ── per-tab print builders ────────────────────────────────────────
   const printTab = () => {
@@ -370,19 +453,47 @@ export default function AdminReports() {
       return;
     }
     if (tab === 'lowstock') {
-      const low = products.filter((p) => (p.quantity || 0) <= (p.lowStockThreshold ?? 0));
-      const out = low.filter((p) => (p.quantity || 0) === 0);
+      const out = lowProducts.filter((p) => (p.quantity || 0) === 0);
       void printGenericReport({
         title: tabLabel,
         periodLabel: `${t('rep.asOn')}: ${fmtDate(localDateStr())}`,
         lang,
         chips: [
           { k: t('rep.outOfStock'), v: String(out.length) },
-          { k: t('rep.lowStock'), v: String(low.length - out.length) },
-          { k: t('prod.products'), v: String(products.length) },
+          { k: t('rep.lowStock'), v: String(lowProducts.length - out.length) },
+          { k: t('rep.categoriesAffected'), v: String(lowStockAgg.length) },
+          { k: t('rep.restockQty'), v: String(lowTotals.restock) },
         ],
         tables: [
           {
+            sectionTitle: t('rep.catWiseLow'),
+            columns: [
+              { label: '#', width: '34px' },
+              { label: t('prod.category') },
+              { label: t('prod.products'), right: true },
+              { label: t('rep.outOfStock'), right: true },
+              { label: t('rep.lowStock'), right: true },
+              { label: t('rep.restockQty'), right: true },
+            ],
+            rows: lowStockAgg.map((r, i) => [
+              String(i + 1),
+              escHtml(r.name),
+              String(r.products),
+              String(r.out),
+              String(r.low),
+              String(r.restock),
+            ]),
+            totalRow: [
+              t('bills.grandTotal'),
+              '',
+              String(products.length),
+              String(lowTotals.out),
+              String(lowTotals.low),
+              String(lowTotals.restock),
+            ],
+          },
+          {
+            sectionTitle: t('rep.detailList2'),
             columns: [
               { label: '#', width: '34px' },
               { label: t('prod.name') },
@@ -391,17 +502,14 @@ export default function AdminReports() {
               { label: t('rep.threshold'), right: true },
               { label: t('rep.status') },
             ],
-            rows: low
-              .slice()
-              .sort((a, b) => (a.quantity || 0) - (b.quantity || 0))
-              .map((p, i) => [
-                String(i + 1),
-                escHtml(p.name),
-                escHtml(prodCat.get(p.id) || '—'),
-                String(p.quantity || 0),
-                String(p.lowStockThreshold ?? 0),
-                escHtml((p.quantity || 0) === 0 ? t('rep.outOfStock') : t('rep.lowStock')),
-              ]),
+            rows: lowProducts.map((p, i) => [
+              String(i + 1),
+              escHtml(p.name),
+              escHtml(prodCat.get(p.id) || '—'),
+              String(p.quantity || 0),
+              String(p.lowStockThreshold ?? 0),
+              escHtml((p.quantity || 0) === 0 ? t('rep.outOfStock') : t('rep.lowStock')),
+            ]),
           },
         ],
       });
@@ -852,25 +960,159 @@ export default function AdminReports() {
             <StatCard
               icon={<AlertTriangle size={18} />}
               label={t('rep.outOfStock')}
-              value={String(products.filter((p) => (p.quantity || 0) === 0).length)}
+              value={String(lowTotals.out)}
               tone="red"
             />
             <StatCard
               icon={<AlertTriangle size={18} />}
               label={t('rep.lowStock')}
-              value={String(products.filter((p) => (p.quantity || 0) > 0 && (p.quantity || 0) <= (p.lowStockThreshold ?? 0)).length)}
+              value={String(lowTotals.low)}
               tone="amber"
             />
             <StatCard icon={<BarChart3 size={18} />} label={t('prod.products')} value={String(products.length)} tone="slate" />
             <StatCard
               icon={<Layers size={18} />}
-              label={t('rep.categories')}
-              value={String(categories.length)}
+              label={t('rep.categoriesAffected')}
+              value={String(lowStockAgg.length)}
               tone="orange"
             />
           </div>
-          <AdminCard title={t('rep.tab.lowstock')} bodyClass="!p-0">
-            {products.filter((p) => (p.quantity || 0) <= (p.lowStockThreshold ?? 0)).length === 0 ? (
+
+          {/* category-wise low stock breakdown (v2.33.0) — click a row to
+              expand that category's affected products; CSV export included */}
+          <AdminCard
+            className="mb-4"
+            bodyClass="!p-0"
+            title={
+              <span>
+                {t('rep.catWiseLow')}
+                <span className="block text-[11px] font-normal text-[var(--psa-muted)] mt-0.5">{t('rep.catWiseLowSub')}</span>
+              </span>
+            }
+            action={
+              lowStockAgg.length > 0 ? (
+                <Btn variant="outline" size="sm" onClick={downloadLowCatCsv} title={t('rep.downloadCsv')}>
+                  <Download size={14} />
+                  <span className="hidden sm:inline">{t('rep.downloadCsv')}</span>
+                </Btn>
+              ) : undefined
+            }
+          >
+            {lowStockAgg.length === 0 ? (
+              <div className="p-6">
+                <EmptyState icon={<Award size={22} />} title={t('rep.stockHealthy')} />
+              </div>
+            ) : (
+              <div className="overflow-x-auto max-h-[52vh] overflow-y-auto">
+                <table className="w-full min-w-[680px]">
+                  <thead className="bg-[var(--psa-hover)] sticky top-0 z-10">
+                    <tr>
+                      <Th className="w-9" />
+                      <Th>#</Th>
+                      <Th>{t('prod.category')}</Th>
+                      <Th className="text-right">{t('prod.products')}</Th>
+                      <Th className="text-right">{t('rep.outOfStock')}</Th>
+                      <Th className="text-right">{t('rep.lowStock')}</Th>
+                      <Th className="text-right">{t('rep.restockQty')}</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lowStockAgg.map((r, i) => {
+                      const items = lowByCat.get(r.name) || [];
+                      const open = lowCatOpen === r.name && items.length > 0;
+                      return (
+                        <Fragment key={r.name}>
+                          <tr
+                            onClick={() => setLowCatOpen(open ? null : r.name)}
+                            className={`cursor-pointer transition-colors ${open ? 'bg-[var(--psa-soft-orange)]' : 'hover:bg-[var(--psa-row-hover)]'}`}
+                            title={t('rep.catWiseLowSub')}
+                          >
+                            <Td className="text-[var(--psa-muted)] w-9">
+                              {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                            </Td>
+                            <Td className="text-[var(--psa-faint)]">{i + 1}</Td>
+                            <Td className="font-semibold text-[var(--psa-sub)]">{r.name}</Td>
+                            <Td className="text-right tabular-nums">{r.products}</Td>
+                            <Td className={`text-right tabular-nums font-bold ${r.out > 0 ? 'text-[#DC2626]' : 'text-[var(--psa-faint)]'}`}>
+                              {r.out}
+                            </Td>
+                            <Td className={`text-right tabular-nums font-bold ${r.low > 0 ? 'text-[#B45309]' : 'text-[var(--psa-faint)]'}`}>
+                              {r.low}
+                            </Td>
+                            <Td className="text-right tabular-nums text-[var(--psa-sub)]">{r.restock}</Td>
+                          </tr>
+                          {open && (
+                            <tr>
+                              <td colSpan={7} className="px-4 sm:px-8 py-3 bg-[var(--psa-hover)]/60 border-b border-[var(--psa-line)]">
+                                <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--psa-faint)] mb-2">
+                                  {t('rep.lowStockItems')} — {r.name} ({items.length})
+                                </p>
+                                <div className="overflow-x-auto rounded-lg border border-[var(--psa-border)] bg-[var(--psa-card)]">
+                                  <table className="w-full min-w-[460px]">
+                                    <thead>
+                                      <tr className="text-[11px] uppercase tracking-wide text-[var(--psa-muted)] border-b border-[var(--psa-border)] bg-[var(--psa-hover)]">
+                                        <th className="text-left font-bold px-3 py-2">{t('prod.name')}</th>
+                                        <th className="text-right font-bold px-3 py-2">{t('prod.qty')}</th>
+                                        <th className="text-right font-bold px-3 py-2">{t('rep.threshold')}</th>
+                                        <th className="text-right font-bold px-3 py-2">{t('rep.status')}</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {items.map((p) => {
+                                        const o = (p.quantity || 0) === 0;
+                                        return (
+                                          <tr key={p.id} className="border-b border-[var(--psa-line)] last:border-0">
+                                            <td className="px-3 py-2 text-sm font-medium text-[var(--psa-sub)]">{p.name}</td>
+                                            <td className={`px-3 py-2 text-sm text-right tabular-nums font-bold ${o ? 'text-[#DC2626]' : 'text-[#B45309]'}`}>
+                                              {p.quantity || 0}
+                                            </td>
+                                            <td className="px-3 py-2 text-sm text-right tabular-nums text-[var(--psa-muted)]">
+                                              {p.lowStockThreshold ?? 0}
+                                            </td>
+                                            <td className="px-3 py-2 text-right">
+                                              <Badge tone={o ? 'red' : 'amber'}>{o ? t('rep.outOfStock') : t('rep.lowStock')}</Badge>
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      );
+                    })}
+                    {/* grand total row */}
+                    <tr className="bg-[var(--psa-hover)] font-semibold">
+                      <Td />
+                      <Td />
+                      <Td className="font-bold text-[var(--psa-sub)]">{t('bills.grandTotal')}</Td>
+                      <Td className="text-right tabular-nums font-bold">{products.length}</Td>
+                      <Td className="text-right tabular-nums font-bold text-[#DC2626]">{lowTotals.out}</Td>
+                      <Td className="text-right tabular-nums font-bold text-[#B45309]">{lowTotals.low}</Td>
+                      <Td className="text-right tabular-nums font-bold">{lowTotals.restock}</Td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </AdminCard>
+
+          <AdminCard
+            title={t('rep.detailList2')}
+            bodyClass="!p-0"
+            action={
+              lowProducts.length > 0 ? (
+                <Btn variant="outline" size="sm" onClick={downloadLowProductsCsv} title={t('rep.downloadCsv')}>
+                  <Download size={14} />
+                  <span className="hidden sm:inline">{t('rep.downloadCsv')}</span>
+                </Btn>
+              ) : undefined
+            }
+          >
+            {lowProducts.length === 0 ? (
               <div className="p-6">
                 <EmptyState icon={<Award size={22} />} title={t('rep.stockHealthy')} />
               </div>
@@ -888,26 +1130,23 @@ export default function AdminReports() {
                     </tr>
                   </thead>
                   <tbody>
-                    {products
-                      .filter((p) => (p.quantity || 0) <= (p.lowStockThreshold ?? 0))
-                      .sort((a, b) => (a.quantity || 0) - (b.quantity || 0))
-                      .map((p, i) => {
-                        const out = (p.quantity || 0) === 0;
-                        return (
-                          <tr key={p.id} className="hover:bg-[var(--psa-row-hover)] transition-colors">
-                            <Td className="text-[var(--psa-faint)]">{i + 1}</Td>
-                            <Td className="font-semibold text-[var(--psa-sub)]">{p.name}</Td>
-                            <Td className="text-[var(--psa-muted)]">{prodCat.get(p.id) || '—'}</Td>
-                            <Td className={`text-right tabular-nums font-bold ${out ? 'text-[#DC2626]' : 'text-[#B45309]'}`}>
-                              {p.quantity || 0}
-                            </Td>
-                            <Td className="text-right tabular-nums text-[var(--psa-muted)]">{p.lowStockThreshold ?? 0}</Td>
-                            <Td className="text-right">
-                              <Badge tone={out ? 'red' : 'amber'}>{out ? t('rep.outOfStock') : t('rep.lowStock')}</Badge>
-                            </Td>
-                          </tr>
-                        );
-                      })}
+                    {lowProducts.map((p, i) => {
+                      const out = (p.quantity || 0) === 0;
+                      return (
+                        <tr key={p.id} className="hover:bg-[var(--psa-row-hover)] transition-colors">
+                          <Td className="text-[var(--psa-faint)]">{i + 1}</Td>
+                          <Td className="font-semibold text-[var(--psa-sub)]">{p.name}</Td>
+                          <Td className="text-[var(--psa-muted)]">{prodCat.get(p.id) || '—'}</Td>
+                          <Td className={`text-right tabular-nums font-bold ${out ? 'text-[#DC2626]' : 'text-[#B45309]'}`}>
+                            {p.quantity || 0}
+                          </Td>
+                          <Td className="text-right tabular-nums text-[var(--psa-muted)]">{p.lowStockThreshold ?? 0}</Td>
+                          <Td className="text-right">
+                            <Badge tone={out ? 'red' : 'amber'}>{out ? t('rep.outOfStock') : t('rep.lowStock')}</Badge>
+                          </Td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

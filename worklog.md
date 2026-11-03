@@ -2300,3 +2300,26 @@ Stage Summary:
 - The owner can now thermal-print any bill straight from the desktop admin panel: USB cable → "USB সরাসরি প্রিন্ট" (raw ESC/POS, no driver), or the Hoin paired over desktop Bluetooth → "প্রিন্ট ডায়ালগ" → pick the printer. 58/80mm selectable right in the modal; a Test Print in Bill Settings verifies the printer without touching real bills.
 - The APK's Bluetooth path and both desktop paths share ONE line model — what the preview shows, the phone prints, the desktop prints.
 - No preview error exists in the current build (swept every surface, live + local).
+
+---
+## Task 82 — v2.33.0 — Category-wise Low Stock summary in admin Reports (view + CSV download)
+Date: 3 Nov (session 8) | Status: DONE (pushed)
+
+Task ID: 82
+Agent: Z.ai Code (main thread)
+Task: "admin panel er report option er moddhe low stock report er moddhe category wish low stock summery dekha jabe ebong downlode kora jabe, ami admin panel tike dextop version banate chai"
+
+Work Log:
+- CATEGORY-WISE LOW STOCK (Reports → Low Stock Summary tab): new aggregation chain — lowProducts (qty ≤ threshold, most-critical first) → lowByCat (grouped by category, uncategorised → rep.unknownCat) → lowStockAgg (per category: total products / out-of-stock / low-stock / restock-needed = Σ(threshold − qty)), sorted by severity (out+low desc → out desc → name). Grand-total row pinned under the table.
+- EXPANDABLE ROWS: clicking a category row expands an inline nested table with that category's affected products (name / qty / threshold / Out-of-stock|Low-stock badge) — orange highlight + chevron rotation; guard against expanding a category whose items vanished after a sync tick.
+- CSV DOWNLOADS (new src/components/admin/csv.ts — csvEscape + downloadBlob + downloadCsvFile, UTF-8 BOM so Excel/Sheets open Bangla correctly): ① "ps-low-stock-category-summary-<date>.csv" (header + rows + grand total) from the summary card; ② "ps-low-stock-products-<date>.csv" (# / product / category / qty / threshold / status) from the detail card; both fire the shared adminToast "CSV ডাউনলোড হয়েছে". AdminSync.tsx refactored to import the same helpers (local duplicates removed).
+- PRINT/PDF UPGRADED for the tab: printGenericReport lowstock branch now emits TWO tables — Category-wise summary (with total row) + Detail list — and 4 chips (out / low / categories-affected / restock-needed); verified the generated iframe doc (title, both tables, chips, totals).
+- StatCards on the tab now read from the same aggregation (out / low / products / categories-affected) — one source of truth.
+- i18n: 7 new keys (rep.catWiseLow, rep.catWiseLowSub, rep.restockQty, rep.downloadCsv, rep.lowStockItems, rep.categoriesAffected — bn/en/hi) + BUGFIX: 'prod.products' key never existed (Products stat card printed the raw key "prod.products") — added bn/en/hi.
+- DESKTOP POLISH: admin console footer version was hardcoded "v2.25.1" — new src/lib/app-version.ts (APP_VERSION single source) now shows v{APP_VERSION}; package.json → 2.33.0 (build-apk.js auto-derives versionCode 23300).
+- VERIFY: tsc + eslint clean; agent-browser E2E with seeded demo data (3 categories / 11 products, 3 out + 4 low): summary math exact (অ্যাক্সেসরিজ 5/1/2/7, ইলেকট্রনিক্স 3/1/1/5, মোবাইল 3/1/1/3, total 11/3/4/15), expand + nested table render, both CSV clicks toast without console errors, print iframe = 2 tables + chips, EN switch clean, mobile 375px (2×2 cards, scrollable tables, bottom nav) and dark mode verified; footer v2.33.0. Demo data cleared after the run.
+- NOTE: sandbox sync chip showed "Error" — external vercel D1 connect blocked by the sandbox network; pre-existing environment condition, unrelated (all /api/cloud/d1/ local calls 200).
+
+Stage Summary:
+- Low Stock report now answers "কোন ক্যাটাগরিতে কী ঘাটতি" at a glance: per-category out/low counts + units needed to reach threshold, expandable to the exact products, printable as a two-table PDF and downloadable as two Excel-ready CSVs — all inside the desktop admin console.
+- Console footer can no longer go stale (APP_VERSION constant).
