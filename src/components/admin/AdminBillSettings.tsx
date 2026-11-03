@@ -23,6 +23,7 @@ import {
   Trash2,
   ImageUp,
   Loader2,
+  Receipt,
 } from 'lucide-react';
 import {
   getBillingSettingsOffline,
@@ -39,6 +40,8 @@ import { computeGst, normalizeGstMode, halfRate } from '@/lib/gst';
 import { useAdminDataTick } from './useAdminData';
 import { buildBillReceiptHtml, printHtml } from './print';
 import A4Preview from './A4Preview';
+import ThermalPrintModal from './ThermalPrintModal';
+import { makeThermalTestBill } from './thermal-web';
 import {
   AdminCard,
   Badge,
@@ -204,6 +207,7 @@ export default function AdminBillSettings() {
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [thermalTestOpen, setThermalTestOpen] = useState(false);
   const [latestBill, setLatestBill] = useState<Bill | null>(null);
   const [uploading, setUploading] = useState<'signatureDataUrl' | 'qrCodeDataUrl' | null>(null);
 
@@ -358,6 +362,9 @@ export default function AdminBillSettings() {
         sub={t('bset.sub')}
         action={
           <>
+            <Btn variant="outline" onClick={() => setThermalTestOpen(true)}>
+              <Receipt size={16} /> <span className="hidden sm:inline">{t('bills.thermalTestPrint')}</span>
+            </Btn>
             <Btn variant="outline" onClick={() => setPreviewOpen(true)}>
               <Eye size={16} /> <span className="hidden sm:inline">{t('bset.preview')}</span>
             </Btn>
@@ -618,6 +625,14 @@ export default function AdminBillSettings() {
         </div>
         {previewHtml && <A4Preview html={previewHtml} ariaLabel={t('bset.previewTitle')} />}
       </Modal>
+
+      {/* thermal test print (desktop: USB serial / system dialog) */}
+      <ThermalPrintModal
+        bill={thermalTestOpen && form ? makeThermalTestBill(form) : null}
+        settings={form}
+        onClose={() => setThermalTestOpen(false)}
+        onSettingsChanged={(s) => setForm((p) => (p ? { ...p, thermalWidthMm: s.thermalWidthMm } : p))}
+      />
     </div>
   );
 }

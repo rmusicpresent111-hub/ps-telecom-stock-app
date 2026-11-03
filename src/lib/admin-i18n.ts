@@ -148,6 +148,19 @@ const D: Record<string, Entry> = {
   'bills.note': { bn: 'নোট', en: 'Note', hi: 'नोट' },
   'bills.noBills': { bn: 'এখনও কোনো বিল নেই', en: 'No bills yet', hi: 'अभी कोई बिल नहीं' },
   'bills.allTime': { bn: 'সব সময়', en: 'All time', hi: 'सभी समय' },
+  // thermal printing from the desktop admin panel (v2.32.0)
+  'bills.thermalPrint': { bn: 'থার্মাল প্রিন্ট', en: 'Thermal Print', hi: 'थर्मल प्रिंट' },
+  'bills.thermalTitle': { bn: 'থার্মাল প্রিন্টারে প্রিন্ট', en: 'Print on Thermal Printer', hi: 'थर्मल प्रिंटर पर प्रिंट' },
+  'bills.thermalUsb': { bn: 'USB সরাসরি প্রিন্ট', en: 'USB Direct Print', hi: 'USB सीधा प्रिंट' },
+  'bills.thermalUsbDesc': { bn: 'কেবল দিয়ে লাগান — কোনো ড্রাইভার লাগবে না, সরাসরি প্রিন্ট হবে (Chrome/Edge)', en: 'Plug the cable — no driver needed, prints straight away (Chrome/Edge)', hi: 'केबल लगाएं — ड्राइवर नहीं चाहिए, सीधे प्रिंट होगा (Chrome/Edge)' },
+  'bills.thermalDialog': { bn: 'প্রিন্ট ডায়ালগ', en: 'Print Dialog', hi: 'प्रिंट डायलॉग' },
+  'bills.thermalDialogDesc': { bn: 'Bluetooth-এ জোড়া বা ড্রাইভার-ইনস্টল প্রিন্টার — ডায়ালগ থেকে প্রিন্টার বাছুন', en: 'Bluetooth-paired or driver-installed printer — pick it in the dialog', hi: 'ब्लूटूथ-जुड़ा या ड्राइवर-इंस्टॉल प्रिंटर — डायलॉग में चुनें' },
+  'bills.thermalWidth': { bn: 'কাগজের প্রস্থ', en: 'Paper width', hi: 'कागज़ की चौड़ाई' },
+  'bills.thermalSerialUnsupported': { bn: 'এই ব্রাউজারে USB সরাসরি প্রিন্ট নেই — Chrome বা Edge ব্যবহার করুন', en: 'USB direct print needs Chrome or Edge', hi: 'USB सीधे प्रिंट के लिए Chrome या Edge चाहिए' },
+  'bills.thermalPrinted': { bn: 'থার্মাল প্রিন্ট হয়ে গেছে ✓', en: 'Thermal print sent ✓', hi: 'थर्मल प्रिंट हो गया ✓' },
+  'bills.thermalFailed': { bn: 'থার্মাল প্রিন্ট হয়নি', en: 'Thermal print failed', hi: 'थर्मल प्रिंट नहीं हुआ' },
+  'bills.thermalCancelled': { bn: 'প্রিন্টার বাছাই বাতিল হয়েছে', en: 'Printer selection cancelled', hi: 'प्रिंटर चयन रद्द किया' },
+  'bills.thermalTestPrint': { bn: 'থার্মাল টেস্ট প্রিন্ট', en: 'Thermal Test Print', hi: 'थर्मल टेस्ट प्रिंट' },
 
   // ── due book ─────────────────────────────────────────────────
   'due.title': { bn: 'বাকির খাতা', en: 'Due Book', hi: 'बाकी खाता' },

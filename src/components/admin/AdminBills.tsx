@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Trash2, Eye, BadgeIndianRupee, ReceiptText, Printer } from 'lucide-react';
+import { Search, Trash2, Eye, BadgeIndianRupee, ReceiptText, Printer, Receipt } from 'lucide-react';
 import {
   getBillsOffline,
   markBillPaidOffline,
@@ -25,6 +25,7 @@ import {
   printSoldProductsReport,
 } from './print';
 import A4Preview from './A4Preview';
+import ThermalPrintModal from './ThermalPrintModal';
 import {
   AdminCard,
   Badge,
@@ -78,6 +79,7 @@ export default function AdminBills() {
   const [busy, setBusy] = useState(false);
   const [billSettings, setBillSettings] = useState<BillingSettings | null>(null);
   const [detail, setDetail] = useState<Bill | null>(null);
+  const [thermalFor, setThermalFor] = useState<Bill | null>(null);
   const [payModal, setPayModal] = useState<{ bill: Bill; partial: boolean; amount: string } | null>(null);
   const [deleting, setDeleting] = useState<Bill | null>(null);
 
@@ -302,6 +304,9 @@ export default function AdminBills() {
               <Btn variant="outline" onClick={() => setDetail(null)}>
                 {t('c.close')}
               </Btn>
+              <Btn variant="outline" onClick={() => setThermalFor(detail)}>
+                <Receipt size={15} /> {t('bills.thermalPrint')}
+              </Btn>
               <Btn onClick={() => void printBillReceipt(detail, lang)}>
                 <Printer size={15} /> {t('qsell.printReceipt')}
               </Btn>
@@ -316,6 +321,14 @@ export default function AdminBills() {
           </div>
         )}
       </Modal>
+
+      {/* thermal print chooser (desktop: USB serial / system dialog) */}
+      <ThermalPrintModal
+        bill={thermalFor}
+        settings={billSettings}
+        onClose={() => setThermalFor(null)}
+        onSettingsChanged={(s) => setBillSettings(s)}
+      />
 
       {/* mark paid */}
       <Modal

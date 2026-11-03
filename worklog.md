@@ -2277,3 +2277,26 @@ Stage Summary:
 - The bill section now has 5 switchable receipt styles (old one kept as default) — one of them, thermal-58, is a faithful preview of what the Hoin printer prints
 - Bluetooth thermal printing ships in the APK: pair the Hoin printer in phone Bluetooth settings once → Bill → "Bluetooth Print" → picks the remembered printer (or asks once) → ESC/POS receipt at 58mm or 80mm, with a 3-strategy connect designed for cheap SPP printers
 - Database fully untouched (optional fields inside the existing settings blob only); 4 real bugs fixed (stale IDB types, bare modal number, wasteful recompute, preview≠paper mismatch)
+
+---
+## Task 81 — v2.32.0 — Thermal printing from the desktop admin panel (+ preview-error sweep)
+Date: 3 Nov (session 7) | Status: DONE (pushed)
+
+Task ID: 81
+Agent: Z.ai Code (main thread)
+Task: "Thermal printer print admin panel theke korte chai dextop theke" (+ a "preview error" report)
+
+Work Log:
+- DESKTOP THERMAL PRINT (admin panel, web): new src/components/admin/thermal-web.ts with TWO paths fed by the SAME receipt line model the APK Bluetooth path uses (thermal-print.ts refactored: buildReceiptLines() now emits ThermalLine[] {text, center, big} as the single source of truth; buildEscPosReceipt() maps it to bytes — byte-stream unchanged, verified: ESC @ init, ESC ! 0x30 big TOTAL, GS V 66 0 cut, 32/48 col, ASCII-sanitised):
+  1. USB DIRECT — Web Serial API (Chrome/Edge desktop): requestPort → open 115200 8N1 → write raw ESC/POS bytes → drain 400ms → close. Port remembered in-session (cachedPort + serial.getPorts() reuse → second print skips the picker); stale-port retry through a fresh picker (user-cancel never re-asks). Minimal local Serial typings — no new deps.
+  2. PRINT DIALOG — buildThermalHtml() renders the identical lines as a self-contained monospace page with @page { size: 58mm auto } / 80mm, pushed through the existing printHtml() hidden-iframe engine. This covers the Hoin over DESKTOP BLUETOOTH (pair in OS → pick in the dialog) and driver-installed USB printers.
+- ThermalPrintModal.tsx — chooser UI (USB Direct / Print Dialog cards + inline 58/80mm width toggle that saves into the SAME synced billingSettings row; no new storage). Wired in two places: AdminBills bill-detail footer ("থার্মাল প্রিন্ট" next to the A4 print) and AdminBillSettings header ("থার্মাল টেস্ট প্রিন্ট" → prints a demo receipt from makeThermalTestBill() — printer can be verified without touching real bills). admin-i18n: 12 new keys (bn/en/hi).
+- BUGFIX (in the v2.31.0 refactor): twoCol overflow halves were merged into ONE line in the ESC/POS stream (asciiLine stripped the \n before the byte writer could stack) — long customer names printed as "NAME+MOBILE" mush. buildReceiptLines splits on \n FIRST, then sanitises each half → CUST row now truly stacks with the mobile right-aligned, matching the on-screen thermal-58 preview (bun-verified with a >32-col name).
+- "PREVIEW ERROR" SWEEP (could not reproduce anywhere): local admin A4 preview ✓, live (vercel) admin A4 preview with a real synced bill ✓, live app bill screen cycling all 5 templates with 32 real synced bills ✓, live admin bill-detail A4 dialog ✓ — zero console/page errors. Most likely cause: the sandbox dev server was down/restarting during the v2.31.0 APK build when the owner looked (pkill next-server is part of the build ritual); current preview is healthy.
+- VERIFY: tsc + eslint clean; browser E2E — thermal modal renders (width toggle 58→80→58 persists into billingSettings), print-dialog path generates the correct @page 58mm iframe (inspected content: centered PS TELECOM + dashed rules + BILL/date row), USB path headless-safe (chooser pending = headless limitation, real desktop opens Chrome's device picker); bun byte-test: 784-byte receipt, no line >32 cols at 58mm / >48 at 80mm, CUST stacking, Bengali/₹ sanitised to clean ASCII.
+- BUILD: v2.32.0 (versionCode 23200) APKs rebuilt — BUILD SUCCESSFUL, repo-key signed.
+
+Stage Summary:
+- The owner can now thermal-print any bill straight from the desktop admin panel: USB cable → "USB সরাসরি প্রিন্ট" (raw ESC/POS, no driver), or the Hoin paired over desktop Bluetooth → "প্রিন্ট ডায়ালগ" → pick the printer. 58/80mm selectable right in the modal; a Test Print in Bill Settings verifies the printer without touching real bills.
+- The APK's Bluetooth path and both desktop paths share ONE line model — what the preview shows, the phone prints, the desktop prints.
+- No preview error exists in the current build (swept every surface, live + local).

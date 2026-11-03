@@ -158,93 +158,121 @@ class EscPosBuilder {
 }
 
 /**
- * Builds the complete thermal receipt for a bill.
- * Mirrors the on-screen thermal-58 template (same sections, same order).
+ * Shared receipt model (v2.32.0) — the single source of truth for BOTH
+ * consumers so paper output is byte-identical no matter the path:
+ *   • buildEscPosReceipt      → APK Bluetooth (ESC/POS bytes)
+ *   • admin thermal-web.ts    → desktop USB (Web Serial) + print dialog (HTML)
+ * Each line carries alignment/size hints; text is ASCII-sanitised here.
  */
-export function buildEscPosReceipt(bill: Bill, settings: BillingSettings | null): Uint8Array {
+export interface ThermalLine {
+  text: string;
+  center?: boolean;
+  big?: boolean;
+}
+
+export function buildReceiptLines(bill: Bill, settings: BillingSettings | null): ThermalLine[] {
   const cols = thermalColumns(settings?.thermalWidthMm ?? 58);
-  const b = new EscPosBuilder();
+  const lines: ThermalLine[] = [];
+  // split('\n') FIRST (before asciiLine, which strips control chars incl. \n)
+  // so a twoCol overflow truly stacks on two lines — the old inline ESC/POS
+  // path accidentally merged the two halves into one line (fixed here).
+  const add = (text: string, center = false, big = false) => {
+    for (const part of text.split('\n')) {
+      lines.push({ text: asciiLine(part), center, big });
+    }
+  };
+  const L = (s: string) => add(s);
+  const C = (s: string) => add(s, true);
 
   const shopName = bill.shopSnapshot?.name || settings?.shopName || 'PS TELECOM';
 
   // ---- header (centered, shop identity) ----
-  b.init();
-  b.align(1);
-  b.font(0x30); // double width+height shop name
-  b.line(shopName.toUpperCase());
-  b.font(0x00);
+  add(shopName.toUpperCase(), true, true);
   if (bill.shopSnapshot?.address) {
-    for (const l of wrapText(bill.shopSnapshot.address, cols)) { if (l) b.line(l); }
+    for (const l of wrapText(bill.shopSnapshot.address, cols)) { if (l) C(l); }
   }
-  if (bill.shopSnapshot?.phone) b.line(`Ph: ${bill.shopSnapshot.phone}`);
-  if (bill.shopSnapshot?.gstNumber) b.line(`GSTIN: ${bill.shopSnapshot.gstNumber}`);
-  b.align(0);
-  b.line(dotted(cols));
+  if (bill.shopSnapshot?.phone) C(`Ph: ${bill.shopSnapshot.phone}`);
+  if (bill.shopSnapshot?.gstNumber) C(`GSTIN: ${bill.shopSnapshot.gstNumber}`);
+  L(dotted(cols));
 
   // ---- meta ----
-  b.line(twoCol(`BILL: ${bill.billNumber}`, billDate(bill.date), cols));
+  L(twoCol(`BILL: ${bill.billNumber}`, billDate(bill.date), cols));
   const custAscii = asciiLine(bill.customerName || '');
   if (custAscii && bill.customerMobile) {
-    b.line(twoCol(`CUST: ${custAscii}`, bill.customerMobile, cols));
+    L(twoCol(`CUST: ${custAscii}`, bill.customerMobile, cols));
   } else if (custAscii) {
-    b.line(`CUST: ${custAscii}`);
+    L(`CUST: ${custAscii}`);
   } else if (bill.customerMobile) {
-    b.line(`MOB: ${bill.customerMobile}`);
+    L(`MOB: ${bill.customerMobile}`);
   }
-  b.line(dotted(cols));
+  L(dotted(cols));
 
   // ---- items ----
   for (const item of bill.items) {
     const nameLine = item.name + (item.categoryName ? ` (${item.categoryName})` : '');
-    for (const l of wrapText(nameLine, cols)) b.line(l);
-    b.line(twoCol(`  ${item.quantity} x ${money(item.unitPrice)}`, money(item.total), cols));
+    for (const l of wrapText(nameLine, cols)) L(l);
+    L(twoCol(`  ${item.quantity} x ${money(item.unitPrice)}`, money(item.total), cols));
     if (item.serialNumbers && item.serialNumbers.length) {
-      b.line(`  SN: ${item.serialNumbers.join(',')}`);
+      L(`  SN: ${item.serialNumbers.join(',')}`);
     }
   }
-  b.line(dotted(cols));
+  L(dotted(cols));
 
   // ---- totals ----
-  b.line(twoCol('SUBTOTAL', money(bill.subtotal), cols));
+  L(twoCol('SUBTOTAL', money(bill.subtotal), cols));
   if (bill.discountAmount > 0) {
     const pct = bill.discountType === 'percent' ? ` (${bill.discountValue}%)` : '';
-    b.line(twoCol(`DISCOUNT${pct}`, `-${money(bill.discountAmount)}`, cols));
+    L(twoCol(`DISCOUNT${pct}`, `-${money(bill.discountAmount)}`, cols));
   }
   if (bill.gstEnabled && bill.gstAmount > 0) {
-    b.line(twoCol(`GST ${bill.gstRate}%`, money(bill.gstAmount), cols));
+    L(twoCol(`GST ${bill.gstRate}%`, money(bill.gstAmount), cols));
     if (bill.taxableValue !== undefined) {
-      b.line(twoCol('TAXABLE', money(bill.taxableValue), cols));
+      L(twoCol('TAXABLE', money(bill.taxableValue), cols));
     }
   }
-  b.align(1);
-  b.font(0x30); // big TOTAL
-  b.line(twoCol('TOTAL', `Rs.${money(bill.total)}`, cols));
-  b.font(0x00);
-  b.align(0);
+  add(twoCol('TOTAL', `Rs.${money(bill.total)}`, cols), true, true);
   if (bill.paidAmount > 0) {
-    b.line(twoCol(`PAID (${bill.paymentMethod.toUpperCase()})`, money(bill.paidAmount), cols));
+    L(twoCol(`PAID (${bill.paymentMethod.toUpperCase()})`, money(bill.paidAmount), cols));
   }
   if (bill.dueAmount > 0) {
-    b.line(twoCol('DUE', `Rs.${money(bill.dueAmount)}`, cols));
+    L(twoCol('DUE', `Rs.${money(bill.dueAmount)}`, cols));
   }
-  b.line(dotted(cols));
+  L(dotted(cols));
 
   // ---- footer ----
-  if (settings?.upiId) b.line(`UPI: ${settings.upiId}`);
+  if (settings?.upiId) L(`UPI: ${settings.upiId}`);
   if (bill.note && asciiLine(bill.note)) {
-    for (const l of wrapText(`Note: ${bill.note}`, cols)) { if (l) b.line(l); }
+    for (const l of wrapText(`Note: ${bill.note}`, cols)) { if (l) L(l); }
   }
-  b.align(1);
   const thanksAscii = settings?.thankYouNote ? asciiLine(settings.thankYouNote) : '';
   if (thanksAscii) {
-    for (const l of wrapText(thanksAscii, cols)) { if (l) b.line(l); }
+    for (const l of wrapText(thanksAscii, cols)) { if (l) C(l); }
   } else {
-    b.line('Thank you for your business!');
+    C('Thank you for your business!');
   }
-  b.line('* * *');
+  C('* * *');
+
+  return lines;
+}
+
+/**
+ * Builds the complete thermal receipt for a bill (ESC/POS bytes).
+ * Mirrors the on-screen thermal-58 template (same sections, same order).
+ */
+export function buildEscPosReceipt(bill: Bill, settings: BillingSettings | null): Uint8Array {
+  const b = new EscPosBuilder();
+  b.init();
+  let align: 0 | 1 = 0;
+  let font = 0x00;
+  for (const l of buildReceiptLines(bill, settings)) {
+    const wantAlign: 0 | 1 = l.center ? 1 : 0;
+    if (align !== wantAlign) { b.align(wantAlign); align = wantAlign; }
+    const wantFont = l.big ? 0x30 : 0x00;
+    if (font !== wantFont) { b.font(wantFont); font = wantFont; }
+    b.line(l.text);
+  }
   b.feed(3);
   b.cutPartial();
-
   return b.toUint8Array();
 }
 

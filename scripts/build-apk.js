@@ -693,6 +693,7 @@ function ensureMavenMirror() {
     const candidates = [
       path.join(ANDROID_DIR, 'build.gradle'),
       path.join(ANDROID_DIR, 'app', 'build.gradle'),
+      path.join(ANDROID_DIR, 'capacitor-cordova-android-plugins', 'build.gradle'),
       path.join(ROOT, 'node_modules', '@capacitor', 'android', 'capacitor', 'build.gradle'),
     ];
     let patched = 0;
@@ -709,6 +710,34 @@ function ensureMavenMirror() {
         console.log('  ✅ mirror → ' + path.relative(ROOT, gradlePath));
       }
     }
+    // Belt & braces: sweep EVERY remaining build.gradle under android/ (plugin
+    // subprojects are generated and can appear in any layout — the 429s hit
+    // exactly the ones this list misses).
+    try {
+      const sweep = (dir) => {
+        let entries = [];
+        try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+        for (const e of entries) {
+          const p = path.join(dir, e.name);
+          if (e.isDirectory()) {
+            if (e.name === 'build' || e.name === '.gradle') continue;
+            sweep(p);
+          } else if (e.name === 'build.gradle') {
+            if (candidates.some((c) => path.resolve(c) === path.resolve(p))) continue;
+            let gradle = fs.readFileSync(p, 'utf8');
+            if (gradle.includes('maven.aliyun.com') || !/repositories\s*\{/.test(gradle)) continue;
+            const mirror = "maven { url 'https://maven.aliyun.com/repository/public' }";
+            gradle = gradle.replace(/repositories\s*\{\n(\s*)/g, (m0, ind) => `${m0}${ind}${mirror}\n${ind}`);
+            if (gradle.includes('maven.aliyun.com')) {
+              fs.writeFileSync(p, gradle);
+              patched++;
+              console.log('  ✅ mirror (sweep) → ' + path.relative(ROOT, p));
+            }
+          }
+        }
+      };
+      sweep(ANDROID_DIR);
+    } catch { /* sweep is best-effort */ }
     if (patched) {
       console.log(`  ✅ Aliyun public mirror active in ${patched} gradle file(s) — ahead of google()/mavenCentral().`);
     } else {
