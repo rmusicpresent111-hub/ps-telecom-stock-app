@@ -203,6 +203,16 @@ export interface DueEntry {
 
 export type PaymentMethod = 'cash' | 'upi' | 'card' | 'due';
 
+/** Receipt styles shown on the bill screen (v2.31.0 — 5 templates).
+ *  'royal-gold' is the original v2.25 receipt; the rest were added around it.
+ *  Old synced settings rows simply lack the field → treated as 'royal-gold'. */
+export type BillTemplateId =
+  | 'royal-gold'
+  | 'royal-blue'
+  | 'classic-white'
+  | 'modern-dark'
+  | 'thermal-58';
+
 export interface BillItem {
   productId: string;
   name: string;
@@ -274,5 +284,10 @@ export interface BillingSettings {
   thankYouNote: string;
   termsText: string;
   adminPin: string;         // legacy field (lock system removed v2.29.0) — kept so old synced rows decode
+  /** Bill receipt template — optional so pre-2.31 synced rows decode untouched
+   *  (missing = 'royal-gold'). Additive field: sync-safe, DB schema untouched. */
+  billTemplate?: BillTemplateId;
+  /** Thermal printer paper width — 58 (default, 32 chars) or 80 (48 chars). */
+  thermalWidthMm?: number;
   updatedAt: string;
 }

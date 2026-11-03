@@ -532,6 +532,114 @@ installAppLockPlugin();
 ensureBiometricDependency();
 
 // ---------------------------------------------------------------------------
+// STEP 5.7e — Native "BluetoothPrinter" plugin install (v2.31.0 — thermal
+// receipt printing). Copies native/android/BluetoothPrinter.java into the
+// android project and registers it in MainActivity. Same idempotent +
+// fail-soft strategy as the other local plugins: any problem only means the
+// Bluetooth Print button reports "unavailable" — everything else keeps
+// working, and NOTHING about sync/storage is touched.
+// ---------------------------------------------------------------------------
+function installBluetoothPrinterPlugin() {
+  console.log('\nStep 5.7e: Installing native BluetoothPrinter plugin (thermal receipts)...');
+  try {
+    const src = path.join(ROOT, 'native', 'android', 'BluetoothPrinter.java');
+    const cfgPath = path.join(ROOT, 'capacitor.config.json');
+    if (!exists(src) || !exists(cfgPath) || !exists(ANDROID_DIR)) {
+      console.log('  ⚠️  Skipping (native/android/BluetoothPrinter.java or android/ missing).');
+      return;
+    }
+    const appId = JSON.parse(fs.readFileSync(cfgPath, 'utf8')).appId;
+    const javaDir = path.join(ANDROID_DIR, 'app', 'src', 'main', 'java', ...appId.split('.'));
+    const mainActivity = path.join(javaDir, 'MainActivity.java');
+    if (!exists(mainActivity)) {
+      console.log('  ⚠️  MainActivity.java not found — skipping plugin install.');
+      return;
+    }
+
+    // 1) copy the plugin class with the real package name
+    fs.mkdirSync(javaDir, { recursive: true });
+    const java = fs.readFileSync(src, 'utf8').replace(/__PACKAGE_NAME__/g, appId);
+    fs.writeFileSync(path.join(javaDir, 'BluetoothPrinter.java'), java);
+
+    // 2) register it in MainActivity (handles every template shape — same
+    //    strategy as the other plugin installers above).
+    let ma = fs.readFileSync(mainActivity, 'utf8');
+    if (ma.includes('BluetoothPrinter')) {
+      console.log('  ✓ BluetoothPrinter already registered in MainActivity.');
+    } else if (ma.includes('super.onCreate(')) {
+      ma = ma.replace(
+        /(super\.onCreate\([^)]*\);)/,
+        '$1\n        // Local plugin: Bluetooth thermal receipt printing (ESC/POS)\n        registerPlugin(BluetoothPrinter.class);'
+      );
+      fs.writeFileSync(mainActivity, ma);
+    } else if (!ma.includes('onCreate(')) {
+      const onCreateMethod = [
+        '',
+        '    @Override',
+        '    protected void onCreate(android.os.Bundle savedInstanceState) {',
+        '        super.onCreate(savedInstanceState);',
+        '        // Local plugin: Bluetooth thermal receipt printing (ESC/POS)',
+        '        registerPlugin(BluetoothPrinter.class);',
+        '    }',
+        ''
+      ].join('\n');
+      const lastBrace = ma.lastIndexOf('}');
+      if (lastBrace === -1) {
+        console.log('  ⚠️  MainActivity.java has no closing brace — plugin NOT registered.');
+        return;
+      }
+      ma = ma.slice(0, lastBrace) + onCreateMethod + ma.slice(lastBrace);
+      fs.writeFileSync(mainActivity, ma);
+    } else {
+      console.log('  ⚠️  MainActivity has onCreate but no super.onCreate call — plugin NOT registered.');
+      return;
+    }
+    console.log(`  ✅ BluetoothPrinter installed for ${appId} (thermal receipt printing)`);
+  } catch (err) {
+    console.log(`  ⚠️  BluetoothPrinter install failed (${(err && err.message) || err}) — continuing; the print button just reports unavailable.`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// STEP 5.7f — BLUETOOTH permissions for the thermal printer plugin.
+// Android ≤ 11: BLUETOOTH/BLUETOOTH_ADMIN are normal install-time permissions
+// (needed to talk to an already-paired printer). Android 12+: BLUETOOTH_CONNECT
+// is a runtime permission the plugin asks for on first print. Idempotent.
+// ---------------------------------------------------------------------------
+function ensureBluetoothPermissions() {
+  console.log('\nStep 5.7f: Ensuring BLUETOOTH permissions in AndroidManifest...');
+  try {
+    const manifestPath = path.join(ANDROID_DIR, 'app', 'src', 'main', 'AndroidManifest.xml');
+    if (!exists(manifestPath)) {
+      console.log('  ⚠️  AndroidManifest.xml not found — skipping.');
+      return;
+    }
+    let mf = fs.readFileSync(manifestPath, 'utf8');
+    if (mf.includes('android.permission.BLUETOOTH_CONNECT')) {
+      console.log('  ✓ BLUETOOTH permissions already present.');
+      return;
+    }
+    const perms =
+      '<uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />\n' +
+      '    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />\n' +
+      '    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />';
+    const appIdx = mf.indexOf('<application');
+    if (appIdx === -1) {
+      console.log('  ⚠️  Could not find <application> in the manifest — skipping.');
+      return;
+    }
+    mf = mf.slice(0, appIdx) + perms + '\n    ' + mf.slice(appIdx);
+    fs.writeFileSync(manifestPath, mf);
+    console.log('  ✅ BLUETOOTH permissions injected — thermal printing can pair + print.');
+  } catch (err) {
+    console.log(`  ⚠️  Manifest patch failed (${(err && err.message) || err}) — continuing.`);
+  }
+}
+
+installBluetoothPrinterPlugin();
+ensureBluetoothPermissions();
+
+// ---------------------------------------------------------------------------
 // STEP 5.8 — App version stamp. Writes the version from package.json into
 // android/app/build.gradle (versionName "2.8.0" style) and derives a
 // monotonically increasing versionCode (major*10000 + minor*100 + patch →
@@ -567,6 +675,50 @@ function setAndroidVersion() {
   }
 }
 setAndroidVersion();
+
+// ---------------------------------------------------------------------------
+// STEP 5.8a — Maven mirror guard. Shared CI IPs (and some regions) get
+// HTTP 429 "Too Many Requests" from repo.maven.apache.org, which fails the
+// gradle classpath resolution mid-build. Putting a reliable Maven Central
+// mirror FIRST (Aliyun public — mirrors central 1:1) keeps resolution fast
+// and rate-limit-proof; google() + mavenCentral stay as fallbacks. Idempotent.
+// ---------------------------------------------------------------------------
+function ensureMavenMirror() {
+  console.log('\nStep 5.8a: Ensuring Maven Central mirror (429 guard)...');
+  try {
+    // The :capacitor-android library project (node_modules) declares its OWN
+    // buildscript repositories — the root patch alone does NOT cover it, and
+    // its AGP classpath is exactly where the 429s hit. Patch every gradle file
+    // that owns a repositories block.
+    const candidates = [
+      path.join(ANDROID_DIR, 'build.gradle'),
+      path.join(ANDROID_DIR, 'app', 'build.gradle'),
+      path.join(ROOT, 'node_modules', '@capacitor', 'android', 'capacitor', 'build.gradle'),
+    ];
+    let patched = 0;
+    for (const gradlePath of candidates) {
+      if (!exists(gradlePath)) continue;
+      let gradle = fs.readFileSync(gradlePath, 'utf8');
+      if (gradle.includes('maven.aliyun.com')) { patched++; continue; }
+      if (!/repositories\s*\{/.test(gradle)) continue;
+      const mirror = "maven { url 'https://maven.aliyun.com/repository/public' }";
+      gradle = gradle.replace(/repositories\s*\{\n(\s*)/g, (m0, ind) => `${m0}${ind}${mirror}\n${ind}`);
+      if (gradle.includes('maven.aliyun.com')) {
+        fs.writeFileSync(gradlePath, gradle);
+        patched++;
+        console.log('  ✅ mirror → ' + path.relative(ROOT, gradlePath));
+      }
+    }
+    if (patched) {
+      console.log(`  ✅ Aliyun public mirror active in ${patched} gradle file(s) — ahead of google()/mavenCentral().`);
+    } else {
+      console.log('  ⚠️  No repositories block found — mirror not added.');
+    }
+  } catch (err) {
+    console.log(`  ⚠️  Mirror setup failed (${(err && err.message) || err}) — continuing.`);
+  }
+}
+ensureMavenMirror();
 
 // ---------------------------------------------------------------------------
 // STEP 5.8b — PERSISTENT SIGNING. Uses the repo-tracked keystore

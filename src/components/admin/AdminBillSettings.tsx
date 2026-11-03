@@ -341,7 +341,7 @@ export default function AdminBillSettings() {
     if (!form) return '';
     const bill = latestBill || sampleBill(form);
     return buildBillReceiptHtml(bill, lang, form);
-  }, [form, latestBill, lang, previewOpen]);
+  }, [form, latestBill, lang]);
 
   if (!form) {
     return (

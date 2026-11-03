@@ -199,6 +199,30 @@ export type TranslationKeys = {
   sharePdf: string;
   whatsappSend: string;
   downloadPdf: string;
+  // Bill templates + Bluetooth thermal printing (v2.31.0)
+  billTemplate: string;
+  billTemplateDesc: string;
+  tplRoyalGold: string;
+  tplRoyalGoldDesc: string;
+  tplRoyalBlue: string;
+  tplRoyalBlueDesc: string;
+  tplClassicWhite: string;
+  tplClassicWhiteDesc: string;
+  tplModernDark: string;
+  tplModernDarkDesc: string;
+  tplThermal: string;
+  tplThermalDesc: string;
+  thermalWidth: string;
+  thermalWidthDesc: string;
+  bluetoothPrint: string;
+  selectPrinter: string;
+  pairedCount: string;
+  noPairedPrinter: string;
+  printing: string;
+  printSent: string;
+  printFailed: string;
+  printWebHint: string;
+  bluetoothBusy: string;
   pdfAttachManually: string;
   shareOpenInNewTab: string;
   makeBill: string;
@@ -553,6 +577,29 @@ const translations: Record<Language, TranslationKeys> = {
     sharePdf: 'PDF শেয়ার',
     whatsappSend: 'WhatsApp-এ পাঠান',
     downloadPdf: 'PDF ডাউনলোড',
+    billTemplate: 'বিল টেমপ্লেট',
+    billTemplateDesc: 'বিল স্ক্রিনে যে স্টাইল দেখাবে — ৫টার মধ্যে বাছুন',
+    tplRoyalGold: 'রয়েল গোল্ড',
+    tplRoyalGoldDesc: 'আগের প্রিমিয়াম সোনালি স্টাইল',
+    tplRoyalBlue: 'রয়েল ব্লু',
+    tplRoyalBlueDesc: 'A4 PDF-এর সাথে মেলা নেভি স্টাইল',
+    tplClassicWhite: 'ক্লাসিক হোয়াইট',
+    tplClassicWhiteDesc: 'সাদা কাগজ, কালো কালি — পুরনো ধাঁচ',
+    tplModernDark: 'মডার্ন ডার্ক',
+    tplModernDarkDesc: 'মিনিমাল, আধুনিক ডার্ক লুক',
+    tplThermal: 'থার্মাল রিসিট',
+    tplThermalDesc: 'ব্লুটুথ থার্মাল প্রিন্টারের আসল লুক',
+    thermalWidth: 'থার্মাল কাগজের প্রস্থ',
+    thermalWidthDesc: 'আপনার প্রিন্টারের রোল অনুযায়ী বাছুন',
+    bluetoothPrint: 'ব্লুটুথ প্রিন্ট',
+    selectPrinter: 'প্রিন্টার বাছুন',
+    pairedCount: 'টা পেয়ার করা ডিভাইস',
+    noPairedPrinter: 'কোনো পেয়ার করা ব্লুটুথ প্রিন্টার পাওয়া যায়নি — আগে ফোনের Bluetooth Settings থেকে প্রিন্টার পেয়ার করুন',
+    printing: 'প্রিন্ট হচ্ছে…',
+    printSent: 'প্রিন্ট হয়ে গেছে ✓',
+    printFailed: 'প্রিন্ট হয়নি',
+    printWebHint: 'ব্লুটুথ প্রিন্ট শুধু APK অ্যাপে কাজ করে',
+    bluetoothBusy: 'একটা প্রিন্ট চলছে, একটু অপেক্ষা করুন',
     pdfAttachManually: 'PDF ডাউনলোড হয়েছে — WhatsApp চ্যাটে 📎 চেপে ফাইলটা সংযুক্ত করে পাঠান',
     shareOpenInNewTab: 'শেয়ার করতে হলে আগে উপরের ডান কোণের "Open in New Tab" চেপে অ্যাপটা নিজস্ব ট্যাবে খুলুন, তারপর আবার চেষ্টা করুন',
     makeBill: 'ই-বিল করুন',
@@ -897,6 +944,29 @@ const translations: Record<Language, TranslationKeys> = {
     sharePdf: 'Share PDF',
     whatsappSend: 'Send on WhatsApp',
     downloadPdf: 'Download PDF',
+    billTemplate: 'Bill Template',
+    billTemplateDesc: 'Pick the receipt style shown on the bill screen',
+    tplRoyalGold: 'Royal Gold',
+    tplRoyalGoldDesc: 'The original premium gold style',
+    tplRoyalBlue: 'Royal Blue',
+    tplRoyalBlueDesc: 'Navy style matching the A4 PDF',
+    tplClassicWhite: 'Classic White',
+    tplClassicWhiteDesc: 'White paper, black ink — traditional',
+    tplModernDark: 'Modern Dark',
+    tplModernDarkDesc: 'Minimal, modern dark look',
+    tplThermal: 'Thermal Receipt',
+    tplThermalDesc: 'Real Bluetooth thermal printer look',
+    thermalWidth: 'Thermal paper width',
+    thermalWidthDesc: 'Choose per your printer roll',
+    bluetoothPrint: 'Bluetooth Print',
+    selectPrinter: 'Select printer',
+    pairedCount: 'paired device(s)',
+    noPairedPrinter: 'No paired Bluetooth printer found — pair your printer in the phone Bluetooth settings first',
+    printing: 'Printing…',
+    printSent: 'Printed ✓',
+    printFailed: 'Print failed',
+    printWebHint: 'Bluetooth print works in the APK app only',
+    bluetoothBusy: 'A print is already running — please wait',
     pdfAttachManually: 'PDF downloaded — open the WhatsApp chat and attach the file with 📎',
     shareOpenInNewTab: 'To share, first tap "Open in New Tab" (top-right) so the app opens in its own tab, then try again',
     makeBill: 'Make e-Bill',
@@ -1241,6 +1311,29 @@ const translations: Record<Language, TranslationKeys> = {
     sharePdf: 'PDF साझा करें',
     whatsappSend: 'WhatsApp पर भेजें',
     downloadPdf: 'PDF डाउनलोड',
+    billTemplate: 'बिल टेम्पलेट',
+    billTemplateDesc: 'बिल स्क्रीन पर दिखने वाला स्टाइल चुनें',
+    tplRoyalGold: 'रॉयल गोल्ड',
+    tplRoyalGoldDesc: 'पुराना प्रीमियम गोल्ड स्टाइल',
+    tplRoyalBlue: 'रॉयल ब्लू',
+    tplRoyalBlueDesc: 'A4 PDF जैसा नेवी स्टाइल',
+    tplClassicWhite: 'क्लासिक व्हाइट',
+    tplClassicWhiteDesc: 'सफ़ेद कागज़, काली स्याही — पारंपरिक',
+    tplModernDark: 'मॉडर्न डार्क',
+    tplModernDarkDesc: 'मिनिमल, आधुनिक डार्क लुक',
+    tplThermal: 'थर्मल रसीद',
+    tplThermalDesc: 'ब्लूटूथ थर्मल प्रिंटर की असली झलक',
+    thermalWidth: 'थर्मल कागज़ की चौड़ाई',
+    thermalWidthDesc: 'अपने प्रिंटर के रोल के अनुसार चुनें',
+    bluetoothPrint: 'ब्लूटूथ प्रिंट',
+    selectPrinter: 'प्रिंटर चुनें',
+    pairedCount: 'पेयर किए डिवाइस',
+    noPairedPrinter: 'कोई पेयर किया ब्लूटूथ प्रिंटर नहीं मिला — पहले फ़ोन की Bluetooth सेटिंग से प्रिंटर पेयर करें',
+    printing: 'प्रिंट हो रहा है…',
+    printSent: 'प्रिंट हो गया ✓',
+    printFailed: 'प्रिंट नहीं हुआ',
+    printWebHint: 'ब्लूटूथ प्रिंट केवल APK ऐप में काम करता है',
+    bluetoothBusy: 'एक प्रिंट चल रहा है, कृपया प्रतीक्षा करें',
     pdfAttachManually: 'PDF डाउनलोड हो गया — WhatsApp चैट में 📎 दबाकर फाइल जोड़कर भेजें',
     shareOpenInNewTab: 'शेयर करने के लिए पहले ऊपर दाईं ओर "Open in New Tab" दबाकर ऐप को अपने टैब में खोलें, फिर दोबारा कोशिश करें',
     makeBill: 'ई-बिल बनाएं',

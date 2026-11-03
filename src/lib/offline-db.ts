@@ -5,6 +5,7 @@
  */
 
 import { openDB, type IDBPDatabase } from 'idb';
+import { Bill, BillingSettings } from './types';
 
 const DB_NAME = 'ps-telecom-offline';
 // v10 (v2.23.0): + 'dueEntries' — custom due ledger (customer/product photos,
@@ -161,58 +162,25 @@ export interface OfflineDBSchema {
   };
   bills: {
     key: string;
-    value: {
-      id: string;
-      userId: string;
-      billNumber: string;
-      customerName: string;
-      customerMobile: string;
-      items: {
-        productId: string;
-        name: string;
-        quantity: number;
-        unitPrice: number;
-        total: number;
-      }[];
-      subtotal: number;
-      discountValue: number;
-      discountType: 'amount' | 'percent';
-      discountAmount: number;
-      gstEnabled: boolean;
-      gstRate: number;
-      gstAmount: number;
-      total: number;
-      paymentMethod: 'cash' | 'upi' | 'card' | 'due';
-      paidAmount: number;
-      dueAmount: number;
-      note: string;
-      transactionId: string;
-      shopSnapshot: { name: string; address: string; phone: string; gstNumber: string; proprietorName?: string };
-      date: string;
-      createdAt: string;
-      updatedAt: string;
+    // v2.31.0 — mirrors the real Bill type (was a stale partial copy that
+    // drifted: customerAddress, gstMode, taxableValue, cgst/sgst, categoryName
+    // and serialNumbers were missing). Runtime behaviour unchanged — IDB is
+    // schemaless; this only makes the compiler see what we actually store.
+    // _synced/_dirty are OPTIONAL because bill-create paths don't set them —
+    // the sync layer stamps them on afterwards (same as the old inline type).
+    value: Bill & {
+      _synced?: number; // timestamp of last sync
+      _dirty?: number; // 0 = synced, >0 = needs upload
     };
     indexes: { 'by-userId': string; 'by-date': string };
   };
   billingSettings: {
     key: string; // userId
-    value: {
-      userId: string;
-      shopName: string;
-      proprietorName: string;
-      shopAddress: string;
-      shopPhone: string;
-      gstNumber: string;
-      gstEnabled: boolean;
-      gstRate: number;
-      defaultDiscountPercent: number;
-      upiId: string;
-      signatureDataUrl: string;
-      qrCodeDataUrl: string;
-      billPrefix: string;
-      thankYouNote: string;
-      termsText: string;
-      updatedAt: string;
+    // v2.31.0 — mirrors the real BillingSettings type (gstMode, adminPin,
+    // billTemplate, thermalWidthMm were missing from the old inline copy).
+    value: BillingSettings & {
+      _synced?: number; // timestamp of last sync
+      _dirty?: number; // 0 = synced, >0 = needs upload
     };
     indexes: Record<never, never>;
   };

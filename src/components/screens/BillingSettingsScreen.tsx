@@ -5,7 +5,8 @@ import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { getBillingSettingsOffline, saveBillingSettingsOffline } from '@/lib/offline-service';
 import { fileToResizedDataUrl } from '@/lib/image-utils';
-import { ArrowLeft, Save, Store, UserRound, MapPin, Phone, Hash, Percent, Smartphone, PenLine, QrCode, Tag, HeartHandshake, ScrollText, Loader2 } from 'lucide-react';
+import { BILL_TEMPLATES } from '@/lib/bill-templates';
+import { ArrowLeft, Save, Store, UserRound, MapPin, Phone, Hash, Percent, Smartphone, PenLine, QrCode, Tag, HeartHandshake, ScrollText, Loader2, Palette, Printer, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { BillingSettings } from '@/lib/types';
 import type { Language } from '@/lib/types';
@@ -198,6 +199,61 @@ export default function BillingSettingsScreen() {
             <Field icon={Tag} label={t('billPrefix', language)} value={form.billPrefix} onChange={(v) => update('billPrefix', v.toUpperCase())} placeholder="PS" />
             <Field icon={HeartHandshake} label={t('thankYouNote', language)} value={form.thankYouNote} onChange={(v) => update('thankYouNote', v)} placeholder="Thank you for your business!" multiline />
             <Field icon={ScrollText} label={t('termsText', language)} value={form.termsText} onChange={(v) => update('termsText', v)} placeholder="" multiline />
+          </div>
+
+          {/* Bill template (v2.31.0 — 5 styles) */}
+          <div className="glass-card-strong p-5 space-y-3">
+            <div className="flex items-center gap-2">
+              <Palette size={16} className="text-emerald-400" />
+              <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wide">{t('billTemplate', language)}</p>
+            </div>
+            <p className="text-[11px] text-white/45">{t('billTemplateDesc', language)}</p>
+            <div className="space-y-2">
+              {BILL_TEMPLATES.map((tpl) => {
+                const active = (form.billTemplate ?? 'royal-gold') === tpl.id;
+                return (
+                  <button
+                    key={tpl.id}
+                    type="button"
+                    onClick={() => update('billTemplate', tpl.id)}
+                    aria-pressed={active}
+                    className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all border ${active ? 'border-emerald-400/50 bg-emerald-400/10' : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]'}`}
+                  >
+                    <span className="w-9 h-9 shrink-0 rounded-lg border border-white/15" style={{ background: tpl.swatch }} />
+                    <span className="min-w-0 flex-1">
+                      <span className={`block text-xs font-semibold ${active ? 'text-emerald-300' : 'text-white/85'}`}>{t(tpl.nameKey, language)}</span>
+                      <span className="block text-[10px] text-white/40 truncate">{t(tpl.descKey, language)}</span>
+                    </span>
+                    {active && <Check size={16} className="shrink-0 text-emerald-400" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Thermal paper width (for the Bluetooth printer) */}
+          <div className="glass-card-strong p-5 space-y-3">
+            <div className="flex items-center gap-2">
+              <Printer size={16} className="text-emerald-400" />
+              <p className="text-xs font-semibold text-emerald-400 uppercase tracking-wide">{t('thermalWidth', language)}</p>
+            </div>
+            <p className="text-[11px] text-white/45">{t('thermalWidthDesc', language)}</p>
+            <div className="grid grid-cols-2 gap-2">
+              {[58, 80].map((w) => {
+                const active = (form.thermalWidthMm ?? 58) === w;
+                return (
+                  <button
+                    key={w}
+                    type="button"
+                    onClick={() => update('thermalWidthMm', w)}
+                    aria-pressed={active}
+                    className={`py-2.5 text-xs font-semibold rounded-xl transition-all ${active ? 'neon-btn-solid' : 'glass-card text-white/60'}`}
+                  >
+                    {w} mm
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>

@@ -4,16 +4,22 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import {
-  getBillingSettingsOffline, createBillOffline, getBillByIdOffline, deleteBillOffline,
+  getBillingSettingsOffline, createBillOffline, getBillByIdOffline, deleteBillOffline, saveBillingSettingsOffline,
 } from '@/lib/offline-service';
+import { BILL_TEMPLATES } from '@/lib/bill-templates';
+import BillReceipt from '@/components/bill/BillReceipt';
+import {
+  isNativeApp, listPairedPrinters, printBillThermal, rememberPrinter, getRememberedPrinter,
+  type BtDevice,
+} from '@/lib/thermal-print';
 import {
   generateBillPdf, downloadBlob, sendBillViaWhatsapp, shopInitials, formatMoney, formatDate,
   isValidIndianMobile,
   type GeneratedPdf,
 } from '@/lib/bill-pdf';
 import { toastWhatsappResult } from '@/lib/share-toasts';
-import { BillingSettings, Bill, PaymentMethod } from '@/lib/types';
-import { ArrowLeft, FileText, Loader2, Trash2, Download, Share2, MessageCircle, ExternalLink, BadgeIndianRupee } from 'lucide-react';
+import { BillingSettings, Bill, PaymentMethod, BillTemplateId } from '@/lib/types';
+import { ArrowLeft, FileText, Loader2, Trash2, Download, Share2, MessageCircle, ExternalLink, BadgeIndianRupee, Printer } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 
@@ -155,6 +161,71 @@ export default function InvoiceScreen() {
     const due = Math.round((total - paid) * 100) / 100;
     return { subtotal, discountAmount, gstEnabled, gstAmount, total, paid, due };
   }, [pendingBillData, discountValue, discountType, settings, paymentMethod, paidAmount]);
+
+  // ---- v2.31.0: receipt templates + Bluetooth thermal printing ----
+  const [printing, setPrinting] = useState(false);
+  const [tplSaving, setTplSaving] = useState(false);
+  const [printerModal, setPrinterModal] = useState<{ bill: Bill; devices: BtDevice[] } | null>(null);
+
+  /** Switch the receipt template right on the bill screen (persisted + synced). */
+  const handleTemplateChange = useCallback(async (tpl: BillTemplateId) => {
+    if (!user?.id) return;
+    setTplSaving(true);
+    try {
+      const saved = await saveBillingSettingsOffline(user.id, { billTemplate: tpl });
+      setSettings(saved);
+    } catch {
+      toast.error(t('error', language));
+    } finally {
+      setTplSaving(false);
+    }
+  }, [user?.id, language]);
+
+  /** Send the ESC/POS receipt to one paired printer. */
+  const runPrint = useCallback(async (targetBill: Bill, device: BtDevice) => {
+    if (printing) {
+      toast.warning(t('bluetoothBusy', language));
+      return;
+    }
+    setPrinting(true);
+    try {
+      await printBillThermal(targetBill, settings, device.address);
+      rememberPrinter(device.address, device.name);
+      toast.success(t('printSent', language));
+    } catch (err) {
+      const code = (err as Error)?.message || '';
+      toast.error(`${t('printFailed', language)}${code && code !== 'print-error' ? ` (${code})` : ''}`);
+    } finally {
+      setPrinting(false);
+    }
+  }, [printing, settings, language]);
+
+  /** Entry point of the "Bluetooth Print" button: remembered/single printer
+   *  prints straight away, otherwise a picker modal lists paired devices. */
+  const handleBluetoothPrint = useCallback(async (targetBill: Bill) => {
+    if (!isNativeApp()) {
+      toast.info(t('printWebHint', language));
+      return;
+    }
+    try {
+      const devices = await listPairedPrinters();
+      if (!devices.length) {
+        toast.error(t('noPairedPrinter', language));
+        return;
+      }
+      const remembered = getRememberedPrinter();
+      const target = devices.find((d) => d.address === remembered?.address)
+        || (devices.length === 1 ? devices[0] : null);
+      if (target) {
+        await runPrint(targetBill, target);
+      } else {
+        setPrinterModal({ bill: targetBill, devices });
+      }
+    } catch (err) {
+      const code = (err as Error)?.message || '';
+      toast.error(`${t('printFailed', language)}${code ? ` (${code})` : ''}`);
+    }
+  }, [language, runPrint]);
 
   const handleGenerate = useCallback(async () => {
     if (!user?.id || !pendingBillData || !settings) return;
@@ -452,138 +523,32 @@ export default function InvoiceScreen() {
         <div className="max-w-md mx-auto px-4 pt-4">
           <InvoiceHeader goBack={goBack} title={mode === 'success' ? t('billSaved', language) : t('viewBill', language)} />
 
-          {/* Premium receipt-style preview */}
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="rounded-2xl overflow-hidden shadow-2xl mb-4 relative bg-[#0f1219] ring-1 ring-[#D4A853]/45 shadow-[0_12px_60px_-15px_rgba(212,168,83,0.45)]"
-          >
-            {/* watermark */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden" aria-hidden="true">
-              <span className="font-serif font-bold text-6xl text-white/[0.035] -rotate-[22deg] whitespace-nowrap tracking-widest select-none">
-                {bill.shopSnapshot?.name || settings?.shopName || 'PS TELECOM'}
-              </span>
-            </div>
+          {/* Receipt preview — 5 switchable templates (v2.31.0) */}
+          <BillReceipt
+            bill={bill}
+            settings={settings}
+            language={language}
+            template={settings?.billTemplate ?? 'royal-gold'}
+          />
 
-            <div className="h-1.5 bg-gradient-to-r from-amber-200 via-[#D4A853] to-amber-700" />
-
-            {/* header */}
-            <div className="bg-gradient-to-b from-[#1e2434] to-[#141927] px-5 py-4 relative">
-              <div className="flex items-start gap-3">
-                <div className="w-11 h-11 shrink-0 rounded-full bg-gradient-to-br from-amber-200 via-[#D4A853] to-amber-700 flex items-center justify-center shadow-lg shadow-amber-900/40 ring-2 ring-amber-200/30">
-                  <span className="font-serif font-bold text-[#1a1408] text-sm tracking-wide">
-                    {shopInitials(bill.shopSnapshot?.name || settings?.shopName || 'PS TELECOM')}
-                  </span>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-serif text-[21px] leading-tight font-bold tracking-[0.1em] bg-gradient-to-r from-amber-100 via-[#EBCB7F] to-amber-300 bg-clip-text text-transparent truncate">
-                    {bill.shopSnapshot?.name || settings?.shopName || 'PS TELECOM'}
-                  </p>
-                  {(bill.shopSnapshot?.proprietorName ?? settings?.proprietorName) && (
-                    <p className="font-serif italic text-[10px] text-amber-200/70 mt-0.5">
-                      Proprietor: {bill.shopSnapshot?.proprietorName ?? settings?.proprietorName}
-                    </p>
-                  )}
-                </div>
-                <div className="text-right shrink-0">
-                  <span className="text-[9px] font-bold bg-gradient-to-r from-amber-300 to-[#C89B4B] text-[#1a1408] px-2 py-0.5 rounded-sm shadow">{bill.gstEnabled ? 'TAX INVOICE' : 'INVOICE'}</span>
-                  <p className="text-[10px] text-white/60 mt-1.5">{bill.billNumber}</p>
-                  <p className="text-[10px] text-white/60">{formatDate(bill.date)}</p>
-                </div>
-              </div>
-              <div className="mt-2 text-[10px] text-white/45 leading-snug">
-                {bill.shopSnapshot?.address && <p className="whitespace-pre-line">{bill.shopSnapshot.address}</p>}
-                {(bill.shopSnapshot?.phone || bill.shopSnapshot?.gstNumber) && (
-                  <p className="mt-0.5">
-                    {bill.shopSnapshot?.phone && <span>Ph: {bill.shopSnapshot.phone}</span>}
-                    {bill.shopSnapshot?.phone && bill.shopSnapshot?.gstNumber && <span>{'  |  '}</span>}
-                    {bill.shopSnapshot?.gstNumber && <span>GSTIN: {bill.shopSnapshot.gstNumber}</span>}
-                  </p>
-                )}
-              </div>
-            </div>
-            <div className="h-px bg-gradient-to-r from-transparent via-[#D4A853]/70 to-transparent" />
-
-            {/* customer */}
-            <div className="px-5 py-3">
-              <p className="text-[9px] text-[#D4A853]/80 font-semibold tracking-[0.12em]">BILL TO</p>
-              <div className="flex justify-between items-center mt-0.5">
-                <p className="text-sm font-serif font-semibold text-white/90">{bill.customerName}</p>
-                {bill.customerMobile && <p className="text-xs text-white/60">Mob: {bill.customerMobile}</p>}
-              </div>
-            </div>
-            <div className="mx-5 h-px bg-white/5" />
-
-            {/* items */}
-            <div className="px-5 py-2">
-              <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 text-[9px] text-white/40 font-semibold py-2 border-b border-white/10 uppercase">
-                <span>{t('item', language)}</span>
-                <span className="text-right">{t('quantity', language)}/₹</span>
-                <span className="text-right w-16">{t('revenue', language)}</span>
-              </div>
-              {bill.items.map((item, idx) => (
-                <div key={idx} className="grid grid-cols-[1fr_auto_auto] gap-x-4 items-center py-2.5 border-b border-white/5">
-                  <span className="min-w-0">
-                    <span className="block text-xs text-white/85">{item.name}</span>
-                    {item.categoryName && (
-                      <span className="block text-[9px] font-semibold text-amber-400/80 mt-0.5">{item.categoryName}</span>
-                    )}
-                  </span>
-                  <span className="text-[11px] text-white/50 text-right">{item.quantity} × {formatMoney(item.unitPrice)}</span>
-                  <span className="text-xs font-semibold text-white/90 text-right w-16">₹{formatMoney(item.total)}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* totals */}
-            <div className="px-5 py-3 space-y-1.5">
-              <TotalRow label={t('subtotal', language)} value={`₹${formatMoney(bill.subtotal)}`} />
-              {bill.discountAmount > 0 && (
-                <TotalRow label={`${t('discount', language)}${bill.discountType === 'percent' ? ` (${bill.discountValue}%)` : ''}`} value={`-₹${formatMoney(bill.discountAmount)}`} accent="text-green-400" />
-              )}
-              {bill.gstEnabled && bill.gstAmount > 0 && (
-                <TotalRow label={`${t('gst', language)} (${bill.gstRate}%)`} value={`₹${formatMoney(bill.gstAmount)}`} />
-              )}
-              <div className="bg-gradient-to-r from-[#EDD494] via-[#D4A853] to-[#A67C34] rounded-lg px-3 py-2.5 flex justify-between items-center mt-2 shadow-md">
-                <span className="text-xs font-bold font-serif tracking-wide text-[#221a08]">{t('grandTotal', language)}</span>
-                <span className="text-lg font-bold font-serif text-[#221a08]">₹{formatMoney(bill.total)}</span>
-              </div>
-              {bill.dueAmount > 0 && (
-                <TotalRow label={t('dueAmount', language)} value={`₹${formatMoney(bill.dueAmount)}`} accent="text-red-400 font-semibold" />
-              )}
-              <div className="flex justify-between text-[11px] text-white/50 pt-1">
-                <span>{t('paymentMethod', language)}</span>
-                <span>{t(bill.paymentMethod, language)}</span>
-              </div>
-              {bill.note && <p className="text-[10px] text-white/40 italic pt-1">{t('note', language)}: {bill.note}</p>}
-            </div>
-
-            {/* qr + signature */}
-            <div className="px-5 pb-4 pt-1 flex items-end justify-between">
-              {settings?.qrCodeDataUrl ? (
-                <div className="text-center">
-                  { }
-                  <img src={settings.qrCodeDataUrl} alt="Payment QR" className="w-16 h-16 object-contain bg-white rounded-lg p-0.5 ring-1 ring-[#D4A853]/50" />
-                  {settings.upiId && <p className="text-[8px] text-white/40 mt-1">{settings.upiId}</p>}
-                </div>
-              ) : <span />}
-              <div className="text-right">
-                {settings?.signatureDataUrl && (
-                   
-                  <img src={settings.signatureDataUrl} alt="Signature" className="h-8 object-contain ml-auto mb-0.5" />
-                )}
-                <p className="text-[9px] text-white/50 border-t border-[#D4A853]/40 pt-1">For {bill.shopSnapshot?.name || 'PS TELECOM'}</p>
-                {(bill.shopSnapshot?.proprietorName ?? settings?.proprietorName) && (
-                  <>
-                    <p className="font-serif text-[11px] font-bold text-amber-100/90 mt-0.5">{bill.shopSnapshot?.proprietorName ?? settings?.proprietorName}</p>
-                    <p className="text-[8px] text-white/40">Proprietor</p>
-                  </>
-                )}
-              </div>
-            </div>
-            <p className="text-center font-serif italic text-[11px] text-amber-200/80 pb-3 font-medium relative">{settings?.thankYouNote || 'Thank you for your business!'}</p>
-            <div className="h-1.5 bg-gradient-to-r from-amber-700 via-[#D4A853] to-amber-200" />
-          </motion.div>
+          {/* Quick template switcher — tap to restyle + auto-save */}
+          <div className="flex gap-1.5 overflow-x-auto pb-1.5 mb-4" role="tablist" aria-label={t('billTemplate', language)}>
+            {BILL_TEMPLATES.map((tpl) => {
+              const active = (settings?.billTemplate ?? 'royal-gold') === tpl.id;
+              return (
+                <button
+                  key={tpl.id}
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => handleTemplateChange(tpl.id)}
+                  disabled={tplSaving}
+                  className={`shrink-0 px-3 py-1.5 rounded-full text-[10px] font-semibold border transition-all disabled:opacity-50 ${active ? 'border-emerald-400/60 bg-emerald-400/15 text-emerald-300' : 'border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.08]'}`}
+                >
+                  {t(tpl.nameKey, language)}
+                </button>
+              );
+            })}
+          </div>
 
           {/* Share actions */}
           <div className="space-y-2.5">
@@ -609,6 +574,16 @@ export default function InvoiceScreen() {
             </div>
           </div>
 
+          {/* Bluetooth thermal print (v2.31.0) */}
+          <button
+            onClick={() => handleBluetoothPrint(bill)}
+            disabled={printing}
+            className="w-full py-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 glass-card disabled:opacity-50"
+          >
+            {printing ? <Loader2 size={16} className="animate-spin text-white/60" /> : <Printer size={16} className="text-amber-300" />}
+            {printing ? t('printing', language) : t('bluetoothPrint', language)}
+          </button>
+
           {mode === 'success' ? (
             <button onClick={handleDone} className="neon-btn w-full py-3 mt-4 text-sm font-semibold">
               {t('history', language)} →
@@ -622,6 +597,33 @@ export default function InvoiceScreen() {
             </button>
           )}
         </div>
+
+        {/* Bluetooth printer picker (v2.31.0) */}
+        {printerModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setPrinterModal(null)}>
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card-strong p-6 mx-4 w-full max-w-sm max-h-[70vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-base font-bold mb-1 text-emerald-400">{t('selectPrinter', language)}</h3>
+              <p className="text-[11px] text-white/40">{printerModal.devices.length} {t('pairedCount', language)}</p>
+              <div className="space-y-2 mt-3">
+                {printerModal.devices.map((d) => (
+                  <button
+                    key={d.address}
+                    onClick={() => {
+                      const m = printerModal;
+                      setPrinterModal(null);
+                      void runPrint(m.bill, d);
+                    }}
+                    className="w-full glass-card px-3 py-2.5 rounded-xl text-left hover:bg-white/[0.08] transition-colors"
+                  >
+                    <span className="block text-sm font-semibold text-white/90">{d.name}</span>
+                    <span className="block text-[10px] text-white/40 font-mono">{d.address}</span>
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => setPrinterModal(null)} className="neon-btn w-full py-2 mt-4 text-sm font-semibold">{t('cancel', language)}</button>
+            </motion.div>
+          </div>
+        )}
 
         {/* Delete confirm */}
         {showDeleteConfirm && (

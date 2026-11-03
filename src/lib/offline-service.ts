@@ -31,7 +31,8 @@ import { getLocalUser, updateLocalUser } from './local-auth';
 import { generateRecordId } from './id';
 import { notifyLocalDataChanged, notifyLocalWipe } from './sync-events';
 import { computeGst, normalizeGstMode, round2 } from './gst';
-import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillItem, BillingSettings, PaymentMethod, StaffPayment, StaffPaymentKind, Investment, DueEntry, DueScheduleItem } from './types';
+import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillItem, BillingSettings, PaymentMethod, StaffPayment, StaffPaymentKind, Investment, DueEntry, DueScheduleItem, BillTemplateId } from './types';
+import { BILL_TEMPLATE_IDS } from './bill-templates';
 
 // ============ DATE HELPERS (local timezone — never use UTC for business days) ============
 
@@ -1999,12 +2000,25 @@ export const DEFAULT_BILLING_SETTINGS: Omit<BillingSettings, 'userId' | 'updated
   thankYouNote: 'Thank you for your business!',
   termsText: '',
   adminPin: '9732881732', // admin panel security PIN (change in Bill Settings)
+  billTemplate: 'royal-gold', // receipt style (v2.31.0)
+  thermalWidthMm: 58,         // thermal printer paper width
 };
 
 export async function getBillingSettingsOffline(userId: string): Promise<BillingSettings> {
   const db = await getOfflineDB();
   const existing = await db.get('billingSettings', userId);
-  if (existing) return { ...existing, gstMode: normalizeGstMode(existing.gstMode) };
+  if (existing) {
+    return {
+      ...existing,
+      gstMode: normalizeGstMode(existing.gstMode),
+      // v2.31.0 additive fields — old synced rows lack them; normalize instead
+      // of mutating the stored row (keeps _sv/_dirty sync bookkeeping intact).
+      billTemplate: BILL_TEMPLATE_IDS.includes(existing.billTemplate as BillTemplateId)
+        ? (existing.billTemplate as BillTemplateId)
+        : 'royal-gold',
+      thermalWidthMm: existing.thermalWidthMm === 80 ? 80 : 58,
+    };
+  }
   return {
     ...DEFAULT_BILLING_SETTINGS,
     userId,
@@ -2677,7 +2691,7 @@ export async function importBackupOffline(userId: string, backupData: {
       total: 'num',
       paidAmount: 'num',
       dueAmount: 'num',
-    }) as OfflineDBSchema['bills']['value']
+    }) as unknown as OfflineDBSchema['bills']['value']
   );
   const staffRows: OfflineDBSchema['staffPayments']['value'][] = staffPayments.map(
     (row) => coerce({
