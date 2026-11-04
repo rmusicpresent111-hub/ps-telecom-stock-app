@@ -696,6 +696,18 @@ function ensureMavenMirror() {
       path.join(ANDROID_DIR, 'capacitor-cordova-android-plugins', 'build.gradle'),
       path.join(ROOT, 'node_modules', '@capacitor', 'android', 'capacitor', 'build.gradle'),
     ];
+    // v2.36.0: EVERY installed @capacitor plugin owns its own buildscript
+    // repositories block (e.g. @capacitor/filesystem) — a root/app patch does
+    // not cover it, and its Kotlin classpath is exactly where 429s hit.
+    try {
+      const capDir = path.join(ROOT, 'node_modules', '@capacitor');
+      for (const name of fs.readdirSync(capDir)) {
+        const g = path.join(capDir, name, 'android', 'build.gradle');
+        if (!candidates.includes(g) && exists(g)) candidates.push(g);
+      }
+    } catch {
+      /* no node_modules/@capacitor — nothing to scan */
+    }
     let patched = 0;
     for (const gradlePath of candidates) {
       if (!exists(gradlePath)) continue;
