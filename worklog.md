@@ -2278,7 +2278,7 @@ Stage Summary:
 - Bluetooth thermal printing ships in the APK: pair the Hoin printer in phone Bluetooth settings once → Bill → "Bluetooth Print" → picks the remembered printer (or asks once) → ESC/POS receipt at 58mm or 80mm, with a 3-strategy connect designed for cheap SPP printers
 - Database fully untouched (optional fields inside the existing settings blob only); 4 real bugs fixed (stale IDB types, bare modal number, wasteful recompute, preview≠paper mismatch)
 
-## Task 81 — v2.35.0 — Full-project code audit: critical sync data-loss fix + security hardening + dead-code purge
+## Task 85 — v2.36.0 — Full-project code audit: critical sync data-loss fix + security hardening + dead-code purge
 
 Scope: whole-repo audit (4 parallel deep-scan agents: dead code, core lib bugs, security, UI bugs) — every finding re-verified by hand before touching code.
 
@@ -2313,3 +2313,5 @@ DEAD CODE PURGE (60 files deleted, 7 dead functions cut, 33 exports removed, 48 
 - Formatters in print.ts intentionally NOT deduped (documented "standalone — no React imports" design).
 
 VERIFY: rm tsbuildinfo → fresh tsc 0 errors; eslint 0; dev server clean restart; agent-browser E2E: welcome→tutorial→dashboard, add product (atomic opening lot), category→detail, Instant Sell triple-click = ONE sale (10→8), second sale + e-Bill → inclusive GST total ₹150 (was ₹177), bill PS-2611-0001 + PDF chain, admin panel, reports (no raw i18n keys), Bill Settings A4 preview renders (renamed A4SheetPreview), dev.log clean, app still fully offline-first.
+
+- MERGE REPAIR: this audit was coded against a stale v2.31.0 checkout while origin had moved to v2.35.0 (Tasks 81-84: direct PDF engine, per-category PDF). The rebase hybrid was broken (tsc: ThermalPrintModal refs, duplicate i18n key, thermal-print mangle) — repaired by re-basing the 9 overlapping files (AdminBillSettings/AdminBills/AdminReports/print/admin-i18n/thermal-print/package.json) on origin's v2.35.0 content and re-applying the audit fixes on top; non-overlapping audit fixes (offline-service _dirty protocol, d1-sync tombstone/markPushedRows, route.ts hardening, all screen busyRef fixes, dead-code purge of 60 files, dep purge) merged cleanly and were re-verified. html2canvas (added by Task 83) kept. Version re-set to 2.36.0/23600 because origin already shipped 2.35.0/23500.

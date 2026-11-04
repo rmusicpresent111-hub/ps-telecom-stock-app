@@ -48,10 +48,10 @@ function esc(s: unknown): string {
 }
 
 /**
- * v2.35.0 audit: signature/QR land in an <img src="..."> attribute inside the
- * print document (same-origin iframe). A settings value like
- * `x" onerror="…` must never break out of the attribute — only accept real
- * data:image/* URLs, escape the attribute, drop everything else.
+ * v2.36.0 audit: signature/QR land in an <img src="..."> attribute inside the
+ * print document (same-origin iframe / A4 preview srcDoc). A settings value
+ * like `x" onerror="…` must never break out of the attribute — only accept
+ * real data:image/* URLs, escape the attribute, drop everything else.
  */
 function safeImgDataUrl(v: unknown): string {
   const raw = typeof v === 'string' ? v.trim() : '';
@@ -753,7 +753,7 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
 
 // ── document 2: sold-products report (all bills in a period) ───
 
-function buildSoldProductsReportHtml(
+export function buildSoldProductsReportHtml(
   bills: Bill[],
   opts: { from?: string; to?: string; lang: AdminLang; settings?: BillingSettings | null }
 ): string {
@@ -889,7 +889,7 @@ ${detailRows ? `<p class="sec">${esc(t('print.detailList'))}</p>
     ${shop.name ? `<p class="sig-for"${shop.signature ? ' style="margin-bottom:2px"' : ''}>${esc(
       taf('print.sigFor', lang, { shop: shop.name })
     )}</p>` : ''}
-    ${shop.signature ? `<img src="${shop.signature}" alt="signature">` : ''}
+    ${(() => { const sg = safeImgDataUrl(shop.signature); return sg ? `<img src="${sg}" alt="signature">` : ''; })()}
     <div class="sig-line">${esc(t('print.authorised'))}</div>
   </div>
 </div>
@@ -907,13 +907,13 @@ ${termsBlock}
 
 // ── document 3: generic business report (reports page tabs) ────
 
-interface ReportColumn {
+export interface ReportColumn {
   label: string;
   right?: boolean;
   width?: string;
 }
 
-interface ReportTable {
+export interface ReportTable {
   sectionTitle?: string;
   columns: ReportColumn[];
   /** Pre-escaped HTML cell values, aligned with columns. */
@@ -922,7 +922,7 @@ interface ReportTable {
   totalRow?: string[];
 }
 
-interface GenericReportOpts {
+export interface GenericReportOpts {
   title: string;
   periodLabel?: string;
   lang: AdminLang;
@@ -940,7 +940,7 @@ export function escHtml(s: unknown): string {
   return esc(s);
 }
 
-function buildGenericReportHtml(opts: GenericReportOpts): string {
+export function buildGenericReportHtml(opts: GenericReportOpts): string {
   const lang = opts.lang;
   const t = (k: string) => ta(k, lang);
   const shop = resolveShop({ shopSnapshot: {} } as unknown as Bill, opts.settings);
@@ -1011,7 +1011,7 @@ ${opts.note ? `<p style="font-size:10.5px;color:#6B7280;margin:10px 0 0">${esc(o
     ${shop.name ? `<p class="sig-for"${shop.signature ? ' style="margin-bottom:2px"' : ''}>${esc(
       taf('print.sigFor', lang, { shop: shop.name })
     )}</p>` : ''}
-    ${shop.signature ? `<img src="${shop.signature}" alt="signature">` : ''}
+    ${(() => { const sg = safeImgDataUrl(shop.signature); return sg ? `<img src="${sg}" alt="signature">` : ''; })()}
     <div class="sig-line">${esc(t('print.authorised'))}</div>
   </div>
 </div>

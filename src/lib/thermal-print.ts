@@ -163,7 +163,13 @@ class EscPosBuilder {
  *   • admin thermal-web.ts    → desktop USB (Web Serial) + print dialog (HTML)
  * Each line carries alignment/size hints; text is ASCII-sanitised here.
  */
-function buildEscPosReceipt(bill: Bill, settings: BillingSettings | null): Uint8Array {
+export interface ThermalLine {
+  text: string;
+  center?: boolean;
+  big?: boolean;
+}
+
+export function buildReceiptLines(bill: Bill, settings: BillingSettings | null): ThermalLine[] {
   const cols = thermalColumns(settings?.thermalWidthMm ?? 58);
   const lines: ThermalLine[] = [];
   // split('\n') FIRST (before asciiLine, which strips control chars incl. \n)

@@ -88,7 +88,6 @@ const D: Record<string, Entry> = {
 
   // ── products ─────────────────────────────────────────────────
   'prod.title': { bn: 'স্টক / প্রোডাক্ট', en: 'Products / Stock', hi: 'स्टॉक / प्रोडक्ट' },
-  'prod.products': { bn: 'প্রোডাক্ট', en: 'Products', hi: 'उत्पाद' }, // v2.35.0 audit: was missing — reports rendered the raw key
   'prod.add': { bn: 'নতুন প্রোডাক্ট', en: 'Add Product', hi: 'नया प्रोडक्ट' },
   'prod.newCategory': { bn: 'নতুন ক্যাটাগরি', en: 'New category', hi: 'नई श्रेणी' },
   'prod.categoryName': { bn: 'ক্যাটাগরির নাম', en: 'Category name', hi: 'श्रेणी का नाम' },

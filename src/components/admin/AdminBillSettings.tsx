@@ -40,6 +40,8 @@ import { computeGst, normalizeGstMode, halfRate } from '@/lib/gst';
 import { useAdminDataTick } from './useAdminData';
 import { buildBillReceiptHtml, printHtml } from './print';
 import A4Preview from './A4SheetPreview';
+import ThermalPrintModal from './ThermalPrintModal';
+import { makeThermalTestBill } from './thermal-web';
 import {
   AdminCard,
   Badge,

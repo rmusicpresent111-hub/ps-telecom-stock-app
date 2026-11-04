@@ -186,9 +186,9 @@ export default function AdminReports() {
     const prodMap = new Map<string, { name: string; qty: number; revenue: number }>();
 
     for (const x of sales) {
-      // v2.35.0 audit: for a deleted product the row's snapshot is gone — fall
-      // back to the current product's purchasePrice (same as mobile ProfitScreen)
-      // instead of 0, which overstated profit.
+      // v2.36.0 audit: for a deleted product the row's snapshot is gone —
+      // fall back to the current product's purchasePrice (same as mobile
+      // ProfitScreen) instead of 0, which overstated profit.
       const cost = (x.quantity || 0) * (x.product?.purchasePrice ?? products.find((p) => p.id === x.productId)?.purchasePrice ?? 0);
       const profit = (x.totalAmount || 0) - cost;
       totalSales += x.totalAmount || 0;

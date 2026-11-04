@@ -25,6 +25,7 @@ import {
   printSoldProductsReport,
 } from './print';
 import A4Preview from './A4SheetPreview';
+import ThermalPrintModal from './ThermalPrintModal';
 import {
   AdminCard,
   Badge,
