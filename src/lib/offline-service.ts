@@ -779,11 +779,14 @@ export async function getTransactionsOffline(userId: string, options?: { type?: 
 // ============ DASHBOARD (Local) ============
 
 export async function getDashboardOffline(userId: string) {
-  const [localProducts, localCategories, localTransactions, localBills] = await Promise.all([
+  const [localProducts, localCategories, localTransactions, localBills, localDueEntries] = await Promise.all([
     offlineProducts.getAll(userId),
     offlineCategories.getAll(userId),
     offlineTransactions.getAll(userId),
     offlineBills.getAll(userId),
+    // v2.37.0: বাকি এন্ট্রি (custom credit ledger) counts toward the Due Book
+    // banner too — the old banner silently ignored standalone dues.
+    offlineDueEntries.getAll(userId),
   ]);
 
   const products = localProducts.map(p => stripSync<Product>(p));
@@ -864,8 +867,17 @@ export async function getDashboardOffline(userId: string) {
   }, 0);
 
   // ---- Due Book aggregates (customer credit) — same pass, no extra store scan
-  const totalDue = round2(localBills.reduce((sum, b) => sum + (b.dueAmount || 0), 0));
-  const dueBills = localBills.filter(b => (b.dueAmount || 0) > 0.009).length;
+  // v2.37.0: bill dues + বাকি এন্ট্রি outstanding = the money customers owe.
+  const entryDue = round2(localDueEntries.reduce(
+    (sum, e) => sum + Math.max(0, round2((Number(e.amount) || 0) - (Number(e.paidAmount) || 0))),
+    0
+  ));
+  const totalDue = round2(
+    localBills.reduce((sum, b) => sum + (b.dueAmount || 0), 0) + entryDue
+  );
+  const dueBills =
+    localBills.filter(b => (b.dueAmount || 0) > 0.009).length +
+    localDueEntries.filter(e => (Number(e.amount) || 0) - (Number(e.paidAmount) || 0) > 0.009).length;
 
   return {
     stats: {
@@ -2247,6 +2259,8 @@ export async function createCartBillOffline(data: {
   customerMobile?: string;
   customerAddress?: string;
   paymentMethod?: PaymentMethod;
+  /** Partial payment at checkout — undefined/'' = full cash; 'due' method forces 0. */
+  paidAmount?: number;
   note?: string;
   date?: string;
 }): Promise<{ bill: Bill }> {
@@ -2411,7 +2425,11 @@ export async function createCartBillOffline(data: {
   const total = breakup.total;
 
   const paymentMethod: PaymentMethod = data.paymentMethod ?? 'cash';
-  const paidAmount = paymentMethod === 'due' ? 0 : total;
+  // v2.37.0: checkout can pay PART of the total now — the rest lands in the
+  // Due Book automatically (mirrors createBillOffline). 'due' = nothing paid.
+  let paidAmount = data.paidAmount === undefined ? total : Math.max(0, Number(data.paidAmount) || 0);
+  if (paymentMethod === 'due') paidAmount = 0;
+  paidAmount = round2(Math.min(paidAmount, total));
   const dueAmount = round2(total - paidAmount);
 
   const existingBills = await billsOs.index('by-userId').getAll(data.userId);

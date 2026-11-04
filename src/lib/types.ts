@@ -85,9 +85,9 @@ export interface DashboardStats {
   lowItems: number;
   todayTransactions: number;
   stockValue: number;
-  /** Sum of all bills' dueAmount — powers the dashboard Due Book banner. */
+  /** All customer credit — bills' dueAmount + বাকি এন্ট্রি outstanding. Powers the dashboard Due Book banner. */
   totalDue: number;
-  /** How many bills still carry a due. */
+  /** How many bills/বাকি এন্ট্রি still carry an outstanding amount. */
   dueBills: number;
 }
 

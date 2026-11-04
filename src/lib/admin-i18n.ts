@@ -41,7 +41,7 @@ const D: Record<string, Entry> = {
   'dash.noLowStock': { bn: 'সব প্রোডাক্টে যথেষ্ট স্টক আছে 🎉', en: 'All products are well stocked 🎉', hi: 'सभी प्रोडक्ट में पर्याप्त स्टॉक है 🎉' },
   'dash.quickActions': { bn: 'কুইক অ্যাকশন', en: 'Quick Actions', hi: 'क्विक एक्शन' },
   'dash.viewAll': { bn: 'সব দেখুন', en: 'View all', hi: 'सभी देखें' },
-  'dash.items': { bn: 'টি বিল', en: 'bills', hi: 'बिल' },
+  'dash.items': { bn: 'টি বাকি', en: 'dues', hi: 'बाकी' },
 
   // ── cash book + others invest (v2.20.0) ─────────────────────
   'nav.cash': { bn: 'ক্যাশ', en: 'Cash', hi: 'कैश' },
@@ -363,6 +363,13 @@ const D: Record<string, Entry> = {
     hi: 'कार्ट के प्रोडक्ट अभी बिके नहीं — स्टॉक और इतिहास "बिक्री पूर्ण करें" दबाने पर ही बदलेगा',
   },
   'cart.remaining': { bn: 'বাকি', en: 'left', hi: 'शेष' },
+  // ── cart checkout: due / partial payment (v2.37.0) ──────────
+  'cart.paidNow': { bn: 'এখন যত দিচ্ছেন (ঐচ্ছিক)', en: 'Paid now (optional)', hi: 'अभी भुगतान (वैकल्पिक)' },
+  'cart.dueRemain': { bn: 'বিল সেভ হওয়ার পর বাকি থাকবে', en: 'Due remaining after save', hi: 'सेव होने के बाद बाकी' },
+  'cart.pastDue': { bn: 'এই কাস্টমারের আগের বাকি — বাকির খাতা', en: "This customer's previous dues — Due Book", hi: 'इस ग्राहक का पुराना बाकी — बाकी खाता' },
+  'cart.pastDueBillTag': { bn: 'বিল', en: 'Bill', hi: 'बिल' },
+  'cart.pastDueEntryTag': { bn: 'বাকি এন্ট্রি', en: 'Due entry', hi: 'बाकी एंट्री' },
+  'cart.pastDueMore': { bn: 'আরও', en: 'more', hi: 'और' },
   'qsell.address': { bn: 'ঠিকানা (ঐচ্ছিক)', en: 'Address (optional)', hi: 'पता (वैकल्पिक)' },
   'qsell.updatedInCart': { bn: 'এই প্রোডাক্ট আগেই কার্টে আছে — এডিট করুন', en: 'Already in cart — edit its line', hi: 'पहले से कार्ट में — लाइन संपादित करें' },
   'qsell.cartEmptyErr': { bn: 'কার্ট খালি — আগে প্রোডাক্ট যোগ করুন', en: 'Cart is empty — add products first', hi: 'कार्ट खाली — पहले प्रोडक्ट जोड़ें' },

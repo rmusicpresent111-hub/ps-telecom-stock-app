@@ -47,6 +47,9 @@ import {
   getCategoriesOffline,
   createCartBillOffline,
   getBillingSettingsOffline,
+  getBillsOffline,
+  getDueEntriesOffline,
+  dueEntryOutstanding,
 } from '@/lib/offline-service';
 import { DEFAULT_USER_ID } from '@/lib/local-auth';
 import { computeGst, normalizeGstMode, round2, halfRate } from '@/lib/gst';
@@ -54,10 +57,10 @@ import { useAdminStore } from '@/store/adminStore';
 import { ta, taf } from '@/lib/admin-i18n';
 import { Badge, Btn, Field, Modal, TextInput, adminToast, fmtMoney } from './admin-ui';
 import { printBillReceipt } from './print';
-import type { Bill, BillingSettings, Category, PaymentMethod, Product } from '@/lib/types';
+import type { Bill, BillingSettings, Category, DueEntry, PaymentMethod, Product } from '@/lib/types';
 
-/** Payment choices of the cart flow — exactly Cash / Card / UPI. */
-const METHODS: PaymentMethod[] = ['cash', 'card', 'upi'];
+/** Payment choices of the cart flow — Cash / UPI / Card / বাকি (Due Book). */
+const METHODS: PaymentMethod[] = ['cash', 'upi', 'card', 'due'];
 
 /** One line of the cart — a snapshot of what was added (revalidated at checkout). */
 interface CartLine {
@@ -130,10 +133,15 @@ export default function SellCartModal({
   const [customerMobile, setCustomerMobile] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
   const [method, setMethod] = useState<PaymentMethod>('cash');
+  /** Partial payment at checkout — '' = pay the full total now. */
+  const [paidNow, setPaidNow] = useState('');
   const [note, setNote] = useState('');
 
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<Bill | null>(null);
+
+  // open dues (bills + বাকি এন্ট্রি) — powers the "this customer owes" card
+  const [openDues, setOpenDues] = useState<{ bills: Bill[]; entries: DueEntry[] }>({ bills: [], entries: [] });
 
   // report the pending cart count upward (header cart badge) — ref keeps the
   // effect stable even though the parent passes a fresh callback each render
@@ -162,6 +170,13 @@ export default function SellCartModal({
     getBillingSettingsOffline(DEFAULT_USER_ID)
       .then((s) => {
         if (alive) setBillSettings(s);
+      })
+      .catch(() => undefined);
+    // v2.37.0: load the Due Book so checkout can show the customer's
+    // previous dues right while billing ("bill korar somoy due book dekha jay")
+    Promise.all([getBillsOffline(DEFAULT_USER_ID), getDueEntriesOffline(DEFAULT_USER_ID)])
+      .then(([bs, es]) => {
+        if (alive) setOpenDues({ bills: bs, entries: es });
       })
       .catch(() => undefined);
     return () => {
@@ -256,6 +271,35 @@ export default function SellCartModal({
   const gstMode = normalizeGstMode(billSettings?.gstMode);
   const breakup = gstOn && cartSubtotal > 0 ? computeGst(cartSubtotal, billSettings?.gstRate || 0, gstMode) : null;
   const grand = breakup ? breakup.total : cartSubtotal;
+
+  // ── checkout: paid-now preview + what stays in the Due Book ──
+  const paidPreview = method === 'due' ? 0 : paidNow.trim() === '' ? grand : Math.min(Math.max(0, Number(paidNow) || 0), grand);
+  const duePreview = round2(grand - paidPreview);
+
+  // ── the customer's PREVIOUS dues (bills + বাকি এন্ট্রি) ──────
+  // mobile number wins (exact digits); name match is the fallback when no
+  // mobile is typed — so billing always shows the Due Book side-by-side.
+  const cmDigits = customerMobile.replace(/\D/g, '');
+  const cnKey = customerName.trim().toLowerCase();
+  const pastDues = useMemo(() => {
+    if (!cmDigits && !cnKey) return [];
+    const hits: { tag: 'bill' | 'entry'; label: string; due: number }[] = [];
+    for (const b of openDues.bills) {
+      if ((Number(b.dueAmount) || 0) <= 0.009) continue;
+      const bMob = (b.customerMobile || '').replace(/\D/g, '');
+      const hit = cmDigits ? bMob === cmDigits : (b.customerName || '').trim().toLowerCase() === cnKey;
+      if (hit) hits.push({ tag: 'bill', label: b.billNumber || '—', due: Number(b.dueAmount) || 0 });
+    }
+    for (const e of openDues.entries) {
+      const out = dueEntryOutstanding(e);
+      if (out <= 0.009) continue;
+      const eMob = (e.customerMobile || '').replace(/\D/g, '');
+      const hit = cmDigits ? eMob === cmDigits : (e.customerName || '').trim().toLowerCase() === cnKey;
+      if (hit) hits.push({ tag: 'entry', label: e.productName, due: out });
+    }
+    return hits.sort((a, b) => b.due - a.due);
+  }, [openDues, cmDigits, cnKey]);
+  const pastDueTotal = round2(pastDues.reduce((s, h) => s + h.due, 0));
 
   // ── cart actions ─────────────────────────────────────────────
   const openForProduct = (p: Product) => {
@@ -363,6 +407,7 @@ export default function SellCartModal({
         customerMobile,
         customerAddress,
         paymentMethod: method,
+        paidAmount: method === 'due' ? 0 : paidNow.trim() === '' ? undefined : Math.max(0, Number(paidNow) || 0),
         note,
       });
       setDone(bill);
@@ -373,6 +418,7 @@ export default function SellCartModal({
       setCustomerMobile('');
       setCustomerAddress('');
       setMethod('cash');
+      setPaidNow('');
       setNote('');
       adminToast(`${t('qsell.done')} · ${bill.billNumber}`);
     } catch (err) {
@@ -805,6 +851,32 @@ export default function SellCartModal({
             </Field>
           </div>
 
+          {/* v2.37.0 — the Due Book, visible WHILE billing: matches the typed
+              mobile (exact digits) or name and lists every open due */}
+          {pastDues.length > 0 && (
+            <div className="rounded-xl border border-[#DC2626]/25 bg-[var(--psa-soft-red)] px-3.5 py-3 space-y-1.5" data-testid="cart-past-due">
+              <p className="flex items-center justify-between gap-2 text-xs font-bold text-[#DC2626]">
+                <span className="truncate">{t('cart.pastDue')}</span>
+                <span className="tabular-nums shrink-0">{fmtMoney(pastDueTotal)}</span>
+              </p>
+              <div className="space-y-0.5 max-h-24 overflow-y-auto">
+                {pastDues.slice(0, 6).map((h, i) => (
+                  <p key={`${h.tag}-${h.label}-${i}`} className="flex items-center justify-between gap-2 text-[11px] text-[var(--psa-sub)]">
+                    <span className="truncate">
+                      {h.tag === 'bill' ? `${t('cart.pastDueBillTag')} ${h.label}` : `${t('cart.pastDueEntryTag')} · ${h.label}`}
+                    </span>
+                    <span className="tabular-nums shrink-0 pl-2">{fmtMoney(h.due)}</span>
+                  </p>
+                ))}
+                {pastDues.length > 6 && (
+                  <p className="text-[10px] text-[var(--psa-faint)]">
+                    +{pastDues.length - 6} {t('cart.pastDueMore')}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
           <Field label={t('qsell.address')}>
             <TextInput value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} />
           </Field>
@@ -815,18 +887,37 @@ export default function SellCartModal({
                 <button
                   key={m}
                   type="button"
-                  onClick={() => setMethod(m)}
+                  onClick={() => {
+                    setMethod(m);
+                    if (m === 'due') setPaidNow('');
+                  }}
                   className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-colors ${
                     method === m
                       ? 'bg-[var(--psa-soft-orange)] border-[#FA6E41] text-[#E8552C]'
                       : 'bg-[var(--psa-card)] border-[var(--psa-field-border)] text-[var(--psa-muted)] hover:border-[#FA6E41]/50'
                   }`}
                 >
-                  {m === 'cash' ? t('c.cash') : m === 'card' ? t('c.card') : 'UPI'}
+                  {m === 'cash' ? t('c.cash') : m === 'card' ? t('c.card') : m === 'upi' ? 'UPI' : t('c.due')}
                 </button>
               ))}
             </div>
           </Field>
+
+          {/* বাকি → the bill lands in the Due Book; otherwise optional part-payment */}
+          {method === 'due' ? (
+            <p className="text-xs text-[var(--psa-amber-ink)] bg-[var(--psa-soft-amber)] rounded-lg p-2.5">{t('qsell.dueNote')}</p>
+          ) : (
+            <Field label={t('cart.paidNow')}>
+              <TextInput
+                type="number"
+                min="0"
+                inputMode="decimal"
+                value={paidNow}
+                onChange={(e) => setPaidNow(e.target.value)}
+                placeholder={`0 – ${fmtMoney(grand)}`}
+              />
+            </Field>
+          )}
 
           <Field label={t('qsell.note')}>
             <TextInput value={note} onChange={(e) => setNote(e.target.value)} />
@@ -848,6 +939,12 @@ export default function SellCartModal({
               <span className="text-sm font-bold text-[var(--psa-ink)]">{t('bills.grandTotal')}</span>
               <span className="text-xl font-black text-[#E8552C] tabular-nums">{fmtMoney(grand)}</span>
             </div>
+            {duePreview > 0 && (
+              <div className="flex items-center justify-between pt-0.5" data-testid="cart-due-remain">
+                <span className="text-[12px] font-semibold text-[#DC2626]">{t('cart.dueRemain')}</span>
+                <span className="text-sm font-bold text-[#DC2626] tabular-nums">{fmtMoney(duePreview)}</span>
+              </div>
+            )}
             {gstOn && breakup && cartSubtotal > 0 && (
               <p className="text-[11px] text-[var(--psa-muted)]">
                 {gstMode === 'inclusive'
