@@ -217,9 +217,13 @@ export default function StockOperationScreen() {
     setShowConfirmDialog(true);
   };
 
+  // v2.35.0 audit: same-frame double-tap guard (duplicate transactions)
+  const confirmBusyRef = useRef(false);
   const handleConfirmYes = async () => {
     setShowConfirmDialog(false);
     if (!product?.id || !user?.id || !stockOperationType) return;
+    if (confirmBusyRef.current) return;
+    confirmBusyRef.current = true;
 
     const qty = Number(quantity);
     const unitPrice = Number(price);
@@ -256,6 +260,7 @@ export default function StockOperationScreen() {
     } catch (error) {
       toast.error((error as Error).message || t('error', language));
     } finally {
+      confirmBusyRef.current = false;
       setLoading(false);
     }
   };

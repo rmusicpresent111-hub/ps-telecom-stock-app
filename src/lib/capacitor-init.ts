@@ -14,7 +14,7 @@ let _backButtonRegistered = false;
  * Initialize Capacitor App plugin and register a global back button handler.
  * This runs BEFORE React mounts, ensuring the back button is always intercepted.
  */
-export async function initCapacitorBridge(): Promise<void> {
+async function initCapacitorBridge(): Promise<void> {
   if (typeof window === 'undefined') return; // SSR guard
 
   try {

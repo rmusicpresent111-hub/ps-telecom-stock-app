@@ -47,6 +47,18 @@ function esc(s: unknown): string {
     .replace(/"/g, '&quot;');
 }
 
+/**
+ * v2.35.0 audit: signature/QR land in an <img src="..."> attribute inside the
+ * print document (same-origin iframe). A settings value like
+ * `x" onerror="…` must never break out of the attribute — only accept real
+ * data:image/* URLs, escape the attribute, drop everything else.
+ */
+function safeImgDataUrl(v: unknown): string {
+  const raw = typeof v === 'string' ? v.trim() : '';
+  if (!/^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(raw)) return '';
+  return esc(raw);
+}
+
 /** Multiline text → escaped HTML with <br> line breaks. */
 function escMultiline(s: unknown): string {
   return esc(s).replace(/\r?\n/g, '<br>');
@@ -719,10 +731,10 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
     <div class="bank">
       ${bankBlock}
     </div>
-    <div class="qrbox">${shop.qr ? `<img src="${shop.qr}" alt="payment QR"><div class="qrcap">Scan to Pay</div>` : ''}</div>
+    <div class="qrbox">${(() => { const q = safeImgDataUrl(shop.qr); return q ? `<img src="${q}" alt="payment QR"><div class="qrcap">Scan to Pay</div>` : ''; })()}</div>
     <div class="sig">
       <div class="sigfor">FOR ${esc((shop.name || 'PS TELECOM').toUpperCase())}</div>
-      <div class="sigimg">${shop.signature ? `<img src="${shop.signature}" alt="signature">` : ''}</div>
+      <div class="sigimg">${(() => { const sg = safeImgDataUrl(shop.signature); return sg ? `<img src="${sg}" alt="signature">` : ''; })()}</div>
       <div class="sigline">Authorised Signatory</div>
     </div>
   </div>
@@ -741,7 +753,7 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
 
 // ── document 2: sold-products report (all bills in a period) ───
 
-export function buildSoldProductsReportHtml(
+function buildSoldProductsReportHtml(
   bills: Bill[],
   opts: { from?: string; to?: string; lang: AdminLang; settings?: BillingSettings | null }
 ): string {
@@ -895,13 +907,13 @@ ${termsBlock}
 
 // ── document 3: generic business report (reports page tabs) ────
 
-export interface ReportColumn {
+interface ReportColumn {
   label: string;
   right?: boolean;
   width?: string;
 }
 
-export interface ReportTable {
+interface ReportTable {
   sectionTitle?: string;
   columns: ReportColumn[];
   /** Pre-escaped HTML cell values, aligned with columns. */
@@ -910,7 +922,7 @@ export interface ReportTable {
   totalRow?: string[];
 }
 
-export interface GenericReportOpts {
+interface GenericReportOpts {
   title: string;
   periodLabel?: string;
   lang: AdminLang;
@@ -928,7 +940,7 @@ export function escHtml(s: unknown): string {
   return esc(s);
 }
 
-export function buildGenericReportHtml(opts: GenericReportOpts): string {
+function buildGenericReportHtml(opts: GenericReportOpts): string {
   const lang = opts.lang;
   const t = (k: string) => ta(k, lang);
   const shop = resolveShop({ shopSnapshot: {} } as unknown as Bill, opts.settings);

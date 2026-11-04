@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback, memo } from 'react';
+import { useEffect, useState, useMemo, useCallback, memo, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { Transaction, Bill, BillingSettings } from '@/lib/types';
@@ -204,8 +204,12 @@ export default function HistoryScreen() {
   );
 
   // ---- Bill actions ----
+  // v2.35.0 audit: same-frame double-tap guard (two native share sheets)
+  const withPdfBusyRef = useRef(false);
   const withPdf = useCallback(async (bill: Bill, action: 'whatsapp' | 'share' | 'download' | 'view') => {
     if (!user?.id) return;
+    if (withPdfBusyRef.current) return;
+    withPdfBusyRef.current = true;
     setBusyBillId(bill.id);
     try {
       const pdf = await generateBillPdf(bill, {
@@ -239,6 +243,7 @@ export default function HistoryScreen() {
     } catch (error) {
       toast.error((error as Error).message || t('error', language));
     } finally {
+      withPdfBusyRef.current = false;
       setBusyBillId(null);
     }
   }, [user?.id, language, billingSettings]);

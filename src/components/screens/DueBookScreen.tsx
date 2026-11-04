@@ -617,7 +617,10 @@ function EntryTab() {
   const formAmount = Math.round((Number(form.amount) || 0) * 100) / 100;
   const scheduleDiff = Math.round((formAmount - scheduleTotal) * 100) / 100;
 
+  // v2.35.0 audit: same-frame double-tap guard (duplicate due entries)
+  const saveFormBusyRef = useRef(false);
   const saveForm = async () => {
+    if (saveFormBusyRef.current) return;
     if (!user?.id) return;
     if (!form.customerName.trim() || !form.productName.trim() || !(formAmount > 0)) {
       toast.error(t('error', language));
@@ -633,6 +636,7 @@ function EntryTab() {
       toast.error(t('deOverAssigned', language).replace('{amount}', Math.abs(scheduleDiff).toLocaleString('en-IN')));
       return;
     }
+    saveFormBusyRef.current = true;
     setBusy(true);
     try {
       const schedule = form.schedule.map(r => ({
@@ -673,14 +677,19 @@ function EntryTab() {
     } catch (err) {
       toast.error((err as Error)?.message || t('error', language));
     } finally {
+      saveFormBusyRef.current = false;
       setBusy(false);
     }
   };
 
   // ── payment / delete ──
 
+  // v2.35.0 audit: same-frame double-tap guard (double payment)
+  const doPayBusyRef = useRef(false);
   const doPay = async () => {
+    if (doPayBusyRef.current) return;
     if (!user?.id || !payModal) return;
+    doPayBusyRef.current = true;
     setBusy(true);
     try {
       if (payModal.partial) {
@@ -696,6 +705,7 @@ function EntryTab() {
     } catch (err) {
       toast.error((err as Error)?.message || t('error', language));
     } finally {
+      doPayBusyRef.current = false;
       setBusy(false);
     }
   };

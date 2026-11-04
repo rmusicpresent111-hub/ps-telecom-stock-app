@@ -55,9 +55,6 @@ export function loadCached<T>(key: string, loader: () => Promise<T>): Promise<T>
   return p;
 }
 
-export function invalidateAdminCache(): void {
-  cache.clear();
-}
 
 /** Warm the heavy admin queries in the background (shell boot / unlock). */
 export function prefetchAdminData(): void {

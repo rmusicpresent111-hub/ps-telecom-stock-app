@@ -50,14 +50,6 @@ export function fmtDateTime(iso: string | undefined): string {
   return `${fmtDate(iso)} · ${d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
-export function relativeTime(ms: number): string {
-  if (!ms) return '';
-  const diff = Date.now() - ms;
-  if (diff < 60_000) return '< 1m';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h`;
-  return `${Math.floor(diff / 86_400_000)}d`;
-}
 
 // ── cards ───────────────────────────────────────────────────────
 
@@ -97,7 +89,7 @@ const STAT_TONES = {
   slate: { bg: 'var(--psa-soft-slate)', fg: 'var(--psa-sub)' },
 } as const;
 
-export type StatTone = keyof typeof STAT_TONES;
+type StatTone = keyof typeof STAT_TONES;
 
 export function StatCard({
   icon,

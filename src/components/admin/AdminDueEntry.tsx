@@ -792,7 +792,8 @@ export default function AdminDueEntry() {
               <div className="grid grid-cols-3 gap-2 text-center">
                 <div className="rounded-lg bg-[var(--psa-soft-red)] p-2.5">
                   <p className="text-[10px] font-semibold text-[var(--psa-muted)]">{t('dentry.outstanding')}</p>
-                  <p className="text-sm font-bold text-[#DC2626] tabular-nums">{fmtMoney(detail.amount)}</p>
+                  {/* v2.35.0 audit: value was swapped with the TOTAL card below */}
+                  <p className="text-sm font-bold text-[#DC2626] tabular-nums">{fmtMoney(outstanding)}</p>
                 </div>
                 <div className="rounded-lg bg-[var(--psa-soft-green)] p-2.5">
                   <p className="text-[10px] font-semibold text-[var(--psa-muted)]">{t('dentry.collectedOf')}</p>
@@ -800,7 +801,8 @@ export default function AdminDueEntry() {
                 </div>
                 <div className="rounded-lg bg-[var(--psa-soft-amber)] p-2.5">
                   <p className="text-[10px] font-semibold text-[var(--psa-muted)]">{t('bills.total')}</p>
-                  <p className="text-sm font-bold text-[#D97706] tabular-nums">{fmtMoney(outstanding)}</p>
+                  {/* v2.35.0 audit: value was swapped with the OUTSTANDING card above */}
+                  <p className="text-sm font-bold text-[#D97706] tabular-nums">{fmtMoney(detail.amount)}</p>
                 </div>
               </div>
 

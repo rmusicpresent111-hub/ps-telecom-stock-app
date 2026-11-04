@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { motion } from 'framer-motion';
@@ -66,11 +66,16 @@ export default function AddCategoryScreen() {
     setIconMode('image');
   };
 
+  // v2.35.0 audit: same-frame double-tap guard (the duplicate-name check is
+  // async, so two rapid taps both passed it and created two categories)
+  const saveBusyRef = useRef(false);
   const handleSave = async () => {
+    if (saveBusyRef.current) return;
     if (!name.trim() || !user?.id) {
       toast.error(t('error', language));
       return;
     }
+    saveBusyRef.current = true;
 
     setLoading(true);
     try {
@@ -94,6 +99,7 @@ export default function AddCategoryScreen() {
     } catch (error) {
       toast.error((error as Error).message || t('error', language));
     } finally {
+      saveBusyRef.current = false;
       setLoading(false);
     }
   };

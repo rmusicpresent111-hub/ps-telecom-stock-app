@@ -141,15 +141,6 @@ export function onSyncAccountChanged(fn: AccountListener): () => void {
 /** Sync ID format shared by UI + engine. */
 export const SYNC_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{3,63}$/;
 
-/** Human-friendly random Sync ID, e.g. "PS-K7M2-Q9X4". */
-export function generateSyncId(): string {
-  const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-  const pick = (n: number): string => {
-    const bytes = crypto.getRandomValues(new Uint8Array(n));
-    return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
-  };
-  return `PS-${pick(4)}-${pick(4)}`;
-}
 
 /**
  * True when the app runs on a STATIC-ONLY web host (GitHub Pages mirror etc.)

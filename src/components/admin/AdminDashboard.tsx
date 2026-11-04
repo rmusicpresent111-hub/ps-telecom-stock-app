@@ -75,7 +75,11 @@ export default function AdminDashboard({
       setData(d);
       setBills(b);
       setCash(c);
-    })();
+    })().catch((err) => {
+      // v2.35.0 audit: a transient IndexedDB failure must not become an
+      // unhandled rejection with a permanent skeleton — the next tick retries.
+      if (alive) console.warn('admin dashboard load failed:', (err as Error)?.message);
+    });
     return () => {
       alive = false;
     };

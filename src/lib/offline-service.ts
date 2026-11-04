@@ -263,7 +263,7 @@ export async function seedDefaultCategoriesOffline(userId: string): Promise<void
       await offlineCategories.put({
         ...category,
         _synced: Date.now(),
-        _dirty: 0,
+        _dirty: Date.now(),
       } as OfflineDBSchema['categories']['value']);
     }
   } catch {
@@ -293,7 +293,7 @@ export async function createCategoryOffline(name: string, image: string, userId:
   await offlineCategories.put({
     ...category,
     _synced: Date.now(),
-    _dirty: 0,
+    _dirty: Date.now(),
   } as OfflineDBSchema['categories']['value']);
 
   notifyLocalDataChanged(userId);
@@ -352,7 +352,7 @@ export async function getProductsOffline(userId: string, options?: { categoryId?
  * already exists in the same category. UI layers map `code` to a localized
  * message; the raw message is a readable English fallback.
  */
-export class DuplicateProductError extends Error {
+class DuplicateProductError extends Error {
   code = 'DUPLICATE_PRODUCT';
   constructor(name: string) {
     super(`A product named "${name}" already exists in this category`);
@@ -460,7 +460,7 @@ export async function createProductOffline(productData: {
   const productRow = {
     ...product,
     _synced: Date.now(),
-    _dirty: 0,
+    _dirty: Date.now(),
   } as OfflineDBSchema['products']['value'];
 
   let openingTxn: OfflineDBSchema['transactions']['value'] | null = null;
@@ -482,7 +482,7 @@ export async function createProductOffline(productData: {
         sellingPrice,
       },
       _synced: Date.now(),
-      _dirty: 0,
+      _dirty: Date.now(),
     };
   }
 
@@ -585,14 +585,14 @@ export async function updateProductOffline(id: string, updates: Partial<Product>
         sellingPrice: updatedProduct.sellingPrice || 0,
       },
       _synced: Date.now(),
-      _dirty: 0,
+      _dirty: Date.now(),
     };
   }
 
   tx.objectStore('products').put({
     ...updatedProduct,
     _synced: Date.now(),
-    _dirty: 0,
+    _dirty: Date.now(),
   } as OfflineDBSchema['products']['value']);
   if (adjustment) tx.objectStore('transactions').put(adjustment);
   await tx.done;
@@ -739,7 +739,7 @@ export async function createTransactionOffline(transactionData: {
       sellingPrice: product.sellingPrice,
     },
     _synced: Date.now(),
-    _dirty: 0,
+    _dirty: Date.now(),
   };
 
   await transactionsStore.put(row);
@@ -921,7 +921,7 @@ export async function createInvestmentOffline(data: {
     createdAt: now,
     updatedAt: now,
     _synced: Date.now(),
-    _dirty: 0,
+    _dirty: Date.now(),
   };
 
   await offlineInvestments.put(row);
@@ -1021,7 +1021,7 @@ export async function createDueEntryOffline(data: {
     createdAt: now,
     updatedAt: now,
     _synced: Date.now(),
-    _dirty: 0,
+    _dirty: Date.now(),
   };
 
   await offlineDueEntries.put(row);
@@ -1413,7 +1413,7 @@ export async function createExpenseOffline(expenseData: {
   await offlineExpenses.put({
     ...expense,
     _synced: Date.now(),
-    _dirty: 0,
+    _dirty: Date.now(),
   });
 
   notifyLocalDataChanged(expenseData.userId);
@@ -1441,7 +1441,7 @@ export async function updateExpenseOffline(id: string, updates: { amount?: numbe
   await offlineExpenses.put({
     ...updatedExpense,
     _synced: Date.now(),
-    _dirty: 0,
+    _dirty: Date.now(),
   });
 
   notifyLocalDataChanged(userId);
@@ -1525,7 +1525,7 @@ export async function createStaffPaymentOffline(data: {
     updatedAt: now,
   };
 
-  await offlineStaffPayments.put({ ...row, _synced: Date.now(), _dirty: 0 });
+  await offlineStaffPayments.put({ ...row, _synced: Date.now(), _dirty: Date.now() });
   notifyLocalDataChanged(data.userId);
   return { staffPayment: row };
 }
@@ -1558,7 +1558,7 @@ export async function updateStaffPaymentOffline(
     updatedAt: new Date().toISOString(),
   };
 
-  await offlineStaffPayments.put({ ...updated, _synced: Date.now(), _dirty: 0 });
+  await offlineStaffPayments.put({ ...updated, _synced: Date.now(), _dirty: Date.now() });
   notifyLocalDataChanged(userId);
   return { staffPayment: stripSync<StaffPayment>(updated) };
 }
@@ -1632,8 +1632,9 @@ export async function upsertCashEntryOffline(entryData: {
     await tx.objectStore('cashEntries').put({
       ...updated,
       _synced: Date.now(),
-      _dirty: 0,
+      _dirty: Date.now(),
     });
+    await tx.done; // v2.35.0 audit: commit before reporting success
 
     notifyLocalDataChanged(entryData.userId);
     return { entry: stripSync<CashEntry>(updated) };
@@ -1653,8 +1654,9 @@ export async function upsertCashEntryOffline(entryData: {
   await tx.objectStore('cashEntries').put({
     ...newEntry,
     _synced: Date.now(),
-    _dirty: 0,
+    _dirty: Date.now(),
   });
+  await tx.done; // v2.35.0 audit: commit before reporting success
 
   notifyLocalDataChanged(entryData.userId);
   return { entry: newEntry };
@@ -1683,7 +1685,7 @@ export async function updateCashEntryOffline(id: string, updates: { handCash?: n
   await offlineCashEntries.put({
     ...updatedEntry,
     _synced: Date.now(),
-    _dirty: 0,
+    _dirty: Date.now(),
   });
 
   notifyLocalDataChanged(userId);
@@ -1963,7 +1965,7 @@ export async function createServiceTransactionOffline(data: {
   await offlineServiceTransactions.put({
     ...serviceTransaction,
     _synced: Date.now(),
-    _dirty: 0,
+    _dirty: Date.now(),
   });
 
   notifyLocalDataChanged(data.userId);
@@ -1983,7 +1985,7 @@ export async function deleteServiceTransactionOffline(id: string, userId: string
 
 // ============ BILLS (e-Bill / Invoice) ============
 
-export const DEFAULT_BILLING_SETTINGS: Omit<BillingSettings, 'userId' | 'updatedAt'> = {
+const DEFAULT_BILLING_SETTINGS: Omit<BillingSettings, 'userId' | 'updatedAt'> = {
   shopName: 'PS TELECOM',
   proprietorName: 'Avijit Maity & Brother',
   shopAddress: '',
@@ -2009,6 +2011,10 @@ export async function getBillingSettingsOffline(userId: string): Promise<Billing
   const existing = await db.get('billingSettings', userId);
   if (existing) {
     return {
+      // v2.35.0 audit: defaults FIRST — an old synced row missing newer fields
+      // (proprietorName, gstNumber, billTemplate, …) must not hand out
+      // undefined to code that calls .trim() or renders controlled inputs.
+      ...DEFAULT_BILLING_SETTINGS,
       ...existing,
       gstMode: normalizeGstMode(existing.gstMode),
       // v2.31.0 additive fields — old synced rows lack them; normalize instead
@@ -2324,7 +2330,25 @@ export async function createCartBillOffline(data: {
   const touched = new Map<string, OfflineDBSchema['products']['value']>();
 
   for (const [productId, lines] of byProduct) {
-    const product = prods.get(productId)!;
+    // v2.35.0 audit: RE-READ inside the write tx. The pre-validation pass read
+    // a snapshot — a concurrent checkout/stock op could change the row between
+    // validation and commit (lost update → stock corruption). Re-validate
+    // against the fresh row or abort the whole atomic tx.
+    const fresh = (await productsStore.get(productId)) as
+      | OfflineDBSchema['products']['value']
+      | undefined;
+    if (!fresh || fresh.userId !== data.userId) throw new Error('Product not found');
+    const freshQty = lines.reduce((s, e) => s + e.quantity, 0);
+    if (fresh.quantity < freshQty) {
+      throw new Error(`Insufficient stock — ${fresh.name}: only ${fresh.quantity} left`);
+    }
+    const freshStock = new Set(normalizeSerialList(fresh.serialNumbers).map((x) => x.toLowerCase()));
+    for (const sl of lines.flatMap((e) => e.soldSerials)) {
+      if (!freshStock.has(sl.toLowerCase())) {
+        throw new Error(`Serial "${sl}" is not in stock for this product`);
+      }
+    }
+    const product = fresh;
     let remaining = normalizeSerialList(product.serialNumbers);
     for (const e of lines) {
       // FIFO cost basis needs the history INSIDE the same atomic tx.
@@ -2349,7 +2373,7 @@ export async function createCartBillOffline(data: {
           sellingPrice: product.sellingPrice,
         },
         _synced: Date.now(),
-        _dirty: 0,
+        _dirty: Date.now(),
       };
       void transactionsStore.put(row);
       createdTxnIds.push(row.id);
@@ -2636,10 +2660,10 @@ export async function importBackupOffline(userId: string, backupData: {
   // 1. Prepare all validated + coerced rows first (pure data, no I/O) so the
   //    transaction itself stays short.
   const catRows: OfflineDBSchema['categories']['value'][] = categories.map(
-    (cat) => ({ ...fixDates(cat), userId, _synced: now, _dirty: 0 }) as OfflineDBSchema['categories']['value']
+    (cat) => ({ ...fixDates(cat), userId, updatedAt: nowIso, _synced: now, _dirty: Date.now() }) as OfflineDBSchema['categories']['value']
   );
   const prodRows: OfflineDBSchema['products']['value'][] = products.map(
-    (prod) => coerce({ ...fixDates(prod), userId, _synced: now, _dirty: 0 }, {
+    (prod) => coerce({ ...fixDates(prod), userId, updatedAt: nowIso, _synced: now, _dirty: Date.now() }, {
       quantity: 'int',
       purchasePrice: 'num',
       sellingPrice: 'num',
@@ -2647,23 +2671,23 @@ export async function importBackupOffline(userId: string, backupData: {
     }) as OfflineDBSchema['products']['value']
   );
   const txnRows: OfflineDBSchema['transactions']['value'][] = transactions.map(
-    (txn) => coerce({ ...fixDates(txn), date: isoStr(txn.date), userId, _synced: now, _dirty: 0 }, {
+    (txn) => coerce({ ...fixDates(txn), date: isoStr(txn.date), userId, updatedAt: nowIso, _synced: now, _dirty: Date.now() }, {
       quantity: 'int',
       unitPrice: 'num',
       totalAmount: 'num',
     }) as OfflineDBSchema['transactions']['value']
   );
   const expRows: OfflineDBSchema['expenses']['value'][] = expenses.map(
-    (exp) => coerce({ ...fixDates(exp), date: isoStr(exp.date), userId, _synced: now, _dirty: 0 }, { amount: 'num' }) as OfflineDBSchema['expenses']['value']
+    (exp) => coerce({ ...fixDates(exp), date: isoStr(exp.date), userId, updatedAt: nowIso, _synced: now, _dirty: Date.now() }, { amount: 'num' }) as OfflineDBSchema['expenses']['value']
   );
   const cashRows: OfflineDBSchema['cashEntries']['value'][] = cashEntries.map(
-    (entry) => coerce({ ...fixDates(entry), date: isoStr(entry.date), userId, _synced: now, _dirty: 0 }, {
+    (entry) => coerce({ ...fixDates(entry), date: isoStr(entry.date), userId, updatedAt: nowIso, _synced: now, _dirty: Date.now() }, {
       handCash: 'num',
       liquidCash: 'num',
     }) as OfflineDBSchema['cashEntries']['value']
   );
   const svcRows: OfflineDBSchema['serviceTransactions']['value'][] = serviceTransactions.map(
-    (svc) => coerce({ ...fixDates(svc), date: isoStr(svc.date), userId, _synced: now, _dirty: 0 }, { amount: 'num' }) as OfflineDBSchema['serviceTransactions']['value']
+    (svc) => coerce({ ...fixDates(svc), date: isoStr(svc.date), userId, updatedAt: nowIso, _synced: now, _dirty: Date.now() }, { amount: 'num' }) as OfflineDBSchema['serviceTransactions']['value']
   );
   const billRows: OfflineDBSchema['bills']['value'][] = bills.map(
     (bill) => coerce({
@@ -2671,7 +2695,9 @@ export async function importBackupOffline(userId: string, backupData: {
       date: isoStr(bill.date),
       userId,
       createdAt: isoStr(bill.createdAt) || nowIso,
-      updatedAt: isoStr(bill.updatedAt) || nowIso,
+      // v2.35.0 audit: bump updatedAt on import so restored rows are selected
+      // for push (watermark selection is updatedAt-based) and reach other devices.
+      updatedAt: nowIso,
       // Shape-defend the fields the bills list/search later calls string and
       // array methods on — a hand-edited backup must never crash that tab.
       items: Array.isArray(bill.items) ? bill.items : [],
@@ -2698,6 +2724,7 @@ export async function importBackupOffline(userId: string, backupData: {
       ...fixDates(row),
       date: isoStr(row.date),
       userId,
+      updatedAt: nowIso,
       staffName: typeof row.staffName === 'string' ? row.staffName : '',
       staffPhone: typeof row.staffPhone === 'string' ? row.staffPhone : '',
       note: typeof row.note === 'string' ? row.note : '',
@@ -2708,6 +2735,7 @@ export async function importBackupOffline(userId: string, backupData: {
       ...fixDates(row),
       date: isoStr(row.date),
       userId,
+      updatedAt: nowIso,
       purpose: typeof row.purpose === 'string' ? row.purpose : '',
       note: typeof row.note === 'string' ? row.note : '',
     }, { amount: 'num' }) as OfflineDBSchema['investments']['value']
@@ -2726,9 +2754,9 @@ export async function importBackupOffline(userId: string, backupData: {
         note: typeof row.note === 'string' ? row.note : '',
         schedule: normalizeSchedule(row.schedule),
         createdAt: isoStr(row.createdAt) || nowIso,
-        updatedAt: isoStr(row.updatedAt) || nowIso,
+        updatedAt: nowIso,
         _synced: now,
-        _dirty: 0,
+        _dirty: Date.now(),
       }, { amount: 'num', paidAmount: 'num' });
       // Collected can never exceed the total.
       coerced.paidAmount = Math.min(Number(coerced.paidAmount) || 0, Number(coerced.amount) || 0);

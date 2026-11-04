@@ -49,7 +49,7 @@ export async function listPairedPrinters(): Promise<BtDevice[]> {
   return Array.isArray(r?.devices) ? r.devices : [];
 }
 
-export async function printEscPosOverBluetooth(address: string, bytes: Uint8Array): Promise<void> {
+async function printEscPosOverBluetooth(address: string, bytes: Uint8Array): Promise<void> {
   let binary = '';
   const CHUNK = 0x8000;
   for (let i = 0; i < bytes.length; i += CHUNK) {
@@ -62,9 +62,8 @@ export async function printEscPosOverBluetooth(address: string, bytes: Uint8Arra
 
 // ============ paper geometry ============
 
-export const THERMAL_WIDTHS = [58, 80] as const;
 
-export function thermalColumns(widthMm: number): number {
+function thermalColumns(widthMm: number): number {
   // 58mm roll ≈ 32 printable columns on the built-in font A;
   // 80mm roll ≈ 48 columns. (Both are the safe-common denominators.)
   return widthMm === 80 ? 48 : 32;
@@ -164,13 +163,7 @@ class EscPosBuilder {
  *   • admin thermal-web.ts    → desktop USB (Web Serial) + print dialog (HTML)
  * Each line carries alignment/size hints; text is ASCII-sanitised here.
  */
-export interface ThermalLine {
-  text: string;
-  center?: boolean;
-  big?: boolean;
-}
-
-export function buildReceiptLines(bill: Bill, settings: BillingSettings | null): ThermalLine[] {
+function buildEscPosReceipt(bill: Bill, settings: BillingSettings | null): Uint8Array {
   const cols = thermalColumns(settings?.thermalWidthMm ?? 58);
   const lines: ThermalLine[] = [];
   // split('\n') FIRST (before asciiLine, which strips control chars incl. \n)

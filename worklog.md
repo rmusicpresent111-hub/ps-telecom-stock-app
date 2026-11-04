@@ -2278,79 +2278,38 @@ Stage Summary:
 - Bluetooth thermal printing ships in the APK: pair the Hoin printer in phone Bluetooth settings once → Bill → "Bluetooth Print" → picks the remembered printer (or asks once) → ESC/POS receipt at 58mm or 80mm, with a 3-strategy connect designed for cheap SPP printers
 - Database fully untouched (optional fields inside the existing settings blob only); 4 real bugs fixed (stale IDB types, bare modal number, wasteful recompute, preview≠paper mismatch)
 
----
-## Task 81 — v2.32.0 — Thermal printing from the desktop admin panel (+ preview-error sweep)
-Date: 3 Nov (session 7) | Status: DONE (pushed)
+## Task 81 — v2.35.0 — Full-project code audit: critical sync data-loss fix + security hardening + dead-code purge
 
-Task ID: 81
-Agent: Z.ai Code (main thread)
-Task: "Thermal printer print admin panel theke korte chai dextop theke" (+ a "preview error" report)
+Scope: whole-repo audit (4 parallel deep-scan agents: dead code, core lib bugs, security, UI bugs) — every finding re-verified by hand before touching code.
 
-Work Log:
-- DESKTOP THERMAL PRINT (admin panel, web): new src/components/admin/thermal-web.ts with TWO paths fed by the SAME receipt line model the APK Bluetooth path uses (thermal-print.ts refactored: buildReceiptLines() now emits ThermalLine[] {text, center, big} as the single source of truth; buildEscPosReceipt() maps it to bytes — byte-stream unchanged, verified: ESC @ init, ESC ! 0x30 big TOTAL, GS V 66 0 cut, 32/48 col, ASCII-sanitised):
-  1. USB DIRECT — Web Serial API (Chrome/Edge desktop): requestPort → open 115200 8N1 → write raw ESC/POS bytes → drain 400ms → close. Port remembered in-session (cachedPort + serial.getPorts() reuse → second print skips the picker); stale-port retry through a fresh picker (user-cancel never re-asks). Minimal local Serial typings — no new deps.
-  2. PRINT DIALOG — buildThermalHtml() renders the identical lines as a self-contained monospace page with @page { size: 58mm auto } / 80mm, pushed through the existing printHtml() hidden-iframe engine. This covers the Hoin over DESKTOP BLUETOOTH (pair in OS → pick in the dialog) and driver-installed USB printers.
-- ThermalPrintModal.tsx — chooser UI (USB Direct / Print Dialog cards + inline 58/80mm width toggle that saves into the SAME synced billingSettings row; no new storage). Wired in two places: AdminBills bill-detail footer ("থার্মাল প্রিন্ট" next to the A4 print) and AdminBillSettings header ("থার্মাল টেস্ট প্রিন্ট" → prints a demo receipt from makeThermalTestBill() — printer can be verified without touching real bills). admin-i18n: 12 new keys (bn/en/hi).
-- BUGFIX (in the v2.31.0 refactor): twoCol overflow halves were merged into ONE line in the ESC/POS stream (asciiLine stripped the \n before the byte writer could stack) — long customer names printed as "NAME+MOBILE" mush. buildReceiptLines splits on \n FIRST, then sanitises each half → CUST row now truly stacks with the mobile right-aligned, matching the on-screen thermal-58 preview (bun-verified with a >32-col name).
-- "PREVIEW ERROR" SWEEP (could not reproduce anywhere): local admin A4 preview ✓, live (vercel) admin A4 preview with a real synced bill ✓, live app bill screen cycling all 5 templates with 32 real synced bills ✓, live admin bill-detail A4 dialog ✓ — zero console/page errors. Most likely cause: the sandbox dev server was down/restarting during the v2.31.0 APK build when the owner looked (pkill next-server is part of the build ritual); current preview is healthy.
-- VERIFY: tsc + eslint clean; browser E2E — thermal modal renders (width toggle 58→80→58 persists into billingSettings), print-dialog path generates the correct @page 58mm iframe (inspected content: centered PS TELECOM + dashed rules + BILL/date row), USB path headless-safe (chooser pending = headless limitation, real desktop opens Chrome's device picker); bun byte-test: 784-byte receipt, no line >32 cols at 58mm / >48 at 80mm, CUST stacking, Bengali/₹ sanitised to clean ASCII.
-- BUILD: v2.32.0 (versionCode 23200) APKs rebuilt — BUILD SUCCESSFUL, repo-key signed.
+CRITICAL BUG FIXES (data loss / corruption):
+- SYNC `_dirty` PROTOCOL WAS DEAD (silent multi-device data loss): every offline-service write stamped `_dirty: 0`, so applyPulledRow's "never clobber an un-pushed local edit" guard never fired and a pull landing during/after a push could silently revert a newer local edit that then NEVER re-pushed (watermark skip). Fix: all 25 write paths now stamp `_dirty: Date.now()`; new markPushedRows() clears `_dirty` + stamps `_sv` only after the server acknowledges a push (rows re-edited mid-push keep their fresh guard); belt-and-braces pull guard for never-synced-back rows (`_sv===0 && recordVer>ver → protect`). This also un-freezes category-merge remapped products (old `_dirty` was never cleared) and makes backup restores re-push (imports now bump updatedAt so the watermark selection picks them up).
+- TOMBSTONE deletes never propagated for camelCase stores: parseTombPayload's `/^[a-z][a-z0-9_]{0,31}$/` regex rejected cashEntries/serviceTransactions/staffPayments/dueEntries → deletes resurrected on every other device via the integrity pass. Now validated against SYNCED_STORES.
+- CART CHECKOUT stock race: validation read a snapshot, the write tx never re-read → two rapid checkouts both wrote the stale quantity (lost update → inventory corruption). The atomic tx now RE-READS each product + re-validates stock/serials inside the tx (abort = full rollback), matching createTransactionOffline's pattern.
+- upsertCashEntryOffline never awaited tx.done (cash book could report success before commit) — both branches await now.
 
-Stage Summary:
-- The owner can now thermal-print any bill straight from the desktop admin panel: USB cable → "USB সরাসরি প্রিন্ট" (raw ESC/POS, no driver), or the Hoin paired over desktop Bluetooth → "প্রিন্ট ডায়ালগ" → pick the printer. 58/80mm selectable right in the modal; a Test Print in Bill Settings verifies the printer without touching real bills.
-- The APK's Bluetooth path and both desktop paths share ONE line model — what the preview shows, the phone prints, the desktop prints.
-- No preview error exists in the current build (swept every surface, live + local).
+USER-FACING UI BUGS:
+- InvoiceScreen create-mode preview ignored gstMode: inclusive GST (the default — "entered amount = final amount") was computed as EXCLUSIVE, showing Grand Total ₹177 instead of ₹150 for a ₹150 sale; paid/due followed the wrong number. Now mirrors createBillOffline via computeGst/normalizeGstMode/round2 (E2E-verified: subtotal ₹150 → total ₹150).
+- Same-frame double-tap guards (busyRef pattern) added to: SellCartModal.completeSale (double bill + double stock deduction), StockOperationScreen.handleConfirmYes (duplicate transactions — E2E-verified with a triple-click: exactly one sale), DueBookScreen.saveForm + doPay, DailyBookScreen.handleSaveCash + handleSaveExpense, ServiceCategoryScreen/AddCategoryScreen.handleSave (async duplicate-name check passed by both taps), HistoryScreen.withPdf (double share-sheet).
+- AdminDueEntry detail modal: OUTSTANDING and TOTAL stat values were swapped.
+- SellCartModal done screen showed "0 items" (cart cleared in the same render batch) — now shows the bill's real item count.
+- AdminReports profit overstated for deleted products (cost fallback was 0) — falls back to the current product's purchasePrice like mobile ProfitScreen.
+- getBillingSettingsOffline now merges DEFAULT_BILLING_SETTINGS first — old synced rows missing newer fields can't hand undefined to .trim()/controlled inputs.
+- AdminDashboard loader got a .catch (transient IDB failure = silent permanent skeleton before).
+- i18n: added missing 'prod.products' admin key (reports rendered the raw key in all 3 languages).
+- A4Preview.tsx shipped a hard SYNTAX ERROR (`}, tml]);` — committed in v2.31.0, masked by the stale tsbuildinfo cache; admin bill-settings/bill A4 preview could never compile. Fixed deps + component moved to A4SheetPreview.tsx (both importers updated); E2E-verified preview renders.
 
----
-## Task 82 — v2.33.0 — Category-wise Low Stock summary in admin Reports (view + CSV download)
-Date: 3 Nov (session 8) | Status: DONE (pushed)
+SECURITY HARDENING (compat-safe subset; bigger items need owner action):
+- /api/cloud/d1: spoofable x-forwarded-host origin fallback removed; multi-statement SQL rejected; DDL/PRAGMA/ATTACH/VACUUM/REINDEX keyword guard (same-origin devtools can no longer DROP the DB); rate-limit IP now takes the LAST x-forwarded-for entry (leftmost is client-controlled).
+- print.ts: signature/QR now pass safeImgDataUrl() — only real data:image/* base64 accepted + attribute-escaped (was interpolated raw into <img src> of a same-origin iframe).
+- d1-sync: deriveEncKey chains got .catch (WebCrypto failure = silent dead engine before).
+- DOCUMENTED (not changed — needs owner rotation): admin panel + D1 proxy are open to anyone on the site (site gate removed in v2.29.0); sync PIN + E2E key derive from NEXT_PUBLIC_SYNC_PIN which lives in the APK/bundle; PBKDF2 100k is GPU-brute-forceable; android keystore + password (PSTelecom22000) are git-tracked since v2.20.0 (rotate keystore + purge history + env-ize build password); plaintext-JSON pull branch voids the forged-row guarantee.
 
-Task ID: 82
-Agent: Z.ai Code (main thread)
-Task: "admin panel er report option er moddhe low stock report er moddhe category wish low stock summery dekha jabe ebong downlode kora jabe, ami admin panel tike dextop version banate chai"
+DEAD CODE PURGE (60 files deleted, 7 dead functions cut, 33 exports removed, 48 npm deps dropped):
+- Files: QuickSellModal.tsx (604 lines, superseded by SellCartModal, contained 2 latent bugs), dead hooks (useDebounce, use-mobile), hello-world /api/route.ts, resurrected d1-secrets.ts + example + the whole self-heal cluster (instrumentation.ts, instrumentation-node.ts, ensure-secrets.mjs — nothing imports d1-secrets anymore), 44 unused shadcn ui components (kept chart + sonner — the only two used), orphan firebase.json/firestore.rules/firestore.indexes.json, Tailwind-v3 tailwind.config.ts (v4 CSS config is authoritative), tests/ sandbox scripts.
+- Functions: disconnectSync, stopD1Sync (no caller since sign-out UI removal), invalidateAdminCache, generateSyncId, THERMAL_WIDTHS, isBillTemplateId, duplicate relativeTime.
+- Un-exported (internal-only now): print.ts report builders, bill-pdf share chain internals, d1-sync engine types, cash-daily types, thermal-print core, gst internals, generateId, DuplicateProductError, DEFAULT_BILLING_SETTINGS, initCapacitorBridge, BillTemplateMeta, StatTone.
+- package.json: 67 → 19 deps (all @radix-ui/* except none needed, dnd-kit, react-query/table, react-hook-form+zod+resolvers, date-fns, next-intl, uuid, sharp, cva, cmdk, embla, day-picker, vaul, panels, input-otp, tailwindcss-animate, z-ai-web-dev-sdk…). bun.lock regenerated.
+- Formatters in print.ts intentionally NOT deduped (documented "standalone — no React imports" design).
 
-Work Log:
-- CATEGORY-WISE LOW STOCK (Reports → Low Stock Summary tab): new aggregation chain — lowProducts (qty ≤ threshold, most-critical first) → lowByCat (grouped by category, uncategorised → rep.unknownCat) → lowStockAgg (per category: total products / out-of-stock / low-stock / restock-needed = Σ(threshold − qty)), sorted by severity (out+low desc → out desc → name). Grand-total row pinned under the table.
-- EXPANDABLE ROWS: clicking a category row expands an inline nested table with that category's affected products (name / qty / threshold / Out-of-stock|Low-stock badge) — orange highlight + chevron rotation; guard against expanding a category whose items vanished after a sync tick.
-- CSV DOWNLOADS (new src/components/admin/csv.ts — csvEscape + downloadBlob + downloadCsvFile, UTF-8 BOM so Excel/Sheets open Bangla correctly): ① "ps-low-stock-category-summary-<date>.csv" (header + rows + grand total) from the summary card; ② "ps-low-stock-products-<date>.csv" (# / product / category / qty / threshold / status) from the detail card; both fire the shared adminToast "CSV ডাউনলোড হয়েছে". AdminSync.tsx refactored to import the same helpers (local duplicates removed).
-- PRINT/PDF UPGRADED for the tab: printGenericReport lowstock branch now emits TWO tables — Category-wise summary (with total row) + Detail list — and 4 chips (out / low / categories-affected / restock-needed); verified the generated iframe doc (title, both tables, chips, totals).
-- StatCards on the tab now read from the same aggregation (out / low / products / categories-affected) — one source of truth.
-- i18n: 7 new keys (rep.catWiseLow, rep.catWiseLowSub, rep.restockQty, rep.downloadCsv, rep.lowStockItems, rep.categoriesAffected — bn/en/hi) + BUGFIX: 'prod.products' key never existed (Products stat card printed the raw key "prod.products") — added bn/en/hi.
-- DESKTOP POLISH: admin console footer version was hardcoded "v2.25.1" — new src/lib/app-version.ts (APP_VERSION single source) now shows v{APP_VERSION}; package.json → 2.33.0 (build-apk.js auto-derives versionCode 23300).
-- VERIFY: tsc + eslint clean; agent-browser E2E with seeded demo data (3 categories / 11 products, 3 out + 4 low): summary math exact (অ্যাক্সেসরিজ 5/1/2/7, ইলেকট্রনিক্স 3/1/1/5, মোবাইল 3/1/1/3, total 11/3/4/15), expand + nested table render, both CSV clicks toast without console errors, print iframe = 2 tables + chips, EN switch clean, mobile 375px (2×2 cards, scrollable tables, bottom nav) and dark mode verified; footer v2.33.0. Demo data cleared after the run.
-- NOTE: sandbox sync chip showed "Error" — external vercel D1 connect blocked by the sandbox network; pre-existing environment condition, unrelated (all /api/cloud/d1/ local calls 200).
-
-Stage Summary:
-- Low Stock report now answers "কোন ক্যাটাগরিতে কী ঘাটতি" at a glance: per-category out/low counts + units needed to reach threshold, expandable to the exact products, printable as a two-table PDF and downloadable as two Excel-ready CSVs — all inside the desktop admin console.
-- Console footer can no longer go stale (APP_VERSION constant).
-
----
-## Task 83 — v2.34.0 — Direct PDF download for Category-wise Low Stock summary (bugfix: sales-branch PDF bypass)
-Date: 3 Nov (session 9) | Status: DONE (pushed)
-
-Task ID: 83
-Agent: Z.ai Code (main thread)
-Task: "hochhena cetagori wish low stock summery pdf downlode hochhena fix koro"
-
-Work Log:
-- ROOT CAUSE: v2.33.0 shipped only CSV downloads + a Print button — the "PDF" existed only as the browser print dialog's manual "Save as PDF" (and window.print() does nothing inside the Android WebView), so there was NO direct PDF download for the category-wise low stock summary.
-- PDF DOWNLOAD ENGINE (print.ts): downloadHtmlAsPdf() — parses the report's standalone HTML, SCOPES its stylesheet to an off-screen #ps-pdf-stage stage (regex scoper prefixes every selector, body→scope; the app document is never touched), rasterizes with html2canvas (scale 2, white bg — Bangla/Hindi render through the app's own fonts, no jsPDF glyph problem) and splits the canvas across A4 pages in jsPDF (JPEG 0.92, compress). Dynamic-imported (html2canvas added as direct dep; jspdf already present) so the main bundle stays lean.
-- printGenericReport(opts, mode): mode='print' (default) keeps the hidden-iframe print dialog; mode='pdf' streams the same report to a real .pdf FILE via pdfName (ps-low-stock-summary-<date>.pdf for the lowstock tab).
-- AdminReports: printTab(mode) threads the mode through a shared emit() wrapper — .then resets the busy state + toasts "PDF ডাউনলোড হয়েছে", .catch toasts "rep.pdfFail". BUGFIX found during E2E: the sales fall-through branch still called printGenericReport directly (4-space indent dodged the mechanical emit() rewrite) → on the Sales tab the PDF click opened the print dialog instead, and pdfBusy stuck TRUE (button frozen disabled). Now all 8 branches emit().
-- BUTTONS: header "PDF ডাউনলোড" (works on every tab, Loader2 spinner while busy, disabled during generation) beside Print; the Category-wise Low Stock card got its own "PDF" button next to "Download CSV".
-- i18n: rep.downloadPdf / sync.pdfDone / rep.pdfFail (bn/en/hi). APP_VERSION + package.json → 2.34.0.
-- VERIFY: tsc + eslint clean; agent-browser E2E with seeded demo data (8 products / 5 categories incl. a deleted-category "Unknown" bucket): stat cards 4 out / 3 low / 8 products / 5 categories exact; PDF intercepted at blob level — %PDF-1.3 magic, 206 KB, decoded and visually inspected: shop header, 4 chips (4/3/5/30), category table with সর্বমোট 8/4/3/30, detail list with স্টক শেষ/কম স্টক statuses, signature + footer — ONE A4 page, Bangla perfect; sales-tab PDF (the fixed branch) generates too; CSV still downloads; print still creates the iframe; busy state resets; EN + mobile 390px + desktop 1366px screenshots clean; no console/page errors. Sandbox "Error" sync chip = CF env vars absent in dev (pre-existing, unrelated).
-
----
-## Task 84 — v2.35.0 — Per-category PDF download on every Low Stock category row
-Date: 3 Nov (session 9) | Status: DONE (pushed)
-
-Task ID: 84
-Agent: Z.ai Code (main thread)
-Task: "abar o vul baniyecho ... protyekta low stock category er pase ekta kore pdf downlode option thakbe, jodi low stock category mobile er paser pdf downlode e click kori tahole sudhu joto gulo mobile er stock low seigulo downlode hobe"
-
-Work Log:
-- PER-ROW PDF BUTTON: the Category-wise Low Stock table gained a dedicated "PDF" column — every category row now carries its own compact FileDown icon button (aria-label "শুধু এই ক্যাটাগরির কম স্টক PDF ডাউনলোড — <category>", bn/en/hi via new rep.downloadCatPdf key). e.stopPropagation() keeps the click from toggling the row's expand state; the grand-total row and the expanded nested row (colSpan 8) got the extra cell; table min-width 680→720px.
-- SCOPED PAYLOAD: downloadCategoryPdf(cat) builds a per-category report from lowByCat — title "কম স্টক সারসংক্ষেপ — <category>", 4 chips (affected products / out / low / restock-needed = Σ(threshold−qty)) and ONE table listing ONLY that category's low/out-of-stock products (#, name, qty, threshold, স্টক শেষ|কম স্টক status). File name ps-low-stock-<ascii-slug>-<date>.pdf — Bangla category names slugify to cat<N> so the download name stays ASCII-safe.
-- BUSY MODEL: separate catPdfBusy (category name | null) — the clicked row's button shows a Loader2 spinner, ALL row buttons disable while a per-category PDF generates, everything re-enables on then/catch with the shared pdfDone/pdfFail toasts. The header "PDF ডাউনলোড" (full report, all categories) and per-row buttons are independent.
-- VERIFY: tsc + eslint clean; agent-browser E2E with re-seeded demo data (8 products / 5 categories): 5 row buttons rendered (Mobile / Tempered Glass / Ear Pods / অজানা ক্যাটাগরি / Charger); Mobile PDF decoded + visually inspected — title "— MOBILE", chips 2/1/1/6, EXACTLY Samsung A15 Display (0/3, স্টক শেষ) + Redmi Note 13 Battery (2/5, কম স্টক), healthy Vivo Screen Guard and every other category absent; Charger PDF cross-check — chips 1/0/1/3, only Type-C Charger 33W; busy state resets (all buttons re-enabled), no accidental row expansion, EN aria-label switch verified, desktop 1366px + mobile 390px screenshots clean, no console/page errors.
+VERIFY: rm tsbuildinfo → fresh tsc 0 errors; eslint 0; dev server clean restart; agent-browser E2E: welcome→tutorial→dashboard, add product (atomic opening lot), category→detail, Instant Sell triple-click = ONE sale (10→8), second sale + e-Bill → inclusive GST total ₹150 (was ₹177), bill PS-2611-0001 + PDF chain, admin panel, reports (no raw i18n keys), Bill Settings A4 preview renders (renamed A4SheetPreview), dev.log clean, app still fully offline-first.

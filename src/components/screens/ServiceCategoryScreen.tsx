@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
 import { ServiceTransaction, ServiceCategoryType } from '@/lib/types';
@@ -66,7 +66,10 @@ export default function ServiceCategoryScreen() {
     fetchTransactions();
   }, [fetchTransactions]);
 
+  // v2.35.0 audit: same-frame double-tap guard (duplicate service entries)
+  const saveBusyRef = useRef(false);
   const handleSave = async () => {
+    if (saveBusyRef.current) return;
     if (!user?.id || !categoryType) return;
     const parsedAmount = parseFloat(amount);
     if (!parsedAmount || parsedAmount <= 0) {
@@ -74,6 +77,7 @@ export default function ServiceCategoryScreen() {
       return;
     }
 
+    saveBusyRef.current = true;
     setSaving(true);
     try {
       await createServiceTransactionOffline({
@@ -90,6 +94,7 @@ export default function ServiceCategoryScreen() {
     } catch {
       toast.error(t('error', language));
     } finally {
+      saveBusyRef.current = false;
       setSaving(false);
     }
   };

@@ -123,7 +123,7 @@ const WM_HEAL = 'd2-heal';
 
 // ============ status surface (UI) ============
 
-export type D1SyncState = 'off' | 'idle' | 'syncing' | 'error' | 'offline';
+type D1SyncState = 'off' | 'idle' | 'syncing' | 'error' | 'offline';
 
 export interface D1SyncStatus {
   state: D1SyncState;
@@ -416,8 +416,8 @@ async function refreshClockOffset(): Promise<void> {
 
 // ============ account connect / disconnect ============
 
-export type ConnectMode = 'create' | 'join';
-export type ConnectResult = { ok: boolean; error?: string };
+type ConnectMode = 'create' | 'join';
+type ConnectResult = { ok: boolean; error?: string };
 
 function validateConnectInput(syncId: string, pin: string, mode: ConnectMode): string | null {
   if (!SYNC_ID_RE.test(syncId)) return 'bad-id';
@@ -431,7 +431,7 @@ function validateConnectInput(syncId: string, pin: string, mode: ConnectMode): s
  * D1, store it locally and start the engine. Errors (for the UI):
  *   bad-id, bad-pin, taken, not-found, wrong-pin, offline
  */
-export async function connectSync(
+async function connectSync(
   syncIdRaw: string,
   pin: string,
   mode: ConnectMode
@@ -494,15 +494,6 @@ export async function connectSync(
   }
 }
 
-/** Stop syncing on this device (cloud copy is kept for the other devices). */
-export function disconnectSync(): void {
-  clearSyncAccount();
-  encKey = null;
-  currentSyncId = '';
-  stopEngineTimers();
-  setStatus({ state: 'off', lastSyncAt: 0, lastError: null });
-}
-
 // ============ AUTO-CONNECT (v2.19.0 — cloud sign-in UI removed) ============
 
 /**
@@ -555,6 +546,8 @@ interface PushItem {
   id: string;
   payload: Record<string, unknown>;
   ver: number;
+  /** the row's _dirty value when it was collected (used by markPushedRows) */
+  dirty?: number;
 }
 
 /** Push pending local deletes as encrypted `_tomb` rows + drop cloud rows. */
@@ -637,6 +630,7 @@ function collectPushCandidates(
     const pushVer = Math.max(recordVer, nowMs());
     const sv = typeof row._sv === 'number' ? row._sv : 0;
     if (sv && sv >= pushVer) continue; // echo guard: row came from the cloud unchanged
+    const dirtyAtCollect = typeof row._dirty === 'number' ? row._dirty : 0;
     // resurrection guard: a newer tombstone for this id exists — drop locally instead.
     // 🔒 v2.14.0: the guard NEVER applies to categories — they are immortal,
     // so a stale tombstone must not block publishing a live category either.
@@ -658,7 +652,7 @@ function collectPushCandidates(
     payload.id = row.id;
     payload.userId = (row.userId as string) ?? DEFAULT_USER_ID;
     if (JSON.stringify(payload).length > MAX_PAYLOAD_JSON) continue; // pathological row
-    out.push({ store, id: String(row.id), payload, ver: pushVer });
+    out.push({ store, id: String(row.id), payload, ver: pushVer, dirty: dirtyAtCollect });
   }
   return out;
 }
@@ -703,6 +697,33 @@ async function pushDataItems(
   await Promise.all(Array.from({ length: Math.min(PUSH_CONCURRENCY, batches.length) }, worker));
 }
 
+/**
+ * v2.35.0 audit — mark successfully pushed rows as synced locally
+ * (_dirty: 0 + _sv: ver). This makes applyPulledRow's "never clobber an
+ * un-pushed local edit" guard REAL: offline-service now stamps _dirty on
+ * every write, and this is the only place that clears it after the server
+ * acknowledged the row. Rows RE-EDITED while the push was in flight keep
+ * their fresh _dirty and re-push on the next cycle.
+ */
+async function markPushedRows(items: PushItem[]): Promise<void> {
+  if (items.length === 0) return;
+  try {
+    const db = await getOfflineDB();
+    const now = Date.now();
+    for (const it of items) {
+      if (it.store === TOMB_STORE) continue;
+      const cur = (await db.get(it.store as 'products', it.id)) as unknown as Row | undefined;
+      if (!cur) continue; // deleted while pushing — nothing to mark
+      if (cur._dirty !== it.dirty) continue; // re-edited mid-push — its own guard protects it
+      const tx = db.transaction(it.store as 'products', 'readwrite');
+      void tx.store.put({ ...cur, _dirty: 0, _sv: it.ver, _synced: now } as unknown as Row);
+      await tx.done;
+    }
+  } catch {
+    /* non-fatal — worst case the row re-pushes next cycle (idempotent UPSERT) */
+  }
+}
+
 async function pushOnce(syncId: string): Promise<{ ok: boolean; error?: string }> {
   if (!getSyncAccount() || !encKey) return { ok: false, error: 'no-account' };
   if (syncing) {
@@ -741,6 +762,10 @@ async function pushOnce(syncId: string): Promise<{ ok: boolean; error?: string }
 
     await pushDataItems(syncId, all, encKey);
 
+    // v2.35.0 audit: the server acknowledged these rows — clear _dirty + stamp
+    // _sv locally so the pull guard protects only genuinely un-pushed edits.
+    await markPushedRows(all);
+
     pushWatermark = cycleStartDeviceMs;
     await saveWatermark(WM_PUSH, syncId, pushWatermark);
     lastServerNow = lastServerNow || nowMs();
@@ -756,7 +781,7 @@ async function pushOnce(syncId: string): Promise<{ ok: boolean; error?: string }
   }
 }
 
-export async function pushToD1(userId: string): Promise<{ ok: boolean; error?: string }> {
+async function pushToD1(userId: string): Promise<{ ok: boolean; error?: string }> {
   const syncId = currentSyncId || getSyncAccount()?.syncId;
   if (!syncId || !encKey) return { ok: false, error: 'no-account' };
   void userId;
@@ -815,7 +840,11 @@ function parseTombPayload(row: PullRow, payload: Record<string, unknown>): { sid
   const sid = payload.sid;
   const iid = payload.iid;
   if (typeof sid !== 'string' || typeof iid !== 'string') return null;
-  if (!/^[a-z][a-z0-9_]{0,31}$/.test(sid)) return null;
+  // v2.35.0 audit: validate against the REAL store list. The old lowercase
+  // regex rejected every camelCase store (cashEntries, serviceTransactions,
+  // staffPayments, dueEntries) — deletes of those never propagated and the
+  // integrity pass resurrected them on every other device.
+  if (!(SYNCED_STORES as readonly string[]).includes(sid)) return null;
   if (row.id !== `t:${sid}:${iid}`) return null;
   return { sid, iid };
 }
@@ -970,6 +999,10 @@ async function applyPulledRow(
     if (localDirty) return false; // never clobber an un-pushed local edit
     const localSv = typeof local._sv === 'number' ? local._sv : 0;
     if (localSv >= ver) return false; // already have this (or newer) version
+    // v2.35.0 audit: belt-and-braces — a never-pulled-back row (_sv: 0) whose
+    // own updatedAt is NEWER than the incoming version is an un-synced local
+    // edit (pre-update rows / missed stamps); protect it too.
+    if (localSv === 0 && recordVersionEpoch(local) > ver) return false;
   }
 
   // category adoption: a cloud category colliding with a same-name local
@@ -1426,10 +1459,12 @@ export function startD1Sync(): void {
     const acct = getSyncAccount();
     if (acct && acct.syncId !== currentSyncId) {
       currentSyncId = acct.syncId;
-      void deriveEncKey(acct.syncId, acct.pin).then((k) => {
-        encKey = k;
-        return beginCycle(true);
-      });
+      void deriveEncKey(acct.syncId, acct.pin)
+        .then((k) => {
+          encKey = k;
+          return beginCycle(true);
+        })
+        .catch((e) => setStatus({ state: 'error', lastError: (e as Error)?.message || 'key derive failed' }));
     } else if (!acct && currentSyncId) {
       currentSyncId = '';
       encKey = null;
@@ -1443,10 +1478,12 @@ export function startD1Sync(): void {
   const acct = getSyncAccount();
   if (acct) {
     currentSyncId = acct.syncId;
-    void deriveEncKey(acct.syncId, acct.pin).then((k) => {
-      encKey = k;
-      return beginCycle(true);
-    });
+    void deriveEncKey(acct.syncId, acct.pin)
+      .then((k) => {
+        encKey = k;
+        return beginCycle(true);
+      })
+      .catch((e) => setStatus({ state: 'error', lastError: (e as Error)?.message || 'key derive failed' }));
   } else {
     setStatus({ state: 'off', lastSyncAt: 0, lastError: null });
     void autoConnectFromEnv();
@@ -1474,7 +1511,3 @@ export function startD1Sync(): void {
   });
 }
 
-export function stopD1Sync(): void {
-  stopEngineTimers();
-  started = false;
-}

@@ -2,8 +2,7 @@ import type { GstMode } from './types';
 
 /**
  * GST money math — the ONE source of truth shared by bill creation
- * (offline-service), the Quick Sell preview (QuickSellModal) and the
- * settings preview (AdminBillSettings). Every site MUST mirror these
+ * (offline-service) and the settings preview (AdminBillSettings). Every site MUST mirror these
  * numbers so the preview always equals the stored bill.
  *
  * Two modes (user picks in Bill Settings):
@@ -18,7 +17,7 @@ import type { GstMode } from './types';
  * up to the printed total EXACTLY (no 1-paisa drift on the receipt).
  */
 
-export const DEFAULT_GST_MODE: GstMode = 'inclusive';
+const DEFAULT_GST_MODE: GstMode = 'inclusive';
 
 /** Missing/unknown stored value → inclusive (v2.13.0 default per shop owner's request). */
 export function normalizeGstMode(v: unknown): GstMode {
@@ -29,7 +28,7 @@ export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
-export interface GstBreakup {
+interface GstBreakup {
   /** Sale value before GST (the taxed base). */
   taxable: number;
   /** total GST (CGST + SGST). */

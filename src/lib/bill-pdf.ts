@@ -66,7 +66,7 @@ export function formatDate(iso: string): string {
  * Normalize a mobile number for wa.me: digits only, ensure country code.
  * 10-digit Indian numbers get 91 prefixed.
  */
-export function normalizeMobile(mobile: string): string {
+function normalizeMobile(mobile: string): string {
   let digits = (mobile || '').replace(/\D/g, '');
   if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
   if (digits.length === 10) digits = `91${digits}`;
@@ -564,7 +564,7 @@ export function downloadBlob(blob: Blob, fileName: string): void {
 /** True when the app runs inside an iframe (e.g. an embedded preview panel) —
  * sharing files from a framed page is blocked unless the frame is explicitly
  * allowed, so we tell the user to open the app in its own tab instead. */
-export function isEmbeddedFrame(): boolean {
+function isEmbeddedFrame(): boolean {
   try {
     return window.self !== window.top;
   } catch {
@@ -606,7 +606,7 @@ interface WhatsappSenderPlugin {
 }
 const WhatsappSender = registerPlugin<WhatsappSenderPlugin>('WhatsappSender');
 
-export type DirectWhatsappResult = 'opened' | 'no-whatsapp' | 'failed';
+type DirectWhatsappResult = 'opened' | 'no-whatsapp' | 'failed';
 
 /**
  * APK ONLY: open THE CUSTOMER's WhatsApp chat with the real PDF attached —
@@ -644,7 +644,7 @@ async function directWhatsappSend(
   }
 }
 
-export type FileShareResult =
+type FileShareResult =
   | 'shared'      // the real PDF file was handed to the OS share sheet
   | 'cancelled'   // user closed the share sheet without sending
   | 'unsupported' // this browser cannot share files (share sheet unavailable)
@@ -662,7 +662,7 @@ export type FileShareResult =
  *     PDF to the app cache and hand the real file to the Android share
  *     sheet via @capacitor/share.
  */
-export async function sharePdfFile(blob: Blob, fileName: string, text: string): Promise<FileShareResult> {
+async function sharePdfFile(blob: Blob, fileName: string, text: string): Promise<FileShareResult> {
   const file = new File([blob], fileName, { type: 'application/pdf' });
   const nav = navigator as Navigator;
 
@@ -712,7 +712,7 @@ export async function sharePdfFile(blob: Blob, fileName: string, text: string): 
 }
 
 /** Build the WhatsApp text summary for a bill. */
-export function buildBillMessage(bill: Bill, opts?: { withPdfNote?: boolean }): string {
+function buildBillMessage(bill: Bill, opts?: { withPdfNote?: boolean }): string {
   const shop = bill.shopSnapshot || { name: 'PS TELECOM', address: '', phone: '', gstNumber: '' };
   const shopName = shop.name || 'PS TELECOM';
   const proprietor = shop.proprietorName ?? PROPRIETOR_FALLBACK;
@@ -757,7 +757,7 @@ export function buildBillMessage(bill: Bill, opts?: { withPdfNote?: boolean }): 
 }
 
 /** wa.me deep link that opens the customer's chat with the bill summary pre-filled. */
-export function whatsappUrl(mobile: string, message: string): string {
+function whatsappUrl(mobile: string, message: string): string {
   const normalized = normalizeMobile(mobile);
   return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
 }
@@ -786,7 +786,7 @@ export type WhatsappSendResult =
  * customer's WhatsApp chat with the bill summary, so the user only has to
  * attach the downloaded file with the 📎 button.
  */
-export async function fallbackDownloadAndChat(
+async function fallbackDownloadAndChat(
   bill: Bill,
   pdf: GeneratedPdf,
 ): Promise<'fallback' | 'no-mobile'> {

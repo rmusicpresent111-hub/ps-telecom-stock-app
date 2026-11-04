@@ -18,6 +18,7 @@ import {
   type GeneratedPdf,
 } from '@/lib/bill-pdf';
 import { toastWhatsappResult } from '@/lib/share-toasts';
+import { computeGst, normalizeGstMode, round2 } from '@/lib/gst';
 import { BillingSettings, Bill, PaymentMethod, BillTemplateId } from '@/lib/types';
 import { ArrowLeft, FileText, Loader2, Trash2, Download, Share2, MessageCircle, ExternalLink, BadgeIndianRupee, Printer } from 'lucide-react';
 import { toast } from 'sonner';
@@ -154,8 +155,16 @@ export default function InvoiceScreen() {
       discountAmount = Math.round(Math.min(dv, subtotal) * 100) / 100;
     }
     const gstEnabled = !!settings?.gstEnabled && !!settings?.gstNumber.trim() && (settings?.gstRate ?? 0) > 0;
-    const gstAmount = gstEnabled ? Math.round((((subtotal - discountAmount) * (settings?.gstRate ?? 0)) / 100) * 100) / 100 : 0;
-    const total = Math.round((subtotal - discountAmount + gstAmount) * 100) / 100;
+    // v2.35.0 audit: mirror createBillOffline EXACTLY — computeGst honours
+    // gstMode ('inclusive' = the entered amount IS the final total, GST is
+    // carved out of it). The old preview always added GST on top, so the
+    // Grand Total / paid / due shown here were wrong for inclusive mode.
+    const afterDiscount = round2(subtotal - discountAmount);
+    const breakup = gstEnabled
+      ? computeGst(afterDiscount, settings?.gstRate ?? 0, normalizeGstMode(settings?.gstMode))
+      : { taxable: afterDiscount, gstAmount: 0, cgst: 0, sgst: 0, total: afterDiscount };
+    const gstAmount = breakup.gstAmount;
+    const total = breakup.total;
     let paid = paymentMethod === 'due' ? 0 : (paidAmount === '' ? total : Math.max(0, Number(paidAmount) || 0));
     paid = Math.min(paid, total);
     const due = Math.round((total - paid) * 100) / 100;

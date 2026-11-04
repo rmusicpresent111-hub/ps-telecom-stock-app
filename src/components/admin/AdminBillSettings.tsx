@@ -39,9 +39,7 @@ import type { Bill, BillingSettings } from '@/lib/types';
 import { computeGst, normalizeGstMode, halfRate } from '@/lib/gst';
 import { useAdminDataTick } from './useAdminData';
 import { buildBillReceiptHtml, printHtml } from './print';
-import A4Preview from './A4Preview';
-import ThermalPrintModal from './ThermalPrintModal';
-import { makeThermalTestBill } from './thermal-web';
+import A4Preview from './A4SheetPreview';
 import {
   AdminCard,
   Badge,

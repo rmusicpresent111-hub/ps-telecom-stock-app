@@ -75,8 +75,14 @@ const RATE_MAX_REQUESTS = 90;
 const rateMap = new Map<string, { count: number; resetAt: number }>();
 
 function clientIp(req: NextRequest): string {
+  // v2.35.0 audit: use the LAST entry of x-forwarded-for — the leftmost value
+  // is client-supplied and spoofable on platforms that append; the last one
+  // is added by our own edge (Vercel/Caddy set it from the real peer).
   const fwd = req.headers.get('x-forwarded-for');
-  if (fwd) return fwd.split(',')[0].trim();
+  if (fwd) {
+    const parts = fwd.split(',').map((s) => s.trim()).filter(Boolean);
+    if (parts.length > 0) return parts[parts.length - 1];
+  }
   return req.headers.get('x-real-ip') || 'unknown';
 }
 
@@ -138,8 +144,10 @@ function isSameOrigin(req: NextRequest): boolean {
   try {
     const originHost = new URL(origin).host;
     const hostHeader = (req.headers.get('host') || '').trim();
-    const fwdHost = (req.headers.get('x-forwarded-host') || '').trim().split(',')[0];
-    return originHost === hostHeader || (fwdHost !== '' && originHost === fwdHost);
+    // v2.35.0 audit: x-forwarded-host fallback REMOVED — it is a
+    // client-supplied header, so matching it let a native caller declare
+    // itself "same-origin" (Origin: https://evil.com + X-Forwarded-Host: evil.com).
+    return originHost === hostHeader;
   } catch {
     return false;
   }
@@ -240,6 +248,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   if (sql.length > MAX_SQL_LENGTH) {
     return json({ ok: false, error: 'SQL payload too large' });
+  }
+  // v2.35.0 audit: statement guard — the proxy is only meant to relay the
+  // sync engine's single parameterized statements against sync_data. Reject
+  // multi-statement strings and any DDL/PRAGMA/ATTACH so a same-origin
+  // visitor cannot DROP/ALTER the database from devtools.
+  {
+    const noStrings = sql.replace(/'(?:[^']|'')*'/g, "''");
+    if ((noStrings.match(/;/g) || []).length > 0) {
+      return json({ ok: false, error: 'Multiple SQL statements are not allowed' });
+    }
+    if (/\b(drop|alter|create|pragma|attach|detach|vacuum|reindex)\b/i.test(noStrings)) {
+      return json({ ok: false, error: 'Forbidden SQL statement' });
+    }
   }
   // Bound params must be plain scalars — anything else is rejected outright.
   if (params) {

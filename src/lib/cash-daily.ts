@@ -14,7 +14,7 @@
  * exercised with demo data fully in memory without touching any store.
  */
 
-export interface CashDailyInput {
+interface CashDailyInput {
   date: string; // YYYY-MM-DD
   cashIn: number;
   cashOut: number;
@@ -29,7 +29,7 @@ export interface CashDailyPoint {
 }
 
 /** Local-timezone YYYY-MM-DD (mirrors offline-service localDateStr). */
-export function dailyLocalDateStr(d: Date = new Date()): string {
+function dailyLocalDateStr(d: Date = new Date()): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
@@ -85,13 +85,13 @@ export function buildCashDaily(entries: CashDailyInput[]): CashDailyPoint[] {
 
 // ── DUE daily (Due Book history) ────────────────────────────────
 
-export interface DueDailyInput {
+interface DueDailyInput {
   date: string; // YYYY-MM-DD
   dueMade: number; // new credit given that day (+)
   collected: number; // due money recovered that day (−)
 }
 
-export interface DueDailyPoint {
+interface DueDailyPoint {
   date: string; // YYYY-MM-DD
   dueMade: number;
   collected: number;

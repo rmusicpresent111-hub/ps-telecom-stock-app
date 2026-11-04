@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -126,7 +126,11 @@ export default function DailyBookScreen() {
   }, [fetchCashEntries, fetchExpenses]);
 
   // Cash form handlers
+  // v2.35.0 audit: same-frame double-tap guard (duplicate cash entries)
+  const saveCashBusyRef = useRef(false);
   const handleSaveCash = async () => {
+    if (saveCashBusyRef.current) return;
+    saveCashBusyRef.current = true;
     if (!user?.id) return;
     // A cleared date input would save an orphan row (date: '') that no period
     // filter can ever display again.
@@ -170,6 +174,7 @@ export default function DailyBookScreen() {
     } catch (error) {
       toast.error(isBn ? 'ত্রুটি' : isHi ? 'त्रुटि' : 'Error', { description: (error as Error).message });
     } finally {
+      saveCashBusyRef.current = false;
       setLoading(false);
     }
   };
@@ -206,8 +211,12 @@ export default function DailyBookScreen() {
     }
   };
 
+  // v2.35.0 audit: same-frame double-tap guard (duplicate expenses)
+  const saveExpenseBusyRef = useRef(false);
   const handleSaveExpense = async () => {
+    if (saveExpenseBusyRef.current) return;
     if (!user?.id || !expenseAmount) return;
+    saveExpenseBusyRef.current = true;
 
     const amount = Number(expenseAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -242,6 +251,7 @@ export default function DailyBookScreen() {
     } catch (error) {
       toast.error(isBn ? 'ত্রুটি' : isHi ? 'त्रुटि' : 'Error', { description: (error as Error).message });
     } finally {
+      saveExpenseBusyRef.current = false;
       setLoading(false);
     }
   };

@@ -339,11 +339,16 @@ export default function SellCartModal({
   };
 
   // ── checkout ─────────────────────────────────────────────────
+  // v2.35.0 audit: same-frame double-tap guard — two clicks before setBusy
+  // commits used to create TWO bills and deduct stock twice.
+  const completeSaleBusyRef = useRef(false);
   const completeSale = async () => {
+    if (completeSaleBusyRef.current) return;
     if (cart.length === 0) {
       adminToast(t('qsell.cartEmptyErr'), 'err');
       return;
     }
+    completeSaleBusyRef.current = true;
     setBusy(true);
     try {
       const { bill } = await createCartBillOffline({
@@ -373,6 +378,7 @@ export default function SellCartModal({
     } catch (err) {
       adminToast((err as Error)?.message || t('c.error'), 'err');
     } finally {
+      completeSaleBusyRef.current = false;
       setBusy(false);
     }
   };
@@ -448,7 +454,7 @@ export default function SellCartModal({
             <Badge tone="slate">
               {t('bills.billNo')}: {b.billNumber}
             </Badge>
-            <Badge tone="green">{cartQty} {t('cart.items')}</Badge>
+            <Badge tone="green">{b.items.reduce((s, i) => s + (i.quantity || 0), 0)} {t('cart.items')}</Badge>
             {b.customerName && b.customerName !== 'Walk-in Customer' && <Badge tone="orange">{b.customerName}</Badge>}
           </div>
           {/* bought items — name × qty, category beneath */}

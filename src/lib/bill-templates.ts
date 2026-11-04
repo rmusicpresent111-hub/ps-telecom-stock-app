@@ -17,7 +17,7 @@
 import { BillTemplateId } from './types';
 import type { TranslationKeys } from './i18n';
 
-export interface BillTemplateMeta {
+interface BillTemplateMeta {
   id: BillTemplateId;
   /** i18n key for the display name */
   nameKey: keyof TranslationKeys;
@@ -68,6 +68,3 @@ export const BILL_TEMPLATES: BillTemplateMeta[] = [
 
 export const BILL_TEMPLATE_IDS: BillTemplateId[] = BILL_TEMPLATES.map((t) => t.id);
 
-export function isBillTemplateId(v: unknown): v is BillTemplateId {
-  return typeof v === 'string' && (BILL_TEMPLATE_IDS as string[]).includes(v);
-}
