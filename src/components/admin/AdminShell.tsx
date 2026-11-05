@@ -32,6 +32,7 @@ import {
   Globe,
   Banknote,
   Sprout,
+  PiggyBank,
 } from 'lucide-react';
 import { ensureDefaultUser } from '@/lib/local-auth';
 import { APP_VERSION } from '@/lib/app-version'; // v2.33.0: footer version no longer hardcoded
@@ -49,6 +50,7 @@ import AdminBills from './AdminBills';
 import AdminDueBook from './AdminDueBook';
 import AdminDueEntry from './AdminDueEntry';
 import AdminExpenses from './AdminExpenses';
+import AdminExtraIncome from './AdminExtraIncome';
 import AdminParties from './AdminParties';
 import AdminStaffPayments from './AdminStaffPayments';
 import AdminReports from './AdminReports';
@@ -65,6 +67,7 @@ const NAV: { key: AdminSection; icon: React.ComponentType<{ size?: number | stri
   { key: 'dueentry', icon: WalletCards, navKey: 'nav.dueEntry' },
   { key: 'parties', icon: Users, navKey: 'nav.parties' },
   { key: 'expenses', icon: Coins, navKey: 'nav.expenses' },
+  { key: 'extraincome', icon: PiggyBank, navKey: 'nav.extraincome' },
   { key: 'staff', icon: UserCog, navKey: 'nav.staff' },
   { key: 'reports', icon: BarChart3, navKey: 'nav.reports' },
   { key: 'billsettings', icon: FileText, navKey: 'nav.billSettings' },
@@ -83,6 +86,7 @@ const SECTION_TITLE: Record<AdminSection, string> = {
   dueentry: 'nav.dueEntry',
   parties: 'nav.parties',
   expenses: 'nav.expenses',
+  extraincome: 'nav.extraincome',
   staff: 'nav.staff',
   reports: 'nav.reports',
   billsettings: 'nav.billSettings',
@@ -385,6 +389,7 @@ function AdminShellInner() {
           {section === 'dueentry' && <AdminDueEntry />}
           {section === 'parties' && <AdminParties />}
           {section === 'expenses' && <AdminExpenses />}
+          {section === 'extraincome' && <AdminExtraIncome />}
           {section === 'staff' && <AdminStaffPayments />}
           {section === 'reports' && <AdminReports />}
           {section === 'billsettings' && <AdminBillSettings />}

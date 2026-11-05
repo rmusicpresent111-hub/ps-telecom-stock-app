@@ -20,6 +20,7 @@ export type AdminSection =
   | 'due'
   | 'dueentry'
   | 'expenses'
+  | 'extraincome'
   | 'parties'
   | 'staff'
   | 'reports'

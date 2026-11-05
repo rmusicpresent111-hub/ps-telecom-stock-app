@@ -2369,3 +2369,18 @@ FIX 1 — mirror redeployed: npm run build:pages (static export under /ps-teleco
 FIX 2 — build-web-pages.js leak-scan false-positive: the scan hard-fails when any .env secret VALUE appears in out/; NEXT_PUBLIC_SYNC_PIN (9732881732) equals the factory-default adminPin that is hardcoded in src (offline-service defaults + printed inside admin-i18n strings since Admin v2.11.0), so every mirror build with the standard .env aborted with 2 bogus "SECRET LEAK" hits. Needles that also exist verbatim in tracked src/ are now excluded with a console note (a source-hardcoded default ships in every bundle anyway — it is not a deploy-time secret); real secrets (Cloudflare tokens, a changed sync PIN living only in .env) still hard-fail, and the generic cfut_ token scan is untouched. Build-only change — no app code, no version bump.
 
 Verified: mirror live with features; dev server restarted (pages build purges .next — dev had 500'd) and / → 200; build:pages leak scan clean. APK untouched (v2.38.0 / versionCode 23800 already shipped).
+
+## Task 89 — v2.39.0: Extra Income in the ADMIN panel (owner: "extra income dekhte pachhina admin panel e")
+
+CONTEXT: v2.38.0 shipped Extra Income ONLY in the app (Profile → এক্সট্রা ইনকাম screen). The owner then looked for it in the admin console and found nothing — the admin panel had no Extra Income section at all. (Session also started with the sandbox snapshot restored stale v2.31 junk again — proxy.ts resurrected via auto-commit; hard-reset to origin/main 8844601 before any work.)
+
+NEW ADMIN SECTION — এক্সট্রা ইনকাম (nav slot right after খরচ, PiggyBank icon, deep-link /admin#extraincome):
+- AdminExtraIncome.tsx (new, modeled on AdminExpenses, green income palette #16A34A): PageHeader + "সরাসরি প্রফিটে যোগ হয়" hint; 3 StatCards (আজকের ইনকাম / সব সময়ের মোট / মোট এন্ট্রি); green growth graph (daily income bars + running-total line, 7/30/all periods, same AdminHistoryKit as Expenses); prominent segmented tabs (ইনকামের তালিকা | হিস্ট্রি — same v2.38.0 pattern the owner approved for Expenses); list table (date/source badge/note/amount + delete); day-by-day history rows (count per day + day total); add modal (date, amount, source required, note); delete confirm modal.
+- adminStore.ts: 'extraincome' added to AdminSection union (SECTION_TITLE Record enforces the title map).
+- AdminShell.tsx: import + NAV entry after খরচ + SECTION_TITLE + section render + PiggyBank icon import.
+- admin-i18n.ts: 20 new keys (nav.extraincome, ei.*) × bn/en/hi; reuses exp.date/exp.amount/exp.tabHistory/exp.legendTotal/exp.noTxn/exp.dayEndTotal and all c.* commons.
+- Data layer unchanged: same getExtraIncomeOffline/createExtraIncomeOffline/deleteExtraIncomeOffline the app screen uses — admin and app see the SAME entries, profit integration inherited for free.
+
+E2E (agent-browser, sync endpoint blocked — no test rows reached the real D1): nav item renders after খরচ; section opens via deep link; added ₹300 "Admin test commission" → stats ₹300/₹300/1, green bar on graph, history row (05 Nov 2026, + ₹300, দিনের মোট ₹300); app side: Profile → Extra Income shows Today ₹300/All-time ₹300, Dashboard "Today's Profit ₹300" (direct-profit from admin proven); delete → stats back to ₹0/0, table empties. tsc 0 errors, eslint 0.
+
+Version 2.38.0 → 2.39.0 (versionCode 23900). Web mirror + APK rebuilt and redeployed after this entry.

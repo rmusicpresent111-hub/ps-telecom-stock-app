@@ -696,6 +696,27 @@ const D: Record<string, Entry> = {
   'parties.party': { bn: 'পার্টি', en: 'Party', hi: 'पार्टी' },
   'parties.mobile': { bn: 'মোবাইল', en: 'Mobile', hi: 'मोबाइल' },
   'parties.noMobile': { bn: 'এই পার্টির মোবাইল নম্বর নেই', en: 'This party has no mobile number', hi: 'इस पार्टी का मोबाइल नंबर नहीं है' },
+  // v2.39.0 — admin Extra Income section (mirrors the app's ExtraIncomeScreen)
+  'nav.extraincome': { bn: 'এক্সট্রা ইনকাম', en: 'Extra Income', hi: 'अतिरिक्त आय' },
+  'ei.subtitle': { bn: 'সরাসরি প্রফিটে যোগ হয়', en: 'Added straight to profit', hi: 'सीधे प्रॉफिट में जुड़ता है' },
+  'ei.add': { bn: 'নতুন ইনকাম', en: 'Add Income', hi: 'नई आय जोड़ें' },
+  'ei.today': { bn: 'আজকের ইনকাম', en: "Today's Income", hi: 'आज की आय' },
+  'ei.total': { bn: 'সব সময়ের মোট', en: 'All-time total', hi: 'सभी समय का कुल' },
+  'ei.count': { bn: 'মোট এন্ট্রি', en: 'Entries', hi: 'एंट्री' },
+  'ei.entries': { bn: '{n} টি এন্ট্রি', en: '{n} entries', hi: '{n} एंट्री' },
+  'ei.source': { bn: 'ইনকামের উৎস', en: 'Income source', hi: 'आय का स्रोত' },
+  'ei.sourcePh': { bn: 'যেমন: রিচার্জ কমিশন, স্ক্র্যাপ সেল', en: 'e.g. recharge commission, scrap sale', hi: 'जैसे: रिचार्ज कमीशन, स्क्रैप सेल' },
+  'ei.note': { bn: 'নোট', en: 'Note', hi: 'नोट' },
+  'ei.notePh': { bn: 'কোথা থেকে / কার কাছ থেকে', en: 'where / from whom', hi: 'कहाँ से / किससे' },
+  'ei.empty': { bn: 'কোনো এক্সট্রা ইনকাম নেই', en: 'No extra income yet', hi: 'अभी कोई अतिरिक्त आय नहीं' },
+  'ei.emptySub': { bn: 'উপরের বাটন থেকে যোগ করুন — এটা সরাসরি প্রফিটে যোগ হবে', en: 'Add from the button above — it goes straight into profit', hi: 'ऊपर के बटन से जोड़ें — यह सीधे प्रॉफिट में जुड़ेगा' },
+  'ei.tabList': { bn: 'ইনকামের তালিকা', en: 'Income List', hi: 'आয় सूची' },
+  'ei.historyTitle': { bn: 'ইনকাম হিস্ট্রি — দিন অনুযায়ী', en: 'Income History — day by day', hi: 'आय इतिहास — दिन के हिसाब से' },
+  'ei.growth': { bn: 'ইনকামের গ্রোথ গ্রাফ', en: 'Income growth', hi: 'आय वृद्धि ग्राफ' },
+  'ei.growthSub': { bn: 'দৈনিক এক্সট্রা ইনকাম ও জমা মোট', en: 'Daily extra income & running total', hi: 'दैनिक अतिरिक्त आय और कुल' },
+  'ei.legendDay': { bn: 'দৈনিক ইনকাম', en: 'Daily income', hi: 'दैनिक आय' },
+  'ei.dayTotal': { bn: 'দিনের মোট', en: 'Day total', hi: 'दिन का कुल' },
+  'ei.deleteAsk': { bn: 'এই ইনকাম এন্ট্রি মুছবেন?', en: 'Delete this income entry?', hi: 'यह आय एंट्री हटाएं?' },
 };
 
 /** Translate an admin key. Falls back to English → the key itself. */
