@@ -12,7 +12,7 @@
  *    any local write (onLocalDataChanged) or a finished D1 sync cycle
  *    (idle after syncing) clears it, so a refetch always sees fresh rows.
  *  - prefetchAdminData(): warms the heaviest queries (dashboard + cash book)
- *    while the PIN gate / shell boot is still on screen, so the first
+ *    while the shell boot is still on screen, so the first
  *    dashboard paint hits the cache instead of waiting on IndexedDB.
  */
 
@@ -34,7 +34,7 @@ function wire(): void {
   // any local write anywhere invalidates everything
   onLocalDataChanged(() => cache.clear());
 
-  // a finished cloud-sync cycle may have written new rows
+  // a finished D1 sync cycle may have written new rows
   let prev = '';
   subscribeD1Status((s) => {
     if (s.state === 'idle' && prev === 'syncing') cache.clear();

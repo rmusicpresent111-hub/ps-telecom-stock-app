@@ -5,7 +5,7 @@
  *
  * Re-runs loaders whenever the underlying data can have changed:
  *  - any local write (offline-service fires onLocalDataChanged)
- *  - a completed cloud-sync cycle (D1 pull may have written new rows)
+ *  - a completed D1 sync cycle (D1 pull may have written new rows)
  *  - window focus / connectivity
  *  - a gentle 20s poll (other-device changes between pull ticks)
  */

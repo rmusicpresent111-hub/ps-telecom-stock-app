@@ -1,7 +1,7 @@
 /**
  * Cloudflare D1 proxy — the ONLY piece of the cloud that holds credentials.
  *
- * The client (src/lib/d1-sync.ts / src/lib/cloud-d1.ts) posts
+ * The client (src/lib/d1-sync.ts) posts
  * { sql, params, pin } and this route forwards the statement to the official
  * Cloudflare REST API:
  *
@@ -162,7 +162,7 @@ function pinMatches(candidate: string, serverPin: string): boolean {
 
 /**
  * Stable error codes the client UI maps to translated, friendly messages.
- * Keep in sync with the d1-sync/cloud-d1 clients and the i18n keys.
+ * Keep in sync with the d1-sync client and the i18n keys.
  */
 type CloudErrorCode = 'ids_wrong' | 'token_invalid' | 'ids_malformed' | 'rate_limit' | 'missing_creds';
 

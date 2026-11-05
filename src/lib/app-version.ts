@@ -4,4 +4,4 @@
  * (the admin console footer + about surfaces read from here, so the shown
  * version can never go stale again).
  */
-export const APP_VERSION = '2.37.0';
+export const APP_VERSION = '2.37.1';
