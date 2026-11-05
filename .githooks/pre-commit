@@ -1,0 +1,26 @@
+#!/bin/sh
+# ---------------------------------------------------------------------------
+# PS TELECOM resurrection guard — pre-commit hook
+# (installed via: git config core.hooksPath .githooks — guard-check.js --fix
+#  reinstalls it automatically after any sandbox snapshot restore)
+#
+# Blocks ANY commit staging the deleted lock/sync system (resurrected dead
+# files). The junk auto-commit SUBJECT check lives in .githooks/commit-msg
+# (pre-commit receives no message file argument — that hook needs $1).
+#
+# Do NOT bypass with --no-verify. If this fires, your tree was probably
+# rolled back to a stale snapshot:  bun run guard:fix  (docs: SESSION-START.md)
+# ---------------------------------------------------------------------------
+
+# dead-file blocklist (deleted v2.29→v2.37 — must never come back)
+blocked=$(git diff --cached --name-only | grep -E \
+  '(^|/)(proxy|middleware)\.ts$|(^|/)\.firebaserc$|^firebase\.json$|(^|/)AppLock|(^|/)SiteLock|app-lock|appLockStore|(^|/)admin-pin\.ts$|AdminPinGate|AdminDataView|QuickSellModal|CloudSyncScreen|CloudBackupScreen|(^|/)use-toast\.ts$|ui/toast(er)?\.tsx$|(^|/)db\.ts$|^src/app/api/route\.ts$|firebase|site-lock|site-auth|cloud-sync|cloud-d1|auto-restore|sync-dirty')
+if [ -n "$blocked" ]; then
+  echo "✋ GUARD: commit BLOCKED — resurrected dead/lock-system files staged:"
+  printf '%s\n' "$blocked" | sed 's/^/      /'
+  echo "   These were deleted long ago. Your sandbox may have restored a stale snapshot."
+  echo "   Fix:  git reset --hard origin/main && bun run guard:fix"
+  exit 1
+fi
+
+exit 0

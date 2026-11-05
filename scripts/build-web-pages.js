@@ -131,6 +131,20 @@ process.on('SIGINT', () => process.exit(130));
 
 async function main() {
   try {
+    // STEP G — resurrection guard (sandbox snapshot-rollback protection).
+    // See scripts/guard-check.js + SESSION-START.md. The mirror must NEVER be
+    // built from a stale snapshot (that is exactly how the public site went
+    // stale and "features changed automatically" for the owner).
+    console.log('🛡 STEP G — resurrection guard: checking tree state…');
+    try {
+      execFileSync('node', ['scripts/guard-check.js'], { stdio: 'inherit', cwd: ROOT });
+    } catch {
+      console.error('✋ BUILD ABORTED by guard — tree looks rolled back or polluted.');
+      console.error('   Fix:  bun run guard:fix   (docs: SESSION-START.md)');
+      process.exitCode = 1;
+      return;
+    }
+
     // 4. hide the real .env so no secret is baked into this public build
     if (realEnv !== null) {
       fs.renameSync(ENV_FILE, ENV_HIDDEN);

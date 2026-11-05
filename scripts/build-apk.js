@@ -69,6 +69,24 @@ function moveDir(src, dest) {
 }
 
 // ---------------------------------------------------------------------------
+// STEP G — resurrection guard (sandbox snapshot-rollback protection).
+// The sandbox has repeatedly restored stale snapshots between sessions (old
+// version + the deleted lock/sync system coming back as junk auto-commits).
+// Refuse to build from a rolled-back/polluted tree. Vercel checkouts are
+// clean by construction → skip there. (docs: SESSION-START.md)
+// ---------------------------------------------------------------------------
+if (!process.env.VERCEL) {
+  console.log('\n🛡 STEP G — resurrection guard (stale-snapshot / dead-file check)...');
+  try {
+    execSync('node scripts/guard-check.js', { stdio: 'inherit', cwd: ROOT });
+  } catch {
+    console.error('\n✋ BUILD ABORTED by guard — tree looks rolled back or polluted.');
+    console.error('   Fix:  bun run guard:fix   (docs: SESSION-START.md)');
+    process.exit(1);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // STEP 0 — Vercel deploy guard (must run before ANY APK/static-export logic).
 // Without this, a Vercel deployment fails with "Build output ./out not found"
 // because server mode produces .next, never ./out.

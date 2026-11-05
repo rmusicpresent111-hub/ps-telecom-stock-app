@@ -1,0 +1,21 @@
+#!/bin/sh
+# ---------------------------------------------------------------------------
+# PS TELECOM resurrection guard — commit-msg hook
+# ($1 = path to the commit-message file — the ONLY hook that receives it)
+#
+# Blocks the sandbox's junk auto-commits: the snapshotter commits resurrected
+# stale-snapshot files with a bare-UUID subject (e.g. "5866c3c7-1177-4b9e-…").
+# Dead-FILE staging is blocked by .githooks/pre-commit.
+#
+# Do NOT bypass with --no-verify. If this fires, run:
+#   git reset --hard origin/main && bun run guard:fix  (docs: SESSION-START.md)
+# ---------------------------------------------------------------------------
+subject=$(head -n 1 "$1" 2>/dev/null)
+
+if printf '%s' "$subject" | grep -qiE '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[[:space:]]*$'; then
+  echo "✋ GUARD: bare-UUID commit subject detected — looks like a sandbox snapshot auto-commit."
+  echo "   Fix:  git reset --hard origin/main && bun run guard:fix"
+  exit 1
+fi
+
+exit 0

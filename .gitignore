@@ -98,3 +98,6 @@ firebase-debug.*.log
 
 # legacy D1 secrets file (v2.28.0 removed it from the repo; keep it out forever)
 src/lib/d1-secrets.ts
+
+# sandbox runtime churn — never commit
+.zscripts/dev.pid

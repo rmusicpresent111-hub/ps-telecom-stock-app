@@ -12,7 +12,9 @@
     "db:push": "echo '[ps-telecom] Offline-first app (IndexedDB) - no local DB push needed, skipping'",
     "cap:sync": "npx cap sync android",
     "cap:open": "npx cap open android",
-    "build:pages": "node scripts/build-web-pages.js"
+    "build:pages": "node scripts/build-web-pages.js",
+    "guard": "node scripts/guard-check.js",
+    "guard:fix": "node scripts/guard-check.js --fix"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.1",
