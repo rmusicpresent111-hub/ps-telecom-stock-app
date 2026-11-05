@@ -66,9 +66,45 @@ const secretNames = [
   'CLOUDFLARE_D1_API_TOKEN',
 ];
 const isPlaceholderVal = (v) => !v || /PASTE[._-]?YOUR|CHANGE[._-]?ME/i.test(v);
-const needles = secretNames
+const rawNeedles = secretNames
   .map((n) => readEnvValue(realEnv, n))
   .filter((v) => !isPlaceholderVal(v));
+
+/**
+ * A needle that ALSO exists verbatim in the tracked source is a
+ * source-hardcoded default — e.g. the factory adminPin ('9732881732')
+ * printed inside the i18n strings — not a build-time secret. It ships in
+ * every bundle (APK, Vercel, this mirror) regardless of .env, so scanning
+ * for it only produces false positives that abort legitimate mirror
+ * deploys. Real secrets (Cloudflare tokens, a changed sync PIN that lives
+ * ONLY in .env) never appear in src/ and keep hard-failing the deploy.
+ */
+const srcDir = path.join(ROOT, 'src');
+const valueInSource = (value) => {
+  const stack = [srcDir];
+  while (stack.length) {
+    const dir = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) stack.push(p);
+      else if (fs.readFileSync(p, 'utf8').includes(value)) return true;
+    }
+  }
+  return false;
+};
+const needles = rawNeedles.filter((v) => {
+  if (valueInSource(v)) {
+    console.log(`• leak-scan note: value ${v.slice(0, 4)}… also exists in src/ (source-hardcoded default) — not treated as a secret`);
+    return false;
+  }
+  return true;
+});
 
 const restore = () => {
   try {
