@@ -8,7 +8,7 @@ import { registerBackModal } from '@/lib/modal-back';
 import { subscribeD1Status, getD1SyncStatus, syncNowD1, type D1SyncStatus } from '@/lib/d1-sync';
 import { getSyncAccount, type SyncAccount } from '@/lib/d1-config';
 import { motion } from 'framer-motion';
-import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, Receipt, ReceiptText, RefreshCw, CloudUpload, HandCoins, FileSpreadsheet, Monitor } from 'lucide-react';
+import { User, Pencil, Moon, Sun, Globe, FileText, Download, Upload, Trash2, Receipt, ReceiptText, RefreshCw, CloudUpload, HandCoins, FileSpreadsheet, Monitor, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
 import type { User as UserType, Category } from '@/lib/types';
 
@@ -394,6 +394,21 @@ export default function ProfileScreen() {
               <div className="text-left">
                 <span className="text-sm block">{t('dueBook', language)}</span>
                 <span className="text-[10px] text-white/40">{t('dueBookDesc', language)}</span>
+              </div>
+            </div>
+            <span className="text-xs text-white/40">₹</span>
+          </button>
+
+          {/* Extra Income (v2.38.0) — one-off income, added directly to profit */}
+          <button
+            onClick={() => navigateTo('extra-income')}
+            className="glass-card w-full p-4 flex items-center justify-between"
+          >
+            <div className="flex items-center gap-3">
+              <TrendingUp size={18} className="text-emerald-400" />
+              <div className="text-left">
+                <span className="text-sm block">{t('extraIncome', language)}</span>
+                <span className="text-[10px] text-white/40">{t('extraIncomeDesc', language)}</span>
               </div>
             </div>
             <span className="text-xs text-white/40">₹</span>

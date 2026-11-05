@@ -65,39 +65,45 @@ function RoyalGoldReceipt({ bill, settings, language }: InnerProps) {
 
       <div className="h-1.5 bg-gradient-to-r from-amber-200 via-[#D4A853] to-amber-700" />
 
-      {/* header */}
-      <div className="bg-gradient-to-b from-[#1e2434] to-[#141927] px-5 py-4 relative">
-        <div className="flex items-start gap-3">
-          <div className="w-11 h-11 shrink-0 rounded-full bg-gradient-to-br from-amber-200 via-[#D4A853] to-amber-700 flex items-center justify-center shadow-lg shadow-amber-900/40 ring-2 ring-amber-200/30">
-            <span className="font-serif font-bold text-[#1a1408] text-sm tracking-wide">
+      {/* header — v2.38.0 regal restyle (owner: "hader design valo lageni"):
+          centred diamond crest + gradient name + gold ticket strip. */}
+      <div className="bg-gradient-to-b from-[#1e2434] to-[#141927] px-5 py-5 relative">
+        <div className="flex flex-col items-center text-center">
+          <div className="w-14 h-14 shrink-0 rotate-45 rounded-2xl bg-gradient-to-br from-amber-200 via-[#D4A853] to-amber-700 flex items-center justify-center shadow-lg shadow-amber-900/40 ring-2 ring-amber-200/30">
+            <span className="-rotate-45 font-serif font-bold text-[#1a1408] text-base tracking-wide">
               {shopInitials(bill.shopSnapshot?.name || settings?.shopName || 'PS TELECOM')}
             </span>
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="font-serif text-[21px] leading-tight font-bold tracking-[0.1em] bg-gradient-to-r from-amber-100 via-[#EBCB7F] to-amber-300 bg-clip-text text-transparent truncate">
-              {bill.shopSnapshot?.name || settings?.shopName || 'PS TELECOM'}
-            </p>
-            {(bill.shopSnapshot?.proprietorName ?? settings?.proprietorName) && (
-              <p className="font-serif italic text-[10px] text-amber-200/70 mt-0.5">
-                Proprietor: {bill.shopSnapshot?.proprietorName ?? settings?.proprietorName}
-              </p>
-            )}
-          </div>
-          <div className="text-right shrink-0">
-            <span className="text-[9px] font-bold bg-gradient-to-r from-amber-300 to-[#C89B4B] text-[#1a1408] px-2 py-0.5 rounded-sm shadow">{bill.gstEnabled ? 'TAX INVOICE' : 'INVOICE'}</span>
-            <p className="text-[10px] text-white/60 mt-1.5">{bill.billNumber}</p>
-            <p className="text-[10px] text-white/60">{formatDate(bill.date)}</p>
-          </div>
-        </div>
-        <div className="mt-2 text-[10px] text-white/45 leading-snug">
-          {bill.shopSnapshot?.address && <p className="whitespace-pre-line">{bill.shopSnapshot.address}</p>}
-          {(bill.shopSnapshot?.phone || bill.shopSnapshot?.gstNumber) && (
-            <p className="mt-0.5">
-              {bill.shopSnapshot?.phone && <span>Ph: {bill.shopSnapshot.phone}</span>}
-              {bill.shopSnapshot?.phone && bill.shopSnapshot?.gstNumber && <span>{'  |  '}</span>}
-              {bill.shopSnapshot?.gstNumber && <span>GSTIN: {bill.shopSnapshot.gstNumber}</span>}
+          <p className="mt-3 font-serif text-[23px] leading-tight font-bold tracking-[0.12em] bg-gradient-to-r from-amber-100 via-[#EBCB7F] to-amber-300 bg-clip-text text-transparent">
+            {bill.shopSnapshot?.name || settings?.shopName || 'PS TELECOM'}
+          </p>
+          {(bill.shopSnapshot?.proprietorName ?? settings?.proprietorName) && (
+            <p className="font-serif italic text-[10px] text-amber-200/70 mt-0.5">
+              Proprietor: {bill.shopSnapshot?.proprietorName ?? settings?.proprietorName}
             </p>
           )}
+          {(bill.shopSnapshot?.address || bill.shopSnapshot?.phone || bill.shopSnapshot?.gstNumber) && (
+            <div className="mt-1.5 text-[10px] text-white/50 leading-snug max-w-[90%]">
+              {bill.shopSnapshot?.address && <p className="whitespace-pre-line">{bill.shopSnapshot.address}</p>}
+              {(bill.shopSnapshot?.phone || bill.shopSnapshot?.gstNumber) && (
+                <p className="mt-0.5">
+                  {bill.shopSnapshot?.phone && <span>Ph: {bill.shopSnapshot.phone}</span>}
+                  {bill.shopSnapshot?.phone && bill.shopSnapshot?.gstNumber && <span>{'  ·  '}</span>}
+                  {bill.shopSnapshot?.gstNumber && <span>GSTIN: {bill.shopSnapshot.gstNumber}</span>}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+        {/* invoice ticket strip — chip left, bill no + date right */}
+        <div className="mt-3.5 flex items-center justify-between border border-[#D4A853]/40 bg-white/[0.03] rounded-lg px-3 py-2">
+          <span className="text-[9px] font-bold bg-gradient-to-r from-amber-300 to-[#C89B4B] text-[#1a1408] px-2 py-0.5 rounded-sm shadow">
+            {bill.gstEnabled ? 'TAX INVOICE' : 'INVOICE'}
+          </span>
+          <div className="text-right">
+            <p className="text-[11px] font-bold text-amber-100/90 tracking-wider">{bill.billNumber}</p>
+            <p className="text-[10px] text-white/55">{formatDate(bill.date)}</p>
+          </div>
         </div>
       </div>
       <div className="h-px bg-gradient-to-r from-transparent via-[#D4A853]/70 to-transparent" />

@@ -23,6 +23,7 @@ import {
   offlineStaffPayments,
   offlineInvestments,
   offlineDueEntries,
+  offlineExtraIncome,
   clearOfflineData,
   getOfflineDB,
   type OfflineDBSchema,
@@ -31,7 +32,7 @@ import { getLocalUser, updateLocalUser } from './local-auth';
 import { generateRecordId } from './id';
 import { notifyLocalDataChanged, notifyLocalWipe } from './sync-events';
 import { computeGst, normalizeGstMode, round2 } from './gst';
-import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillItem, BillingSettings, PaymentMethod, StaffPayment, StaffPaymentKind, Investment, DueEntry, DueScheduleItem, BillTemplateId } from './types';
+import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillItem, BillingSettings, PaymentMethod, StaffPayment, StaffPaymentKind, Investment, DueEntry, DueScheduleItem, BillTemplateId, ExtraIncome } from './types';
 import { BILL_TEMPLATE_IDS } from './bill-templates';
 
 // ============ DATE HELPERS (local timezone — never use UTC for business days) ============
@@ -91,7 +92,7 @@ function stripSync<T>(row: Record<string, unknown>): T {
  * the cloud on device B.
  */
 async function recordPendingDelete(
-  storeName: 'products' | 'expenses' | 'cashEntries' | 'serviceTransactions' | 'bills' | 'staffPayments' | 'investments' | 'dueEntries',
+  storeName: 'products' | 'expenses' | 'cashEntries' | 'serviceTransactions' | 'bills' | 'staffPayments' | 'investments' | 'dueEntries' | 'extraIncome',
   itemId: string,
   userId: string
 ): Promise<void> {
@@ -779,7 +780,7 @@ export async function getTransactionsOffline(userId: string, options?: { type?: 
 // ============ DASHBOARD (Local) ============
 
 export async function getDashboardOffline(userId: string) {
-  const [localProducts, localCategories, localTransactions, localBills, localDueEntries] = await Promise.all([
+  const [localProducts, localCategories, localTransactions, localBills, localDueEntries, localExtraIncome] = await Promise.all([
     offlineProducts.getAll(userId),
     offlineCategories.getAll(userId),
     offlineTransactions.getAll(userId),
@@ -787,6 +788,8 @@ export async function getDashboardOffline(userId: string) {
     // v2.37.0: বাকি এন্ট্রি (custom credit ledger) counts toward the Due Book
     // banner too — the old banner silently ignored standalone dues.
     offlineDueEntries.getAll(userId),
+    // v2.38.0: extra income adds DIRECTLY to the displayed profit.
+    offlineExtraIncome.getAll(userId),
   ]);
 
   const products = localProducts.map(p => stripSync<Product>(p));
@@ -830,6 +833,15 @@ export async function getDashboardOffline(userId: string) {
     saleMap.set(t.date, existing);
   }
 
+  // v2.38.0: extra income per day — folded into the 7-day profit line and
+  // today's profit below (owner request: "bosano amount direct profit e jog"),
+  const extraByDay = new Map<string, number>();
+  for (const e of localExtraIncome) {
+    if (!e || typeof e.date !== 'string') continue;
+    const day = e.date.slice(0, 10);
+    extraByDay.set(day, (extraByDay.get(day) || 0) + (Number(e.amount) || 0));
+  }
+
   const saleOverview: { date: string; label: string; sales: number; quantity: number; profit: number }[] = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
@@ -837,7 +849,14 @@ export async function getDashboardOffline(userId: string) {
     const dateStr = localDateStr(d);
     const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' });
     const dayData = saleMap.get(dateStr) || { sales: 0, quantity: 0, profit: 0 };
-    saleOverview.push({ date: dateStr, label: dayLabel, ...dayData });
+    // copy — the saleMap object is shared, mutation would double-count
+    saleOverview.push({
+      date: dateStr,
+      label: dayLabel,
+      sales: dayData.sales,
+      quantity: dayData.quantity,
+      profit: dayData.profit + (extraByDay.get(dateStr) || 0),
+    });
   }
 
   const stockByCategory = new Map<string, { quantity: number; value: number }>();
@@ -864,7 +883,9 @@ export async function getDashboardOffline(userId: string) {
     const cost = (tx.quantity || 0)
       * (tx.product?.purchasePrice ?? products.find(p => p.id === tx.productId)?.purchasePrice ?? 0);
     return sum + ((tx.totalAmount || 0) - cost);
-  }, 0);
+  }, 0)
+    // v2.38.0: extra income entries dated today are added DIRECTLY to profit.
+    + (extraByDay.get(today) || 0);
 
   // ---- Due Book aggregates (customer credit) — same pass, no extra store scan
   // v2.37.0: bill dues + বাকি এন্ট্রি outstanding = the money customers owe.
@@ -1136,6 +1157,58 @@ export async function deleteDueEntryOffline(id: string, userId: string): Promise
   if (!row || row.userId !== userId) throw new Error('Due entry not found');
   await offlineDueEntries.delete(id);
   await recordPendingDelete('dueEntries', id, userId);
+  notifyLocalDataChanged(userId);
+  return { success: true };
+}
+
+// ============ EXTRA INCOME (v2.38.0 — added directly to profit) ============
+
+export async function getExtraIncomeOffline(userId: string): Promise<ExtraIncome[]> {
+  const rows = await offlineExtraIncome.getAll(userId);
+  return rows
+    .map(r => stripSync<ExtraIncome>(r))
+    .sort((a, b) => {
+      if (a.date !== b.date) return b.date.localeCompare(a.date);
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+}
+
+export async function createExtraIncomeOffline(data: {
+  userId: string;
+  sourceName: string;
+  amount: number;
+  date?: string;
+  note?: string;
+}): Promise<{ income: ExtraIncome }> {
+  const amount = round2(Number(data.amount));
+  const sourceName = (data.sourceName || '').trim();
+  if (!sourceName) throw new Error('Income source is required');
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Income amount must be greater than 0');
+
+  const now = new Date().toISOString();
+  const row: OfflineDBSchema['extraIncome']['value'] = {
+    id: generateRecordId(),
+    userId: data.userId,
+    sourceName,
+    amount,
+    date: data.date || localDateStr(),
+    note: (data.note || '').trim(),
+    createdAt: now,
+    updatedAt: now,
+    _synced: Date.now(),
+    _dirty: Date.now(),
+  };
+
+  await offlineExtraIncome.put(row);
+  notifyLocalDataChanged(data.userId);
+  return { income: stripSync<ExtraIncome>(row) };
+}
+
+export async function deleteExtraIncomeOffline(id: string, userId: string): Promise<{ success: boolean }> {
+  const row = await offlineExtraIncome.getById(id);
+  if (!row || row.userId !== userId) throw new Error('Extra income entry not found');
+  await offlineExtraIncome.delete(id);
+  await recordPendingDelete('extraIncome', id, userId);
   notifyLocalDataChanged(userId);
   return { success: true };
 }
@@ -2561,7 +2634,7 @@ export async function markBillPaidOffline(
 // ============ BACKUP (Local) ============
 
 export async function exportBackupOffline(userId: string) {
-  const [localCategories, localProducts, localTransactions, localExpenses, localCashEntries, localServiceTxns, localBills, localStaffPayments, localInvestments, localDueEntries, billingSettings] = await Promise.all([
+  const [localCategories, localProducts, localTransactions, localExpenses, localCashEntries, localServiceTxns, localBills, localStaffPayments, localInvestments, localDueEntries, localExtraIncome, billingSettings] = await Promise.all([
     offlineCategories.getAll(userId),
     offlineProducts.getAll(userId),
     offlineTransactions.getAll(userId),
@@ -2572,6 +2645,7 @@ export async function exportBackupOffline(userId: string) {
     offlineStaffPayments.getAll(userId),
     offlineInvestments.getAll(userId),
     offlineDueEntries.getAll(userId),
+    offlineExtraIncome.getAll(userId),
     getBillingSettingsOffline(userId),
   ]);
 
@@ -2588,6 +2662,7 @@ export async function exportBackupOffline(userId: string) {
     staffPayments: localStaffPayments.map(p => stripSync(p)),
     investments: localInvestments.map(i => stripSync(i)),
     dueEntries: localDueEntries.map(d => stripSync(d)),
+    extraIncome: localExtraIncome.map(e => stripSync(e)),
     billingSettings,
     exportedAt: new Date().toISOString(),
   };
@@ -2604,6 +2679,7 @@ export async function importBackupOffline(userId: string, backupData: {
   staffPayments?: unknown[];
   investments?: unknown[];
   dueEntries?: unknown[];
+  extraIncome?: unknown[];
   billingSettings?: unknown;
 }) {
   const now = Date.now();
@@ -2659,11 +2735,12 @@ export async function importBackupOffline(userId: string, backupData: {
   const staffPayments = asRows(backupData.staffPayments || []);
   const investments = asRows(backupData.investments || []);
   const dueEntries = asRows(backupData.dueEntries || []);
+  const extraIncome = asRows(backupData.extraIncome || []);
   const billingSettings = (backupData.billingSettings && typeof backupData.billingSettings === 'object')
     ? backupData.billingSettings as Record<string, unknown>
     : null;
 
-  if (categories.length === 0 && products.length === 0 && transactions.length === 0 && expenses.length === 0 && cashEntries.length === 0 && serviceTransactions.length === 0 && bills.length === 0 && staffPayments.length === 0 && investments.length === 0 && dueEntries.length === 0 && !billingSettings) {
+  if (categories.length === 0 && products.length === 0 && transactions.length === 0 && expenses.length === 0 && cashEntries.length === 0 && serviceTransactions.length === 0 && bills.length === 0 && staffPayments.length === 0 && investments.length === 0 && dueEntries.length === 0 && extraIncome.length === 0 && !billingSettings) {
     // A settings-only backup (fresh shop, no rows yet) is legitimate — only
     // reject a file that has literally nothing usable.
     throw new Error('Backup file contains no valid data');
@@ -2781,16 +2858,29 @@ export async function importBackupOffline(userId: string, backupData: {
       return coerced as OfflineDBSchema['dueEntries']['value'];
     }
   );
+  const eiRows: OfflineDBSchema['extraIncome']['value'][] = extraIncome.map(
+    (row) => coerce({
+      ...fixDates(row),
+      date: isoStr(row.date) || localDateStr(),
+      userId,
+      sourceName: typeof row.sourceName === 'string' ? row.sourceName : '',
+      note: typeof row.note === 'string' ? row.note : '',
+      createdAt: isoStr(row.createdAt) || nowIso,
+      updatedAt: nowIso,
+      _synced: now,
+      _dirty: Date.now(),
+    }, { amount: 'num' }) as OfflineDBSchema['extraIncome']['value']
+  );
 
   // 2. One readwrite transaction across ALL stores: wipe this user's rows,
   //    write the imported ones, swap billingSettings — all or nothing.
   const db = await getOfflineDB();
   const tx = db.transaction(
-    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills', 'staffPayments', 'investments', 'dueEntries', 'billingSettings'],
+    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills', 'staffPayments', 'investments', 'dueEntries', 'extraIncome', 'billingSettings'],
     'readwrite'
   );
 
-  for (const store of ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills', 'staffPayments', 'investments', 'dueEntries'] as const) {
+  for (const store of ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills', 'staffPayments', 'investments', 'dueEntries', 'extraIncome'] as const) {
     const os = tx.objectStore(store);
     const keys = await os.index('by-userId').getAllKeys(userId);
     for (const key of keys) void os.delete(key);
@@ -2806,6 +2896,7 @@ export async function importBackupOffline(userId: string, backupData: {
   for (const row of staffRows) void tx.objectStore('staffPayments').put(row);
   for (const row of invRows) void tx.objectStore('investments').put(row);
   for (const row of dueRows) void tx.objectStore('dueEntries').put(row);
+  for (const row of eiRows) void tx.objectStore('extraIncome').put(row);
 
   if (billingSettings) {
     void tx.objectStore('billingSettings').put({

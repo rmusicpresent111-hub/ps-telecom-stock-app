@@ -3,10 +3,10 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAppStore } from '@/store/appStore';
 import { t } from '@/lib/i18n';
-import { Product, Transaction, ServiceTransaction } from '@/lib/types';
+import { Product, Transaction, ServiceTransaction, ExtraIncome } from '@/lib/types';
 import { TrendingUp, Calendar, ChevronDown, Package, IndianRupee, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { toast } from 'sonner';
-import { getTransactionsOffline, getProductsOffline, getServiceTransactionsOffline, localDateStr, isSaleType } from '@/lib/offline-service';
+import { getTransactionsOffline, getProductsOffline, getServiceTransactionsOffline, getExtraIncomeOffline, localDateStr, isSaleType } from '@/lib/offline-service';
 import { motion, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
 
@@ -118,6 +118,7 @@ export default function ProfitScreen() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [serviceTransactions, setServiceTransactions] = useState<ServiceTransaction[]>([]);
+  const [extraIncome, setExtraIncome] = useState<ExtraIncome[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAllProducts, setShowAllProducts] = useState(false);
 
@@ -125,20 +126,23 @@ export default function ProfitScreen() {
     if (!user?.id) return;
     try {
       setLoading(true);
-      const [txns, prods, svcTxns] = await Promise.all([
+      const [txns, prods, svcTxns, eiRows] = await Promise.all([
         getTransactionsOffline(user.id),
         getProductsOffline(user.id),
         getServiceTransactionsOffline(user.id),
+        // v2.38.0: extra income adds DIRECTLY to the profit total
+        getExtraIncomeOffline(user.id),
       ]);
       setTransactions(txns || []);
       setProducts(prods || []);
       setServiceTransactions(svcTxns || []);
+      setExtraIncome(eiRows || []);
     } catch {
       toast.error(t('error', language));
     } finally {
       setLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, language]);
 
   useEffect(() => {
     fetchData();
@@ -186,7 +190,7 @@ export default function ProfitScreen() {
     return profit;
   }, [sellTransactions, costOf]);
 
-  // Calculate total profit for the selected period (product profit + net service income)
+  // Calculate total profit for the selected period (product profit + net service income + extra income)
   const totalProfit = useMemo(() => {
     let profit = productProfit;
     // Add service income and subtract service expense
@@ -200,8 +204,12 @@ export default function ProfitScreen() {
         profit -= s.amount || 0;
       }
     }
+    // v2.38.0: extra income entries in range are added DIRECTLY to profit
+    for (const e of extraIncome) {
+      if (inRange(e.date)) profit += e.amount || 0;
+    }
     return profit;
-  }, [productProfit, serviceTransactions, inRange]);
+  }, [productProfit, serviceTransactions, extraIncome, inRange]);
 
   const totalRevenue = useMemo(() => {
     return sellTransactions.reduce((sum, t) => sum + (t.totalAmount || 0), 0);
@@ -280,8 +288,14 @@ export default function ProfitScreen() {
       }
     }
 
+    // v2.38.0: extra income lands on its own day's profit bar
+    for (const e of extraIncome) {
+      const existing = dailyMap.get((e.date || '').slice(0, 10));
+      if (existing) existing.profit += e.amount || 0;
+    }
+
     return Array.from(dailyMap.values());
-  }, [sellTransactions, dateRange, productMap]);
+  }, [sellTransactions, dateRange, productMap, extraIncome]);
 
   // Display products - show top 5 by default, expandable
   const displayedProducts = useMemo(() => {

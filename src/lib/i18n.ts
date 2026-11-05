@@ -233,6 +233,28 @@ export type TranslationKeys = {
   // Due Book (customer credit tracking)
   dueBook: string;
   dueBookDesc: string;
+  // Extra Income (v2.38.0 — added directly to profit)
+  extraIncome: string;
+  extraIncomeDesc: string;
+  eiSource: string;
+  eiSourcePh: string;
+  eiAmount: string;
+  eiDate: string;
+  eiNote: string;
+  eiNotePh: string;
+  eiAdd: string;
+  eiAdding: string;
+  eiToday: string;
+  eiTotal: string;
+  eiHistory: string;
+  eiEmpty: string;
+  eiEmptyBody: string;
+  eiAdded: string;
+  eiDeleted: string;
+  eiDelTitle: string;
+  eiDelBody: string;
+  eiProfitHint: string;
+  eiInvalid: string;
   totalDue: string;
   dueCustomersLabel: string;
   dueBillsLabel: string;
@@ -609,6 +631,28 @@ const translations: Record<Language, TranslationKeys> = {
     soldAmount: 'বিক্রয়',
     dueBook: 'বাকির খাতা',
     dueBookDesc: 'কার কত বাকি — এক জায়গায়',
+    // Extra Income (v2.38.0)
+    extraIncome: 'এক্সট্রা ইনকাম',
+    extraIncomeDesc: 'বাড়তি আয়ের উৎস ও পরিমাণ — সরাসরি প্রফিটে যোগ হবে',
+    eiSource: 'আয়ের উৎস',
+    eiSourcePh: 'যেমন: রিচার্জ কমিশন, স্ক্র্যাপ বিক্রি',
+    eiAmount: 'পরিমাণ (₹)',
+    eiDate: 'তারিখ',
+    eiNote: 'নোট (ঐচ্ছিক)',
+    eiNotePh: 'কোথা থেকে / কার কাছ থেকে',
+    eiAdd: 'ইনকাম যোগ করুন',
+    eiAdding: 'যোগ করা হচ্ছে…',
+    eiToday: 'আজকের এক্সট্রা ইনকাম',
+    eiTotal: 'সব সময়ের মোট',
+    eiHistory: 'ইনকাম হিস্ট্রি',
+    eiEmpty: 'কোনো এক্সট্রা ইনকাম নেই',
+    eiEmptyBody: 'উপরের ফর্ম থেকে প্রথম এন্ট্রি যোগ করুন',
+    eiAdded: 'ইনকাম যোগ হয়েছে — প্রফিটে যোগ হয়ে গেছে ✅',
+    eiDeleted: 'এন্ট্রি মুছে ফেলা হয়েছে',
+    eiDelTitle: 'এন্ট্রি মুছে ফেলবেন?',
+    eiDelBody: 'এই এন্ট্রির টাকা প্রফিট থেকেও বাদ যাবে।',
+    eiProfitHint: 'এখানে বসানো টাকা সরাসরি প্রফিটে যোগ হয়',
+    eiInvalid: 'উৎস লিখুন এবং সঠিক পরিমাণ দিন',
     totalDue: 'মোট বাকি',
     dueCustomersLabel: 'গ্রাহক',
     dueBillsLabel: 'বাকি',
@@ -976,6 +1020,28 @@ const translations: Record<Language, TranslationKeys> = {
     soldAmount: 'Sales',
     dueBook: 'Due Book',
     dueBookDesc: 'Who owes what — all in one place',
+    // Extra Income (v2.38.0)
+    extraIncome: 'Extra Income',
+    extraIncomeDesc: 'Record extra income — added straight to profit',
+    eiSource: 'Income source',
+    eiSourcePh: 'e.g. recharge commission, scrap sale',
+    eiAmount: 'Amount (₹)',
+    eiDate: 'Date',
+    eiNote: 'Note (optional)',
+    eiNotePh: 'where / from whom',
+    eiAdd: 'Add income',
+    eiAdding: 'Adding…',
+    eiToday: "Today's extra income",
+    eiTotal: 'All-time total',
+    eiHistory: 'Income history',
+    eiEmpty: 'No extra income yet',
+    eiEmptyBody: 'Add your first entry using the form above',
+    eiAdded: 'Income added — counted in profit ✅',
+    eiDeleted: 'Entry deleted',
+    eiDelTitle: 'Delete this entry?',
+    eiDelBody: 'Its amount will be removed from profit too.',
+    eiProfitHint: 'Amounts here add directly to your profit',
+    eiInvalid: 'Enter a source and a valid amount',
     totalDue: 'Total Due',
     dueCustomersLabel: 'Customers',
     dueBillsLabel: 'Dues',
@@ -1343,6 +1409,28 @@ const translations: Record<Language, TranslationKeys> = {
     soldAmount: 'बिक्री',
     dueBook: 'बकाया बही',
     dueBookDesc: 'किसका कितना बकाया — एक जगह',
+    // Extra Income (v2.38.0)
+    extraIncome: 'अतिरिक्त आय',
+    extraIncomeDesc: 'अतिरिक्त आय दर्ज करें — सीधे लाभ में जुड़ेगी',
+    eiSource: 'आय का स्रोत',
+    eiSourcePh: 'जैसे: रिचार्ज कमीशन, स्क्रैप बिक्री',
+    eiAmount: 'राशि (₹)',
+    eiDate: 'तारीख',
+    eiNote: 'नोट (वैकल्पिक)',
+    eiNotePh: 'कहाँ से / किससे',
+    eiAdd: 'आय जोड़ें',
+    eiAdding: 'जोड़ा जा रहा है…',
+    eiToday: 'आज की अतिरिक्त आय',
+    eiTotal: 'सभी समय का कुल',
+    eiHistory: 'आय इतिहास',
+    eiEmpty: 'अभी कोई अतिरिक्त आय नहीं',
+    eiEmptyBody: 'ऊपर फ़ॉर्म से पहली प्रविष्टि जोड़ें',
+    eiAdded: 'आय जोड़ी गई — लाभ में जुड़ गई ✅',
+    eiDeleted: 'प्रविष्टि हटाई गई',
+    eiDelTitle: 'यह प्रविष्टि हटाएं?',
+    eiDelBody: 'इसकी राशि लाभ से भी हट जाएगी।',
+    eiProfitHint: 'यहाँ दर्ज राशि सीधे लाभ में जुड़ती है',
+    eiInvalid: 'स्रोत लिखें और सही राशि दर्ज करें',
     totalDue: 'कुल बकाया',
     dueCustomersLabel: 'ग्राहक',
     dueBillsLabel: 'बाकी',

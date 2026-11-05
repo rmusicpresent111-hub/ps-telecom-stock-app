@@ -20,7 +20,22 @@ export type Screen =
   | 'billing-settings'
   | 'daily-book'
   | 'due-book'
-  | 'service-category';
+  | 'service-category'
+  | 'extra-income';
+
+/** Extra Income (v2.38.0) — one-off income entries (commission, scrap sale,
+ *  old-device resale…) that are added DIRECTLY to the displayed profit. */
+export interface ExtraIncome {
+  id: string;
+  userId: string;
+  sourceName: string;
+  amount: number;
+  /** YYYY-MM-DD (local) — the day the income is counted into profit. */
+  date: string;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export type Language = 'bn' | 'en' | 'hi';
 

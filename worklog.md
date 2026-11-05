@@ -2339,3 +2339,23 @@ ROOT CAUSE of "code ultopalta / lock abar chole elo": every sandbox session's sn
 FIX: reset local to origin v2.37.0 (kept ALL real work: v2.35.0 per-category PDF + audit, v2.36.0 merge repair, v2.37.0 due-book billing fixes), then deleted AGAIN on top — 25 files: the 11-file lock system (incl. proxy.ts middleware — the piece that actually re-enabled the web password prompt with zero imports — and AppLockPlugin.java), the 13-file v2.28 dead stack, hello-world /api/route.ts, tailwind.config.ts, orphan .firebaserc; build-apk.js steps 5.7c (installAppLockPlugin) + 5.7d (androidx.biometric) cut (115 lines) so future APKs can never bake the lock again; stale comments fixed (cloud-d1 client mentions, "PIN gate" prefetch note). Build scripts' proxy-move steps verified existence-safe. Version 2.37.0 → 2.37.1 (versionCode 23701).
 
 VERIFY: fresh tsc --noEmit 0 errors, eslint 0, full-repo rg = ZERO references to any deleted module; clean dev restart; agent-browser E2E — GET / → 200 DIRECT (no 307 → /site-lock, no password), /site-lock/ → 404, /admin/ opens straight into the full console (13 sections incl. বাকির খাতা + বাকি এন্ট্রি), app dashboard renders (categories/search/profit), Due Book section renders (মোট বাকি/কাস্টমার/বিল stats + growth graph + History tab), zero console/page errors, dev.log clean.
+
+## Task 87 — v2.38.0: new bill header + admin Expenses history tabs + Extra Income feature
+
+BILL HEADER REDESIGN (owner: "bill er hader design valo lageni — new style dao"): royal-gold (default) header rebuilt in BillReceipt.tsx — centred gold DIAMOND crest (rotate-45 tile, initials inside) replacing the old round avatar, shop name centred larger under it, proprietor + address/phone/GSTIN centred below, and a full-width gold-hairline TICKET STRIP (INVOICE/TAX INVOICE chip left · bill no + date right) replacing the loose right column. Watermark + gold top bar kept; other 4 templates + the WhatsApp/A4 PDF untouched (that PDF is reference-matched and owner-approved).
+
+ADMIN EXPENSES HISTORY (owner: "expenses option e history thakchena"): the History tab + growth chart existed since v2.27.0 but lived as tiny unlabelled pills floating in the card header — effectively invisible. Replaced with a prominent full-width segmented control (2 big icon buttons: খরচের তালিকা | হিস্ট্রি) as the first row inside the card; History tab verified live (খরচের হিস্ট্রি — দিন অনুযায়ী renders).
+
+EXTRA INCOME (owner: "menu te ekta option add koro — extra income, source + amount, history, direct profit e jog"): new app feature end-to-end —
+- types.ts: ExtraIncome {id,userId,sourceName,amount,date,note,createdAt,updatedAt} + 'extra-income' Screen id
+- offline-db.ts: DB_VERSION 10→11, additive extraIncome store (by-userId/by-dirty), offlineExtraIncome facade, clearOfflineData list
+- offline-service.ts: getExtraIncomeOffline/createExtraIncomeOffline/deleteExtraIncomeOffline (validated + round2 + tombstone via recordPendingDelete union), backup/restore wired (export field, import coerce+put, empty-check, wipe list), getDashboardOffline folds extra income into todayProfit (extraByDay map) AND the 7-day saleOverview profit line (copy-not-mutate fix)
+- d1-sync.ts: 'extraIncome' added to SYNCED_STORES (single generic sync_data table — no DDL needed); tombstones/self-heal inherit automatically
+- ProfitScreen.tsx: extra income fetched and added to totalProfit (range-filtered) and per-day chart bars
+- ExtraIncomeScreen.tsx (new): header+back, Today/All-time stat cards, add form (source, amount, date, optional note) with busy-guard, history list (max-h-96 scroll, delete with two-tap confirm + registerBackModal), profit hint, sonner toasts, i18n bn/en/hi
+- ProfileScreen: "এক্সট্রা ইনকাম — সরাসরি প্রফিটে যোগ হবে" menu button under Due Book; page.tsx lazy + screen map
+- i18n.ts: 22 new keys (extraIncome*, ei*) × bn/en/hi
+
+E2E (agent-browser, sync endpoint network-blocked so test rows never touched the real D1; browser IndexedDB wiped after): product + instant sell + e-Bill → new royal-gold header screenshot verified (crest/name/ticket strip all render); Extra Income ₹500 added → screen stats ₹500/₹500 + history row; Dashboard "Today's Profit ₹0 → ₹500" (was ₹0 after a ₹250-sell@₹250-cost sale) — direct-profit integration proven; admin Expenses segmented tabs + History tab live. tsc 0 errors, eslint 0.
+
+NOTE: sandbox dev server died twice mid-session (environment kills, not code) — restarted, all flows re-verified after restart. Version 2.37.1 → 2.38.0 (versionCode 23800).

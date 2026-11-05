@@ -10,7 +10,8 @@ import { Bill, BillingSettings } from './types';
 const DB_NAME = 'ps-telecom-offline';
 // v10 (v2.23.0): + 'dueEntries' — custom due ledger (customer/product photos,
 // amount, payment schedule/kisti) managed from the Admin Panel + Due Book.
-const DB_VERSION = 10;
+// v11 (v2.38.0): + 'extraIncome' — extra income entries added to profit.
+const DB_VERSION = 11;
 
 // ============ LOCAL USERS (authentication) ============
 
@@ -248,6 +249,22 @@ export interface OfflineDBSchema {
     };
     indexes: { 'by-userId': string; 'by-dirty': number };
   };
+  extraIncome: {
+    key: string;
+    value: {
+      id: string;
+      userId: string;
+      sourceName: string;
+      amount: number;      // ₹ — added directly to profit for `date`
+      date: string;        // YYYY-MM-DD (local)
+      note: string;
+      createdAt: string;
+      updatedAt: string;
+      _synced: number;
+      _dirty: number;
+    };
+    indexes: { 'by-userId': string; 'by-dirty': number };
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<OfflineDBSchema>> | null = null;
@@ -336,6 +353,12 @@ function getDB(): Promise<IDBPDatabase<OfflineDBSchema>> {
           const dueStore = db.createObjectStore('dueEntries', { keyPath: 'id' });
           dueStore.createIndex('by-userId', 'userId');
           dueStore.createIndex('by-dirty', '_dirty');
+        }
+        // v11 (v2.38.0): Extra Income — additive, safe on every existing device.
+        if (!db.objectStoreNames.contains('extraIncome')) {
+          const eiStore = db.createObjectStore('extraIncome', { keyPath: 'id' });
+          eiStore.createIndex('by-userId', 'userId');
+          eiStore.createIndex('by-dirty', '_dirty');
         }
       },
     }).catch((err) => {
@@ -498,6 +521,19 @@ export const offlineDueEntries = {
   delete: (id: string) => deleteItem('dueEntries', id),
 };
 
+// ============ EXTRA INCOME (v2.38.0 — added directly to profit) ============
+
+export const offlineExtraIncome = {
+  getAll: (userId: string) => getAllByUser('extraIncome', userId),
+  getById: async (id: string) => {
+    const db = await getDB();
+    return db.get('extraIncome', id);
+  },
+  put: (row: OfflineDBSchema['extraIncome']['value']) => putItem('extraIncome', row),
+  putBulk: (rows: OfflineDBSchema['extraIncome']['value'][]) => putBulk('extraIncome', rows),
+  delete: (id: string) => deleteItem('extraIncome', id),
+};
+
 // ============ CLEAR ALL ============
 
 // NOTE: the legacy `syncMeta` / `pendingDeletes` object stores are kept in the
@@ -507,7 +543,7 @@ export const offlineDueEntries = {
 export async function clearOfflineData(userId: string): Promise<void> {
   const db = await getDB();
   const userStores = (
-    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'syncMeta', 'pendingDeletes', 'serviceTransactions', 'bills', 'staffPayments', 'investments', 'dueEntries'] as const
+    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'syncMeta', 'pendingDeletes', 'serviceTransactions', 'bills', 'staffPayments', 'investments', 'dueEntries', 'extraIncome'] as const
   ).filter(s => db.objectStoreNames.contains(s));
   const txStores: (keyof OfflineDBSchema)[] = [...userStores];
   if (db.objectStoreNames.contains('billingSettings')) txStores.push('billingSettings');

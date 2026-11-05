@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Pencil, Trash2, Wallet, CalendarDays, ReceiptText, LineChart as LineChartIcon, Banknote, TrendingDown } from 'lucide-react';
+import { Plus, Pencil, Trash2, Wallet, CalendarDays, ReceiptText, LineChart as LineChartIcon, Banknote, TrendingDown, List, History as HistoryIcon } from 'lucide-react';
 import {
   getExpensesOffline,
   createExpenseOffline,
@@ -218,33 +218,35 @@ export default function AdminExpenses() {
 
       <AdminCard
         title={tab === 'history' ? t('exp.historyTitle') : undefined}
-        action={
-          <div className="flex items-center gap-1.5" role="tablist" aria-label={t('exp.title')}>
+        bodyClass="!p-0"
+      >
+        {/* v2.38.0: prominent segmented tabs — the old floating pills in the
+            card header were too easy to miss (owner: "history thakchena"). */}
+        <div className="px-4 sm:px-5 pt-4 pb-3" role="tablist" aria-label={t('exp.title')}>
+          <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-[var(--psa-hover)] border border-[var(--psa-border)]">
             {(
               [
-                ['list', 'exp.tabList'],
-                ['history', 'exp.tabHistory'],
-              ] as [ExpTab, string][]
-            ).map(([v, key]) => (
+                ['list', 'exp.tabList', List],
+                ['history', 'exp.tabHistory', HistoryIcon],
+              ] as [ExpTab, string, typeof List][]
+            ).map(([v, key, Icon]) => (
               <button
                 key={v}
                 type="button"
                 role="tab"
                 aria-selected={tab === v}
                 onClick={() => setTab(v)}
-                className={`h-8 px-3 rounded-lg text-xs font-bold transition-colors ${
+                className={`h-9 rounded-lg text-[13px] font-bold inline-flex items-center justify-center gap-1.5 transition-colors ${
                   tab === v
                     ? 'bg-[#FA6E41] text-white shadow-sm'
-                    : 'border border-[var(--psa-border)] text-[var(--psa-sub)] hover:bg-[var(--psa-hover)]'
+                    : 'text-[var(--psa-sub)] hover:bg-[var(--psa-hover2)]'
                 }`}
               >
-                {t(key)}
+                <Icon size={15} /> {t(key)}
               </button>
             ))}
           </div>
-        }
-        bodyClass="!p-0"
-      >
+        </div>
         {tab === 'history' ? (
           histRows.length === 0 ? (
             <div className="p-4 sm:p-5">
