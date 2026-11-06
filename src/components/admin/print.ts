@@ -318,23 +318,28 @@ function pageShell(title: string, body: string): string {
 
 // ── document 1: single-bill FULL-PAGE A4 invoice — "PS TELECOM GST Invoice" ──
 //
-// Task 91 (v2.40.0): the admin bill template is now a same-to-same rebuild of
-// the owner's reference design (upload/PS Telecom GST Invoice Design.png):
-//   • deep-navy outer frame + gold keyline + cream paper with gold corner arcs
-//   • header: circular gold PS monogram (left) · PS TELECOM + "Mobile &
-//     Accessories" + script tagline (centre) · navy/gold TAX INVOICE +
-//     GST INVOICE ribbon (right)
-//   • gold service medallions row — Mobile | Accessories | Service | Recharge
-//   • white meta card: Invoice No. / Invoice Date / Order No. (transactionId)
-//     + gold-bordered payment QR with "Scan to Verify"
-//   • navy "Bill To" banner + gold-edged customer card (name / mobile)
-//   • navy-headed items grid with HSN Code column: # | Product Name | HSN
-//     Code | Qty | Rate (₹) | Amount (₹)
-//   • black/gold "100% Trusted Shop" seal + totals plate: Taxable Amount,
-//     CGST/SGST @ half-rate, Round Off, navy GRAND TOTAL band
-//   • green-check payment box (Mode / Status / Due) + Authorized Signature
-//   • script "Thank You!" + Keep Shopping + CSS phone mock-up
-//   • navy footer strip: Best Price | Best Service | Happy Customer | gold
+// Task 92 (v2.41.0): owner REJECTED the v2.40 rebuild ("bill sevabe hoyni —
+// abar regenerate koro, same to same hoya chai"). This revision is a faithful
+// element-by-element recreation of upload/PS Telecom GST Invoice Design.png:
+//   • cream paper + thin inset gold keyline + layered gold/navy corner
+//     ribbon curves (SVG, page-anchored — not the old corner arcs)
+//   • corner TAX INVOICE pennant top-right: navy wedge with gold edge,
+//     serif gold TAX / INVOICE + white GST INVOICE (hidden when GST off)
+//   • BIG serif header — huge Georgia PS TELECOM, blue serif Mobile &
+//     Accessories, script tagline + gold swoosh, 40mm gold PS monogram
+//   • four gold medallions (gold ring · navy core · white glyph):
+//     Mobile | Accessories | Service | Recharge with hairline separators
+//   • white meta card (Invoice No. / Invoice Date / Order No.) + gold QR
+//     box "Scan to Verify" (real uploaded QR, or decorative placeholder)
+//   • navy "Bill To" banner + GOLD-GRADIENT customer card (name / mobile)
+//   • navy-headed items grid, GOLD-TINTED rows: # | Product Name | HSN
+//     Code | Qty | Rate (₹) | Amount (₹) — HSN from BillItem.hsnCode
+//   • laurel-wreath "100% Trusted Shop" rosette (crown + stars, SVG) +
+//     white totals plate with navy grid lines and navy GRAND TOTAL band
+//   • green-check payment pill (Mode / Status / Due) + Authorized
+//     Signature (uploaded image, or script scribble placeholder)
+//   • huge script "Thank You!" + Keep Shopping + 3-D phone back art
+//   • navy footer WAVE: Best Price | Best Service | Happy Customer + gold
 //     script "Visit Again…"
 // Pure CSS/SVG art only (inline SVG with xmlns — print iframe AND html2canvas
 // PDF both render it; no emoji, no external images, no box-shadows).
@@ -350,23 +355,168 @@ function tallyQty(n: number): string {
   return Number.isInteger(v) ? String(v) : String(Number(v.toFixed(3)));
 }
 
-// ── inline SVG icon set (fixed size + xmlns → print & html2canvas safe) ──
+// ── inline SVG art set (fixed size + xmlns → print & html2canvas safe) ──
 
-const PS_NAVY = '#0E2A5C';
 const PS_GOLD = '#F2C94C';
 
-function psStrokeIcon(inner: string, size = 20, color = PS_NAVY): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+/** White stroke glyph used inside the navy service medallions. */
+function glyph(inner: string): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
 }
 
-const ICO_MOBILE = psStrokeIcon('<rect x="7" y="2" width="10" height="20" rx="2.5"/><line x1="10.5" y1="18.5" x2="13.5" y2="18.5"/>');
-const ICO_HEADSET = psStrokeIcon('<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/>');
-const ICO_WRENCH = psStrokeIcon('<path d="M14.7 6.3a4.5 4.5 0 0 0-6.4 5.7L3 17.3V21h3.7l5.3-5.3a4.5 4.5 0 0 0 5.7-6.4l-2.9 2.9-2.5-.5-.5-2.5z"/>');
-const ICO_RECHARGE = psStrokeIcon('<rect x="2" y="8" width="16" height="9" rx="2"/><line x1="20.5" y1="10.5" x2="20.5" y2="14.5"/><path d="M10 9.5 7.5 13h3L8.5 16l4-4h-3z"/>');
-const ICO_PERSON = `<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="${PS_GOLD}"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7v1H4z"/></svg>`;
-const ICO_SHIELD = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="${PS_GOLD}"><path d="M12 2l8 3v6c0 5-3.4 9.5-8 11-4.6-1.5-8-6-8-11V5z"/><path d="M8.7 11.8l2.3 2.3 4.3-4.3" fill="none" stroke="#0B2148" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-const ICO_WRENCH_GOLD = psStrokeIcon('<path d="M14.7 6.3a4.5 4.5 0 0 0-6.4 5.7L3 17.3V21h3.7l5.3-5.3a4.5 4.5 0 0 0 5.7-6.4l-2.9 2.9-2.5-.5-.5-2.5z"/>', 14, PS_GOLD);
-const ICO_STAR = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="${PS_GOLD}"><path d="M12 2l2.9 6.2 6.6.8-4.9 4.6 1.3 6.6-5.9-3.3-5.9 3.3 1.3-6.6L2.5 9l6.6-.8z"/></svg>`;
+const G_MOBILE = glyph('<rect x="7" y="2.5" width="10" height="19" rx="2.4"/><line x1="10.6" y1="18.4" x2="13.4" y2="18.4"/>');
+const G_ACCESS = glyph('<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.8" y="13.6" width="4.6" height="6.4" rx="1.8"/><rect x="16.6" y="13.6" width="4.6" height="6.4" rx="1.8"/>');
+const G_SERVICE = glyph('<path d="M14.7 6.3a4.5 4.5 0 0 0-6.4 5.7L3 17.3V21h3.7l5.3-5.3a4.5 4.5 0 0 0 5.7-6.4l-2.9 2.9-2.5-.5-.5-2.5z"/>');
+const G_RECHARGE = glyph('<rect x="2.5" y="7.5" width="15" height="9.5" rx="2"/><line x1="20.6" y1="10.6" x2="20.6" y2="14"/><path d="M11.6 9.3 8.6 12.9h3l-2.2 3.4 4.8-4.3h-3z" fill="#FFFFFF" stroke="none"/>');
+
+const I_PERSON = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="#F2C94C"><circle cx="12" cy="7.4" r="4.1"/><path d="M3.8 21.4c0-4.3 3.7-6.8 8.2-6.8s8.2 2.5 8.2 6.8v.2H3.8z"/></svg>`;
+
+const I_SHIELD = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="#F2C94C"><path d="M12 2l8.2 3v6.1c0 5.1-3.5 9.7-8.2 11.3-4.7-1.6-8.2-6.2-8.2-11.3V5z"/><path d="M8.5 11.7l2.4 2.4 4.7-4.7" fill="none" stroke="#0B2447" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+const I_HANDSHAKE = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path d="M3 12.2l4.6-4.6 4.1 3.3 3.9-3.1 5.6 4.6-4.4 5.3-4.4-3.5-3.6 3.1z" fill="#F2C94C"/></svg>`;
+
+const I_STAR = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="#F2C94C"><path d="M12 2.2l2.9 6 6.6.9-4.8 4.6 1.2 6.6L12 17.1l-5.9 3.2 1.2-6.6L2.5 9.1l6.6-.9z"/></svg>`;
+
+/** Green gradient check disc for the payment pill. */
+function checkCircleSvg(): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 38 38"><defs><linearGradient id="psChk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3FD668"/><stop offset="1" stop-color="#17913B"/></linearGradient></defs><circle cx="19" cy="19" r="17.4" fill="url(#psChk)"/><path d="M11.6 19.8l5 5 10-11.2" fill="none" stroke="#FFFFFF" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+/** Gold swoosh under the script tagline. */
+const TAGLINE_SWOOSH = `<svg class="swoosh" xmlns="http://www.w3.org/2000/svg" width="150" height="9" viewBox="0 0 150 9" aria-hidden="true"><path d="M2 7 C44 1.5 96 1.5 148 5.5" fill="none" stroke="#D4A62A" stroke-width="2" stroke-linecap="round"/></svg>`;
+
+/**
+ * Top page art — layered corner curves (left), TAX INVOICE corner pennant
+ * (right) and the swoosh pair under it. Page-absolute coordinates on a
+ * 794-wide viewBox stretched to the sheet width.
+ */
+function topDecoSvg(gstOn: boolean): string {
+  const gstTxt = gstOn
+    ? `<text x="740" y="110" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="12.5" font-weight="800" letter-spacing="1.2" fill="#FFFFFF">GST INVOICE</text>`
+    : '';
+  return `<svg class="deco top" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 794 186" preserveAspectRatio="none" aria-hidden="true">
+  <defs><linearGradient id="psRib" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2653A4"/><stop offset=".45" stop-color="#12356F"/><stop offset="1" stop-color="#081A3C"/></linearGradient></defs>
+  <path d="M-6 162 C78 152 116 108 124 -6" fill="none" stroke="#D4A62A" stroke-width="6.5"/>
+  <path d="M-6 174 C88 164 126 116 134 -6" fill="none" stroke="#0E2A5C" stroke-width="1.7" opacity=".5"/>
+  <path d="M-6 150 C68 140 104 100 112 -6" fill="none" stroke="#F2C94C" stroke-width="1.5" opacity=".75"/>
+  <path d="M154 10 C330 27 470 22 556 5" fill="none" stroke="#DCBE6E" stroke-width="1.6" opacity=".8"/>
+  <path d="M580 -6 C592 70 650 120 798 142 L798 -6 Z" fill="url(#psRib)"/>
+  <path d="M580 -6 C592 70 650 120 798 142" fill="none" stroke="#D4A62A" stroke-width="5.5"/>
+  <path d="M590 -6 C600 66 654 112 790 132" fill="none" stroke="#F7E39B" stroke-width="1.3" opacity=".8"/>
+  <path d="M452 160 C550 124 662 118 792 154" fill="none" stroke="#D4A62A" stroke-width="4" opacity=".95"/>
+  <path d="M452 166 C550 132 662 126 792 160" fill="none" stroke="#0E2A5C" stroke-width="1.2" opacity=".4"/>
+  <text x="698" y="44" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-size="36" font-weight="900" letter-spacing="1" fill="#F5D061">TAX</text>
+  <text x="714" y="82" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-size="29" font-weight="900" letter-spacing=".5" fill="#F5D061">INVOICE</text>
+  ${gstTxt}
+</svg>`;
+}
+
+/** Bottom page art — gold/navy curve pairs framing the footer wave. */
+function bottomDecoSvg(): string {
+  return `<svg class="deco bot" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 794 158" preserveAspectRatio="none" aria-hidden="true">
+  <path d="M-6 16 C84 26 132 62 142 116" fill="none" stroke="#D4A62A" stroke-width="5.5"/>
+  <path d="M-6 28 C74 38 118 70 128 122" fill="none" stroke="#0E2A5C" stroke-width="1.5" opacity=".5"/>
+  <path d="M800 10 C706 20 656 48 648 100" fill="none" stroke="#D4A62A" stroke-width="5"/>
+  <path d="M800 22 C712 32 666 58 658 106" fill="none" stroke="#0E2A5C" stroke-width="1.5" opacity=".5"/>
+</svg>`;
+}
+
+/** Navy footer wave with double gold accents. */
+function footerWaveSvg(): string {
+  return `<svg class="wave" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 794 100" preserveAspectRatio="none" aria-hidden="true">
+  <path d="M0 54 C110 22 250 68 410 46 C550 28 690 44 794 32 L794 100 L0 100 Z" fill="#0B2447"/>
+  <path d="M0 52 C110 20 250 66 410 44 C550 26 690 42 794 30" fill="none" stroke="#D4A62A" stroke-width="4"/>
+  <path d="M0 60 C110 28 250 74 410 52 C550 34 690 50 794 38" fill="none" stroke="#F7E39B" stroke-width="1.4" opacity=".7"/>
+  <path d="M470 98 C580 78 700 84 794 64" fill="none" stroke="#D4A62A" stroke-width="3" opacity=".9"/>
+</svg>`;
+}
+
+/**
+ * "100% Trusted Shop" rosette — gold laurel branches, scalloped gold ring,
+ * dark disc, crown, serif 100% + stars (reference centrepiece).
+ */
+function trustedBadgeSvg(): string {
+  let leaves = '';
+  for (let k = 0; k < 7; k++) {
+    const degL = 118 + k * 21;
+    const degR = 62 - k * 21;
+    const R = 85;
+    const lx = 100 + R * Math.cos((degL * Math.PI) / 180);
+    const ly = 100 + R * Math.sin((degL * Math.PI) / 180);
+    const rx = 100 + R * Math.cos((degR * Math.PI) / 180);
+    const ry = 100 + R * Math.sin((degR * Math.PI) / 180);
+    const rotL = (degL + 90).toFixed(1);
+    const rotR = (degR + 90).toFixed(1);
+    leaves += `<ellipse cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" rx="6" ry="15" fill="url(#psBg1)" transform="rotate(${rotL} ${lx.toFixed(1)} ${ly.toFixed(1)})"/>`;
+    leaves += `<ellipse cx="${rx.toFixed(1)}" cy="${ry.toFixed(1)}" rx="6" ry="15" fill="url(#psBg1)" transform="rotate(${rotR} ${rx.toFixed(1)} ${ry.toFixed(1)})"/>`;
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" aria-hidden="true">
+  <defs>
+    <linearGradient id="psBg1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F9E9B0"/><stop offset=".5" stop-color="#D9AC33"/><stop offset="1" stop-color="#8C6A1D"/></linearGradient>
+    <linearGradient id="psBg2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2C313D"/><stop offset="1" stop-color="#0B0E14"/></linearGradient>
+  </defs>
+  ${leaves}
+  <circle cx="100" cy="100" r="80" fill="none" stroke="url(#psBg1)" stroke-width="13"/>
+  <circle cx="100" cy="100" r="90" fill="none" stroke="#D4A62A" stroke-width="4" stroke-dasharray="4.5 4.5"/>
+  <circle cx="100" cy="100" r="64" fill="url(#psBg2)"/>
+  <circle cx="100" cy="100" r="64" fill="none" stroke="#D4A62A" stroke-width="1.4"/>
+  <circle cx="100" cy="100" r="58" fill="none" stroke="#F7E39B" stroke-width="1" opacity=".55"/>
+  <g transform="translate(100 50) scale(1.12)">
+    <path d="M-15 8 L-15 -5 L-7 1 L0 -10 L7 1 L15 -5 L15 8 Z" fill="#F5D061"/>
+    <rect x="-16" y="8" width="32" height="4.4" rx="1.6" fill="#D4A62A"/>
+    <circle cx="0" cy="-12.6" r="2.4" fill="#F5D061"/>
+  </g>
+  <text x="100" y="97" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-size="33" font-weight="900" fill="#F5D061">100%</text>
+  <text x="100" y="121" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="20" font-weight="800" fill="#FFFFFF">Trusted</text>
+  <text x="100" y="141" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="20" font-weight="800" fill="#FFFFFF">Shop</text>
+  <text x="100" y="160" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="12" fill="#F2C94C" letter-spacing="2.5">★ ★ ★ ★ ★</text>
+</svg>`;
+}
+
+/** Decorative QR-look placeholder (real uploaded QR replaces it). */
+function qrPlaceholderSvg(): string {
+  const n = 21;
+  const cell = 100 / n;
+  const rnd = (i: number, j: number) => {
+    const s = Math.sin(i * 127.1 + j * 311.7) * 43758.5453;
+    return s - Math.floor(s);
+  };
+  const inFinder = (i: number, j: number) =>
+    (i < 7 && j < 7) || (i < 7 && j >= n - 7) || (i >= n - 7 && j < 7);
+  let cells = '';
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      if (inFinder(i, j) || rnd(i, j) <= 0.5) continue;
+      cells += `<rect x="${(j * cell).toFixed(1)}" y="${(i * cell).toFixed(1)}" width="${cell.toFixed(1)}" height="${cell.toFixed(1)}"/>`;
+    }
+  }
+  const finder = (x: number, y: number) =>
+    `<rect x="${(x + cell / 2).toFixed(1)}" y="${(y + cell / 2).toFixed(1)}" width="${(cell * 6).toFixed(1)}" height="${(cell * 6).toFixed(1)}" fill="none" stroke="#101418" stroke-width="${cell.toFixed(1)}"/>` +
+    `<rect x="${(x + cell * 2).toFixed(1)}" y="${(y + cell * 2).toFixed(1)}" width="${(cell * 3).toFixed(1)}" height="${(cell * 3).toFixed(1)}" fill="#101418"/>`;
+  return `<svg class="qr" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" fill="#FFFFFF"/><g fill="#101418">${cells}</g>${finder(0, 0)}${finder(100 - cell * 7, 0)}${finder(0, 100 - cell * 7)}</svg>`;
+}
+
+/** Script-style signature placeholder (uploaded signature replaces it). */
+function sigScribbleSvg(): string {
+  return `<svg class="scrib" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 52" aria-hidden="true"><path d="M8 40 C16 16 30 8 36 16 C41 23 30 30 25 23 C20 15 36 6 50 10 M48 30 C56 20 68 16 72 22 C76 28 66 32 62 26 C58 19 72 10 86 13 C98 16 96 26 106 22 C114 18 122 20 130 16" fill="none" stroke="#1A2C56" stroke-width="2.4" stroke-linecap="round"/></svg>`;
+}
+
+/** 3-D phone-back art docked above the footer wave (reference bottom-left). */
+function phoneSvg(): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 210" aria-hidden="true">
+  <defs><linearGradient id="psPhone" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F2F4FB"/><stop offset=".5" stop-color="#C6B4EE"/><stop offset="1" stop-color="#9C87DE"/></linearGradient></defs>
+  <g transform="rotate(-10 60 105)">
+    <rect x="15" y="6" width="90" height="198" rx="16" fill="url(#psPhone)" stroke="#8FA3C8" stroke-width="1.6"/>
+    <rect x="24" y="16" width="48" height="48" rx="11" fill="#141B33" opacity=".94"/>
+    <circle cx="36" cy="28" r="7" fill="#1E2C55" stroke="#44619C" stroke-width="1.6"/><circle cx="36" cy="28" r="2.8" fill="#0A1128"/>
+    <circle cx="57" cy="28" r="7" fill="#1E2C55" stroke="#44619C" stroke-width="1.6"/><circle cx="57" cy="28" r="2.8" fill="#0A1128"/>
+    <circle cx="36" cy="50" r="7" fill="#1E2C55" stroke="#44619C" stroke-width="1.6"/><circle cx="36" cy="50" r="2.8" fill="#0A1128"/>
+    <circle cx="58" cy="50" r="3.2" fill="#F2C94C" opacity=".9"/>
+    <rect x="106" y="56" width="3.4" height="24" rx="1.7" fill="#C9D2E8"/>
+    <rect x="106" y="88" width="3.4" height="14" rx="1.7" fill="#C9D2E8"/>
+  </g>
+</svg>`;
+}
 
 /** Two-letter brand initials for the circular logo tile (PS TELECOM → PS). */
 function brandInitials(name: string): string {
@@ -381,118 +531,115 @@ const BILL_CSS = `
 @page { size: A4; margin: 0; }
 * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 html, body { margin:0; padding:0; }
-body { background:#fff; color:#0E2A5C; font-family:Arial,'Noto Sans Bengali','Hind Siliguri','Helvetica Neue',Helvetica,'Liberation Sans',sans-serif; font-size:10.5px; line-height:1.4; }
+body { background:#fff; color:#0E2A5C; font-family:Arial,'Noto Sans Bengali','Hind Siliguri','Helvetica Neue',Helvetica,'Liberation Sans',sans-serif; font-size:11px; line-height:1.4; }
 
-/* full-page A4 sheet — deep-navy frame, gold keyline, cream paper */
-.sheet { width:210mm; max-width:100%; min-height:296.6mm; margin:0 auto; background:linear-gradient(135deg,#16356F 0%,#0B2148 50%,#16356F 100%); padding:2.8mm; display:flex; }
-.frame { flex:1 1 auto; display:flex; flex-direction:column; background:linear-gradient(180deg,#FFFDF6 0%,#FFF8EA 55%,#FDF1D8 100%); border:0.55mm solid #D9B45C; position:relative; overflow:hidden; }
+/* full-page A4 sheet — cream paper, inset gold keyline, corner SVG art */
+.sheet { position:relative; width:210mm; max-width:100%; min-height:296.6mm; margin:0 auto; background:linear-gradient(180deg,#FEFBF0 0%,#FCF3DC 46%,#F8EAC8 100%); overflow:hidden; display:flex; flex-direction:column; }
+.keyline { position:absolute; top:3.2mm; right:3.2mm; bottom:3.2mm; left:3.2mm; border:0.35mm solid #E0C685; border-radius:2mm; z-index:0; pointer-events:none; }
+.deco { position:absolute; left:0; width:100%; z-index:1; pointer-events:none; }
+.deco.top { top:0; height:49mm; }
+.deco.bot { bottom:0; height:42mm; }
+.page { position:relative; z-index:2; flex:1 1 auto; display:flex; flex-direction:column; }
 
-/* gold corner arcs — the reference's ribbon swirls, kept print-safe */
-.arc { position:absolute; width:24mm; height:24mm; }
-.arc.tl { top:1.2mm; left:1.2mm; border-top:1.2mm solid #D9B45C; border-left:1.2mm solid #D9B45C; border-top-left-radius:22mm; }
-.arc.tr { top:1.2mm; right:1.2mm; border-top:1.2mm solid #D9B45C; border-right:1.2mm solid #D9B45C; border-top-right-radius:22mm; }
-.arc.bl { bottom:1.2mm; left:1.2mm; border-bottom:1.2mm solid #D9B45C; border-left:1.2mm solid #D9B45C; border-bottom-left-radius:22mm; }
-.arc.br { bottom:1.2mm; right:1.2mm; border-bottom:1.2mm solid #D9B45C; border-right:1.2mm solid #D9B45C; border-bottom-right-radius:22mm; }
+/* header — big gold PS monogram · huge serif brand block (pennant is SVG art) */
+.hdr { display:flex; align-items:center; gap:4.5mm; padding:7.5mm 8mm 0 10mm; }
+.plogo { flex:0 0 37mm; width:37mm; height:37mm; border-radius:50%; background:linear-gradient(135deg,#F9E9B0 0%,#D9AC33 42%,#8C6A1D 72%,#E9C766 100%); padding:2.1mm; }
+.plogo .in { width:100%; height:100%; border-radius:50%; background:radial-gradient(circle at 36% 30%,#1E4788 0%,#0B2447 74%); border:0.5mm solid #F7E39B; display:flex; align-items:center; justify-content:center; }
+.plogo .in b { font-family:Georgia,'Times New Roman',serif; font-style:italic; font-size:27px; font-weight:900; color:#F2C94C; letter-spacing:.5px; }
+.hmid { flex:1 1 auto; min-width:0; text-align:center; padding-right:2mm; }
+.co-name { font-family:Georgia,'Times New Roman',serif; font-size:36px; font-weight:900; color:#0E2A5C; letter-spacing:1.4px; line-height:1.05; }
+.co-sub { font-family:Georgia,'Times New Roman',serif; font-size:20.5px; font-weight:800; color:#2447A9; margin-top:.8mm; letter-spacing:.3px; }
+.co-tag { font-family:'Segoe Script','Brush Script MT','Apple Chancery','Comic Sans MS',cursive; font-style:italic; font-weight:700; font-size:14.5px; color:#153A78; margin-top:1mm; }
+.swoosh { display:block; margin:.7mm auto 0; }
+.co-gstin { font-size:9px; font-weight:700; color:#41527A; margin-top:.6mm; letter-spacing:.4px; }
 
-/* header — circular PS monogram · brand block · TAX INVOICE ribbon */
-.hdr { display:flex; align-items:center; gap:5mm; padding:7mm 7mm 2.5mm; }
-.plogo { flex:0 0 24mm; width:24mm; height:24mm; border-radius:50%; background:linear-gradient(135deg,#F3D98B 0%,#D4A853 55%,#A67C34 100%); padding:1.7mm; }
-.plogo .in { width:100%; height:100%; border-radius:50%; background:linear-gradient(160deg,#1A3C82 0%,#0B2148 80%); border:0.5mm solid #F3D98B; display:flex; align-items:center; justify-content:center; }
-.plogo .in b { font-family:Georgia,'Times New Roman',serif; font-style:italic; font-size:18px; font-weight:900; color:#F2C94C; letter-spacing:.5px; }
-.hmid { flex:1 1 auto; min-width:0; text-align:center; }
-.co-name { font-size:27px; font-weight:900; color:#0E2A5C; letter-spacing:1.2px; line-height:1.05; }
-.co-sub { font-size:14.5px; font-weight:800; color:#1D5AB9; margin-top:1mm; letter-spacing:.3px; }
-.co-tag { font-family:'Segoe Script','Brush Script MT','Apple Chancery','Comic Sans MS',cursive; font-style:italic; font-weight:700; font-size:12px; color:#123A7E; margin-top:1.4mm; }
-.co-gstin { font-size:8.5px; font-weight:700; color:#41527A; margin-top:1mm; letter-spacing:.4px; }
-.taxinv { flex:0 0 auto; background:linear-gradient(180deg,#16356F 0%,#0B2148 100%); border:0.55mm solid #D9B45C; border-radius:2.6mm; padding:2.8mm 5mm 2.6mm; text-align:center; }
-.taxinv .t1 { color:#FFFFFF; font-size:14.5px; font-weight:900; letter-spacing:.8px; line-height:1.15; white-space:nowrap; }
-.taxinv .t2 { color:#F2C94C; font-size:8.5px; font-weight:800; letter-spacing:2.2px; margin-top:.9mm; }
+/* services medallions — gold ring · navy core · white glyph */
+.svcs { display:flex; align-items:stretch; margin:2mm 12mm 0; }
+.svc { flex:1 1 0; text-align:center; padding:.6mm 1mm 0; }
+.svc + .svc { border-left:0.3mm solid rgba(14,42,92,.28); }
+.svc .ic { width:14.5mm; height:14.5mm; margin:0 auto; border-radius:50%; background:linear-gradient(150deg,#F7E39B 0%,#D9AC33 55%,#A67C2E 100%); padding:1.5mm; }
+.svc .inn { width:100%; height:100%; border-radius:50%; background:radial-gradient(circle at 36% 30%,#1E4788 0%,#0B2447 74%); display:flex; align-items:center; justify-content:center; }
+.svc .inn svg { display:block; }
+.svc .lb { font-size:13px; font-weight:800; color:#0E2A5C; margin-top:1.1mm; letter-spacing:.2px; }
 
-/* services medallions — Mobile | Accessories | Service | Recharge */
-.svcs { display:flex; align-items:stretch; margin:1.5mm 9mm 0; }
-.svc { flex:1 1 0; text-align:center; padding:1.4mm 1mm; }
-.svc + .svc { border-left:0.3mm solid rgba(14,42,92,.30); }
-.svc .ic { width:10.5mm; height:10.5mm; margin:0 auto; border-radius:50%; background:linear-gradient(180deg,#F3D98B 0%,#D4A853 62%,#B08A3E 100%); display:flex; align-items:center; justify-content:center; }
-.svc .ic svg { display:block; }
-.svc .lb { font-size:9.5px; font-weight:800; color:#0E2A5C; margin-top:1.3mm; letter-spacing:.2px; }
-
-/* meta card + verify QR */
-.meta { display:flex; gap:5mm; align-items:stretch; margin:4.5mm 7mm 0; }
-.mrows { flex:1 1 auto; min-width:0; background:#FFFFFF; border:0.45mm solid #E3D2A6; border-radius:2.6mm; padding:3mm 5mm; display:flex; flex-direction:column; justify-content:center; gap:1.5mm; }
-.mrow { display:flex; align-items:baseline; font-size:12.5px; font-weight:800; color:#0E2A5C; }
-.mrow .k { flex:0 0 30mm; }
-.mrow .c { flex:0 0 7mm; }
+/* meta card + gold verify-QR box */
+.meta { display:flex; gap:5mm; align-items:stretch; margin:3.4mm 8mm 0; }
+.mrows { flex:1 1 auto; min-width:0; background:rgba(255,255,255,.93); border:0.4mm solid #EAD9A8; border-radius:2.5mm; padding:2.6mm 5mm; display:flex; flex-direction:column; justify-content:center; gap:1.4mm; }
+.mrow { display:flex; align-items:baseline; font-size:16px; font-weight:800; color:#0E2A5C; }
+.mrow .k { flex:0 0 34mm; }
+.mrow .c { flex:0 0 6mm; }
 .mrow .v { flex:1 1 auto; min-width:0; }
-.qrbox { flex:0 0 33mm; background:#FFFFFF; border:0.55mm solid #D9B45C; border-radius:2mm; padding:2mm; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-.qrbox img { width:25mm; height:25mm; object-fit:contain; }
-.qrbox .qc { font-size:10px; font-weight:800; color:#0E2A5C; margin-top:1.2mm; letter-spacing:.3px; }
+.qrbox { flex:0 0 36mm; background:#FFFFFF; border:0.6mm solid #D4A62A; border-radius:2.2mm; padding:1.8mm 1.8mm 1.3mm; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.qrbox img, .qrbox svg { width:27.5mm; height:27.5mm; display:block; }
+.qrbox .qc { font-size:12.5px; font-weight:800; color:#0E2A5C; margin-top:.9mm; letter-spacing:.2px; }
 
-/* Bill To — navy banner + gold-edged customer card */
-.bto { margin:5mm 7mm 0; }
-.bto-cap { display:inline-flex; align-items:center; gap:3mm; background:linear-gradient(90deg,#0B2148 0%,#16356F 55%,#2A50A0 100%); border:0.55mm solid #D9B45C; border-bottom:none; border-radius:2.6mm 2.6mm 0 0; padding:2.4mm 10mm 2.2mm 4.5mm; color:#FFFFFF; font-size:14px; font-weight:900; letter-spacing:.4px; }
+/* Bill To — navy banner + GOLD-GRADIENT customer card */
+.bto { margin:3.4mm 8mm 0; }
+.bto-cap { display:inline-flex; align-items:center; gap:3mm; background:linear-gradient(90deg,#0A1F44 0%,#14336B 55%,#24509E 100%); border:0.5mm solid #D4A62A; border-radius:2.8mm; padding:2.2mm 11mm 2.2mm 4.5mm; }
+.bto-cap .t { font-size:20px; font-weight:900; color:#F5D061; letter-spacing:.6px; }
 .bto-cap svg { display:block; }
-.bto-body { border:0.55mm solid #D9B45C; background:#FFFFFF; border-radius:0 2.6mm 2.6mm 2.6mm; padding:2.8mm 5.5mm; }
-.brow { display:flex; align-items:baseline; font-size:12.5px; font-weight:800; color:#0E2A5C; padding:1mm 0; }
-.brow .k { flex:0 0 34mm; }
-.brow .c { flex:0 0 7mm; }
+.bto-body { margin-top:1.5mm; border:0.5mm solid #D4A62A; background:linear-gradient(180deg,#FCF1CC 0%,#F5E0A6 100%); border-radius:2.8mm; padding:2mm 5.5mm; }
+.brow { display:flex; align-items:baseline; font-size:16px; font-weight:800; color:#0E2A5C; padding:.8mm 0; }
+.brow .k { flex:0 0 42mm; }
+.brow .c { flex:0 0 6mm; }
 .brow .v { flex:1 1 auto; min-width:0; }
 
-/* items grid — navy header with gold text, HSN Code column */
-.tblwrap { margin:5mm 7mm 0; border:0.5mm solid #D9B45C; border-radius:1.2mm; overflow:hidden; }
+/* items grid — navy header, gold-tinted rows, navy cell lines */
+.tblwrap { margin:3.4mm 8mm 0; border:0.5mm solid #0E2A5C; border-radius:1.6mm; overflow:hidden; background:#FDF3DC; }
 table.items { width:100%; border-collapse:collapse; }
-.items th { background:#0E2A5C; color:#F2C94C; font-size:11px; font-weight:800; text-align:center; padding:2.8mm 2mm; border:0.3mm solid #2A50A0; letter-spacing:.3px; line-height:1.25; }
-.items td { background:#FFFFFF; border:0.3mm solid #1C3E7E; padding:2.5mm; font-size:11.5px; font-weight:600; color:#0E2A5C; vertical-align:top; }
+.items th { background:#0B2447; color:#F2C94C; font-size:14px; font-weight:800; text-align:center; padding:2.8mm 2mm; border:0.3mm solid #274F94; letter-spacing:.3px; }
+.items td { background:#FDF3DC; border:0.3mm solid #14336B; padding:3mm 2mm; font-size:14px; font-weight:700; color:#0E2A5C; vertical-align:middle; }
 .items td.c, .items th.c { text-align:center; }
-.items td.r { text-align:right; }
+.items td.r, .items th.r { text-align:center; padding-right:0; }
 .items thead { display:table-header-group; }
 .items tr { page-break-inside:avoid; }
-.cat { font-size:8.5px; font-weight:700; color:#A05A1F; margin-top:1px; }
-.sn { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:8.5px; color:#41527A; margin-top:1px; }
+.cat { font-size:9px; font-weight:700; color:#A05A1F; margin-top:1px; }
+.sn { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:9px; color:#41527A; margin-top:1px; }
 
-/* trusted-shop seal + totals plate */
-.grandrow { display:flex; gap:5mm; align-items:stretch; margin:5mm 7mm 0; }
-.badgewrap { flex:0 0 62mm; display:flex; align-items:center; justify-content:center; padding:1mm 0; }
-.badge { width:37mm; height:37mm; border-radius:50%; background:linear-gradient(180deg,#262B33 0%,#10141A 70%); border:1.3mm solid #D4A853; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.5mm; }
-.badge .b0 { color:#F2C94C; font-size:12px; line-height:1; }
-.badge .b1 { color:#F2C94C; font-size:14.5px; font-weight:900; letter-spacing:.4px; line-height:1.1; }
-.badge .b2 { color:#FFFFFF; font-size:9.5px; font-weight:800; letter-spacing:.4px; line-height:1.2; }
-.badge .b3 { color:#F2C94C; font-size:8px; letter-spacing:2px; line-height:1; }
-.totbox { flex:1 1 auto; min-width:0; background:#FFFFFF; border:0.55mm solid #D9B45C; border-radius:2mm; overflow:hidden; display:flex; flex-direction:column; justify-content:center; }
-.trow { display:flex; justify-content:space-between; align-items:center; gap:4mm; padding:2.3mm 4.5mm; font-size:12px; font-weight:700; color:#0E2A5C; border-bottom:0.3mm solid #EADFC0; }
+/* trusted-shop rosette + navy totals plate */
+.grandrow { display:flex; gap:5mm; align-items:center; margin:3.4mm 8mm 0; }
+.badgewrap { flex:0 0 56mm; display:flex; align-items:center; justify-content:center; }
+.badgewrap svg { width:43mm; height:43mm; }
+.totbox { flex:1 1 auto; min-width:0; background:#FFFFFF; border:0.5mm solid #0E2A5C; border-radius:2mm; overflow:hidden; }
+.trow { display:flex; justify-content:space-between; align-items:center; gap:4mm; padding:2.5mm 4.5mm; font-size:15px; font-weight:800; color:#0E2A5C; border-bottom:0.35mm solid #14336B; }
 .trow .lbl { min-width:0; }
-.trow .amt { flex:0 0 auto; font-weight:800; }
+.trow .amt { flex:0 0 auto; }
 .trow.neg .amt { color:#15803D; }
-.trow.grand { background:linear-gradient(90deg,#0B2148 0%,#16356F 100%); border-bottom:none; color:#F2C94C; font-size:14px; font-weight:900; padding:3mm 4.5mm; }
-.trow.grand .amt { font-size:15.5px; letter-spacing:.4px; }
+.trow.grand { background:linear-gradient(90deg,#0A1F44 0%,#15336B 100%); border-bottom:none; color:#F5D061; font-size:18px; font-weight:900; padding:2.9mm 4.5mm; }
+.trow.grand .amt { font-size:20px; letter-spacing:.4px; }
 
-/* payment box + authorised signature */
-.payrow { display:flex; gap:6mm; align-items:flex-end; margin:4.5mm 7mm 0; }
-.paybox { flex:1 1 auto; min-width:0; background:#FFFFFF; border:0.55mm solid #D9B45C; border-radius:3mm; padding:3mm 4.5mm; display:flex; align-items:center; gap:4mm; }
-.chk { flex:0 0 10mm; width:10mm; height:10mm; border-radius:50%; background:linear-gradient(180deg,#34C759 0%,#1FA342 100%); color:#FFFFFF; font-size:15px; font-weight:900; display:flex; align-items:center; justify-content:center; }
-.plines { flex:1 1 auto; min-width:0; }
-.pline { font-size:12.5px; font-weight:800; color:#0E2A5C; padding:.7mm 0; }
+/* payment pill + authorised signature */
+.payrow { display:flex; align-items:center; gap:8mm; margin:3.8mm 8mm 0; }
+.paybox { display:inline-flex; align-items:center; gap:3.6mm; margin-left:40mm; background:#FFFFFF; border:0.6mm solid #D4A62A; border-radius:14mm; padding:2.4mm 8mm 2.4mm 3mm; }
+.chkbox { flex:0 0 auto; }
+.chkbox svg { width:11.5mm; height:11.5mm; display:block; }
+.plines { min-width:0; }
+.pline { font-size:15.5px; font-weight:800; color:#0E2A5C; padding:.5mm 0; white-space:nowrap; }
 .pline .ok { color:#1FA342; }
 .pline .part { color:#B45309; }
 .pline .bad { color:#C62828; }
-.sigwrap { flex:0 0 52mm; text-align:center; padding-bottom:1.5mm; }
-.sigwrap img { max-width:50mm; max-height:13mm; object-fit:contain; display:block; margin:0 auto 1mm; }
-.sigline { border-top:0.45mm solid #0E2A5C; padding-top:1.4mm; font-size:11px; font-weight:800; color:#0E2A5C; }
+.sigwrap { margin-left:auto; flex:0 0 46mm; text-align:center; }
+.sigwrap img { max-width:44mm; max-height:13mm; object-fit:contain; display:block; margin:0 auto; }
+.sigwrap svg { width:36mm; height:13.5mm; display:block; margin:0 auto; }
+.sigcap { font-size:13.5px; font-weight:800; color:#0E2A5C; margin-top:.4mm; }
 
-/* thank-you + phone mock-up */
-.thanksrow { display:flex; align-items:flex-end; gap:6mm; margin:2mm 7mm 0; padding-bottom:7mm; }
-.phonewrap { flex:0 0 30mm; display:flex; align-items:flex-end; justify-content:center; }
-.phone { width:21mm; height:39mm; border-radius:3.6mm; background:linear-gradient(160deg,#1A3C82 0%,#0B2148 75%); padding:1.7mm; }
-.phone .scr { width:100%; height:100%; border-radius:2.6mm; background:linear-gradient(150deg,#9BD1FF 0%,#4364F7 48%,#B23AF0 100%); position:relative; }
-.phone .notch { position:absolute; top:1.2mm; left:6.5mm; width:8mm; height:1.6mm; border-radius:1mm; background:#0B2148; }
-.thanksbox { flex:1 1 auto; min-width:0; text-align:center; padding-bottom:2.5mm; }
-.ty { font-family:'Segoe Script','Brush Script MT','Apple Chancery','Comic Sans MS',cursive; font-style:italic; font-weight:800; font-size:29px; color:#1D5AB9; line-height:1.1; margin:0; }
-.keep { font-size:11.5px; font-weight:800; font-style:italic; color:#0E2A5C; margin-top:1.6mm; }
+/* thank-you script row */
+.thanksrow { display:flex; align-items:flex-end; margin:1mm 8mm 0; padding-bottom:3mm; }
+.thanksbox { flex:1 1 auto; min-width:0; text-align:center; padding-right:34mm; padding-bottom:1mm; }
+.ty { font-family:'Segoe Script','Brush Script MT','Apple Chancery','Comic Sans MS',cursive; font-style:italic; font-weight:800; font-size:39px; color:#1D5AB9; line-height:1.05; margin:0; }
+.keep { font-size:14px; font-weight:800; font-style:italic; color:#0E2A5C; margin-top:1.2mm; }
 
-/* navy footer strip */
-.foot { margin-top:auto; background:linear-gradient(90deg,#0B2148 0%,#16356F 55%,#0B2148 100%); border-top:0.8mm solid #D9B45C; display:flex; align-items:center; gap:6mm; padding:3mm 7mm; }
-.fitem { display:flex; align-items:center; gap:2.2mm; color:#FFFFFF; font-size:10.5px; font-weight:800; letter-spacing:.3px; }
+/* 3-D phone art docked above the footer wave */
+.phoneart { position:absolute; left:2.5mm; bottom:19mm; width:31mm; z-index:2; pointer-events:none; }
+.phoneart svg { width:100%; height:auto; display:block; }
+
+/* navy footer wave */
+.foot { margin-top:auto; position:relative; height:20mm; }
+.foot svg.wave { position:absolute; top:0; left:0; width:100%; height:100%; display:block; }
+.fcontent { position:relative; z-index:2; display:flex; align-items:center; gap:7mm; height:100%; padding:5mm 8mm 0; }
+.fitem { display:flex; align-items:center; gap:2.2mm; color:#FFFFFF; font-size:12.5px; font-weight:800; letter-spacing:.3px; }
 .fitem svg { display:block; }
-.fvisit { margin-left:auto; font-family:'Segoe Script','Brush Script MT','Apple Chancery','Comic Sans MS',cursive; font-style:italic; font-weight:800; font-size:15px; color:#F2C94C; }
+.fvisit { margin-left:auto; font-family:'Segoe Script','Brush Script MT','Apple Chancery','Comic Sans MS',cursive; font-style:italic; font-weight:800; font-size:20px; color:#F5D061; }
 `;
 
 function billShell(title: string, body: string): string {
@@ -557,8 +704,9 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
     })
     .join('');
 
-  // filler rows keep the grid full so a short bill still covers the A4 sheet
-  const MIN_ROWS = 10;
+  // the reference shows a full 3-row grid — pad shorter bills so the
+  // sheet never shows a collapsed table
+  const MIN_ROWS = 3;
   const fillers = Math.max(0, MIN_ROWS - (bill.items || []).length);
   const fillerRows = Array.from({ length: fillers }, () => `<tr>${'<td></td>'.repeat(6)}</tr>`).join('');
 
@@ -587,28 +735,26 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
 
   const body = `
 <div class="sheet">
-  <div class="frame">
-    <div class="arc tl"></div><div class="arc tr"></div><div class="arc bl"></div><div class="arc br"></div>
-
+  <div class="keyline"></div>
+  ${topDecoSvg(gstOn)}
+  ${bottomDecoSvg()}
+  <div class="page">
     <div class="hdr">
       <div class="plogo"><div class="in"><b>${esc(brandInitials(shop.name))}</b></div></div>
       <div class="hmid">
         <div class="co-name">${esc(shop.name)}</div>
         <div class="co-sub">Mobile &amp; Accessories</div>
         <div class="co-tag">Your Trusted Mobile Partner</div>
+        ${TAGLINE_SWOOSH}
         ${shop.gst && gstOn ? `<div class="co-gstin">GSTIN: ${esc(shop.gst)}</div>` : ''}
-      </div>
-      <div class="taxinv">
-        <div class="t1">${gstOn ? 'TAX INVOICE' : 'INVOICE'}</div>
-        ${gstOn ? '<div class="t2">GST INVOICE</div>' : ''}
       </div>
     </div>
 
     <div class="svcs">
-      <div class="svc"><div class="ic">${ICO_MOBILE}</div><div class="lb">Mobile</div></div>
-      <div class="svc"><div class="ic">${ICO_HEADSET}</div><div class="lb">Accessories</div></div>
-      <div class="svc"><div class="ic">${ICO_WRENCH}</div><div class="lb">Service</div></div>
-      <div class="svc"><div class="ic">${ICO_RECHARGE}</div><div class="lb">Recharge</div></div>
+      <div class="svc"><div class="ic"><div class="inn">${G_MOBILE}</div></div><div class="lb">Mobile</div></div>
+      <div class="svc"><div class="ic"><div class="inn">${G_ACCESS}</div></div><div class="lb">Accessories</div></div>
+      <div class="svc"><div class="ic"><div class="inn">${G_SERVICE}</div></div><div class="lb">Service</div></div>
+      <div class="svc"><div class="ic"><div class="inn">${G_RECHARGE}</div></div><div class="lb">Recharge</div></div>
     </div>
 
     <div class="meta">
@@ -617,11 +763,11 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
         <div class="mrow"><span class="k">Invoice Date</span><span class="c">:</span><span class="v">${esc(fmtDate(bill.date))}</span></div>
         ${ordNo ? `<div class="mrow"><span class="k">Order No.</span><span class="c">:</span><span class="v">${esc(ordNo)}</span></div>` : ''}
       </div>
-      ${qr ? `<div class="qrbox"><img src="${qr}" alt="QR"><div class="qc">Scan to Verify</div></div>` : ''}
+      <div class="qrbox">${qr ? `<img src="${qr}" alt="QR">` : qrPlaceholderSvg()}<div class="qc">Scan to Verify</div></div>
     </div>
 
     <div class="bto">
-      <div class="bto-cap">${ICO_PERSON}<span>Bill To</span></div>
+      <div class="bto-cap">${I_PERSON}<span class="t">Bill To</span></div>
       <div class="bto-body">
         <div class="brow"><span class="k">Customer Name</span><span class="c">:</span><span class="v">${esc(bill.customerName || 'Cash Sale')}</span></div>
         ${bill.customerMobile ? `<div class="brow"><span class="k">Mobile No.</span><span class="c">:</span><span class="v">${esc(bill.customerMobile)}</span></div>` : ''}
@@ -633,11 +779,11 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
       <table class="items">
         <thead><tr>
           <th class="c" style="width:7%">#</th>
-          <th style="width:37%">Product Name</th>
-          <th class="c" style="width:14%">HSN Code</th>
+          <th style="width:34%">Product Name</th>
+          <th class="c" style="width:15%">HSN Code</th>
           <th class="c" style="width:9%">Qty</th>
-          <th class="r" style="width:15%">Rate (₹)</th>
-          <th class="r" style="width:18%">Amount (₹)</th>
+          <th class="r" style="width:16%">Rate (₹)</th>
+          <th class="r" style="width:19%">Amount (₹)</th>
         </tr></thead>
         <tbody>
           ${itemRows}
@@ -647,14 +793,7 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
     </div>
 
     <div class="grandrow">
-      <div class="badgewrap">
-        <div class="badge">
-          <div class="b0">★</div>
-          <div class="b1">100%</div>
-          <div class="b2">Trusted Shop</div>
-          <div class="b3">★★★★★</div>
-        </div>
-      </div>
+      <div class="badgewrap">${trustedBadgeSvg()}</div>
       <div class="totbox">
         ${discRow}
         ${taxableRow}
@@ -666,7 +805,7 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
 
     <div class="payrow">
       <div class="paybox">
-        <div class="chk">✓</div>
+        <span class="chkbox">${checkCircleSvg()}</span>
         <div class="plines">
           <div class="pline">Payment Mode : ${esc(methodLabel)}</div>
           <div class="pline">Payment Status : <span class="${stCls}">${stText}</span></div>
@@ -674,26 +813,28 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
         </div>
       </div>
       <div class="sigwrap">
-        ${sig ? `<img src="${sig}" alt="signature">` : ''}
-        <div class="sigline">Authorized Signature</div>
+        ${sig ? `<img src="${sig}" alt="signature">` : sigScribbleSvg()}
+        <div class="sigcap">Authorized Signature</div>
       </div>
     </div>
 
     <div class="thanksrow">
-      <div class="phonewrap">
-        <div class="phone"><div class="scr"><div class="notch"></div></div></div>
-      </div>
       <div class="thanksbox">
         <p class="ty">Thank You!</p>
         <div class="keep">${shop.thankyou ? esc(shop.thankyou) : 'Keep Shopping with PS TELECOM…'}</div>
       </div>
     </div>
 
+    <div class="phoneart">${phoneSvg()}</div>
+
     <div class="foot">
-      <div class="fitem">${ICO_SHIELD}<span>Best Price</span></div>
-      <div class="fitem">${ICO_WRENCH_GOLD}<span>Best Service</span></div>
-      <div class="fitem">${ICO_STAR}<span>Happy Customer</span></div>
-      <div class="fvisit">Visit Again…</div>
+      ${footerWaveSvg()}
+      <div class="fcontent">
+        <div class="fitem">${I_SHIELD}<span>Best Price</span></div>
+        <div class="fitem">${I_HANDSHAKE}<span>Best Service</span></div>
+        <div class="fitem">${I_STAR}<span>Happy Customer</span></div>
+        <div class="fvisit">Visit Again…</div>
+      </div>
     </div>
   </div>
 </div>`;

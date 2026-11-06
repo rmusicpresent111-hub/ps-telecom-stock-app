@@ -58,21 +58,28 @@ import {
 
 /** A representative sample bill used when the shop has no real bills yet. */
 function sampleBill(form: BillingSettings): Bill {
-  const subtotal = 500;
+  // Task 92: preview sample mirrors the owner's reference invoice
+  // (PS-2026-003 · Rahul Das · Mobile Display/Tempered Glass/Back Cover)
+  // so the settings preview can be compared 1:1 with the design.
+  const items = [
+    { productId: 'sample-1', name: 'Mobile Display', hsnCode: '851770', quantity: 1, unitPrice: 2500, total: 2500 },
+    { productId: 'sample-2', name: 'Tempered Glass', hsnCode: '700719', quantity: 1, unitPrice: 150, total: 150 },
+    { productId: 'sample-3', name: 'Back Cover', hsnCode: '420232', quantity: 1, unitPrice: 200, total: 200 },
+  ];
+  const subtotal = items.reduce((s, it) => s + it.total, 0);
   const discountAmount = 0;
   const gstEnabled = !!form.gstEnabled && form.gstNumber.trim().length > 0 && form.gstRate > 0;
   const gstRate = gstEnabled ? form.gstRate : 0;
   const gstMode = normalizeGstMode(form.gstMode);
   const breakup = gstEnabled ? computeGst(subtotal - discountAmount, gstRate, gstMode) : null;
-  const now = new Date();
-  const ym = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const ym = '2602';
   return {
     id: 'sample-bill',
     userId: 'sample',
-    billNumber: `${(form.billPrefix || 'PS').trim() || 'PS'}-${ym}-0001`,
-    customerName: 'Walk-in Customer',
+    billNumber: 'PS-2026-003',
+    customerName: 'Rahul Das',
     customerMobile: '9876543210',
-    items: [{ productId: 'sample', name: 'Sample Product', quantity: 2, unitPrice: 250, total: subtotal }],
+    items,
     subtotal,
     discountValue: 0,
     discountType: 'amount',
@@ -82,12 +89,12 @@ function sampleBill(form: BillingSettings): Bill {
     gstAmount: breakup ? breakup.gstAmount : 0,
     ...(breakup ? { gstMode, taxableValue: breakup.taxable, cgstAmount: breakup.cgst, sgstAmount: breakup.sgst } : {}),
     total: breakup ? breakup.total : subtotal - discountAmount,
-    paymentMethod: 'cash',
+    paymentMethod: 'upi',
     paidAmount: breakup ? breakup.total : subtotal - discountAmount,
     dueAmount: 0,
     note: '',
     // shows in the v2.40.0 GST invoice "Order No." row on the settings preview
-    transactionId: 'ORD-0001',
+    transactionId: 'ORD-003',
     shopSnapshot: {
       name: form.shopName,
       proprietorName: form.proprietorName,
