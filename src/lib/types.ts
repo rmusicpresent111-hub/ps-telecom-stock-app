@@ -234,6 +234,10 @@ export interface BillItem {
   /** Resolved from the product at bill time — printed under the item on the
    *  invoice ("bill e category ashe"). Undefined on pre-2.25 legacy bills. */
   categoryName?: string;
+  /** HSN classification code printed in the GST invoice items grid
+   *  (v2.40.0 "PS TELECOM GST Invoice" template column). Optional additive
+   *  field — old synced rows decode untouched; prints "—" when missing. */
+  hsnCode?: string;
   quantity: number;
   unitPrice: number;
   total: number;

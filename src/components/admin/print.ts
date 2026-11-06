@@ -64,50 +64,6 @@ function escMultiline(s: unknown): string {
   return esc(s).replace(/\r?\n/g, '<br>');
 }
 
-// ── amount in words (Indian numbering) ─────────────────────────
-
-const W_ONES = [
-  '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
-  'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen',
-];
-const W_TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-
-function wTwo(n: number): string {
-  if (n < 20) return W_ONES[n] || '';
-  const tens = Math.floor(n / 10);
-  const ones = n % 10;
-  return (W_TENS[tens] || '') + (ones ? ' ' + W_ONES[ones] : '');
-}
-
-function wInt(n: number): string {
-  if (n === 0) return 'Zero';
-  const crore = Math.floor(n / 10000000);
-  n %= 10000000;
-  const lakh = Math.floor(n / 100000);
-  n %= 100000;
-  const thousand = Math.floor(n / 1000);
-  n %= 1000;
-  const hundred = Math.floor(n / 100);
-  n %= 100;
-  const out: string[] = [];
-  if (crore) out.push(wInt(crore) + ' Crore');
-  if (lakh) out.push(wTwo(lakh) + ' Lakh');
-  if (thousand) out.push(wTwo(thousand) + ' Thousand');
-  if (hundred) out.push((W_ONES[hundred] || '') + ' Hundred');
-  if (n) out.push((out.length ? 'and ' : '') + wTwo(n));
-  return out.join(' ');
-}
-
-/** "Rupees Twelve Lakh Three Hundred and Forty Five and Paise Fifty Only" */
-function amountInWords(amount: number): string {
-  const abs = Math.abs(Number(amount) || 0);
-  const rupees = Math.floor(abs);
-  const paise = Math.round((abs - rupees) * 100);
-  let s = 'Rupees ' + wInt(rupees);
-  if (paise > 0) s += ' and ' + wTwo(paise) + ' Paise';
-  return s + ' Only';
-}
-
 // ── shop header resolution (live settings → bill snapshot) ─────
 
 interface ShopHeader {
@@ -359,32 +315,29 @@ function pageShell(title: string, body: string): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>${PRINT_CSS}</style></head><body>${body}</body></html>`;
 }
 
-// ── document 1: single-bill FULL-PAGE A4 invoice — premium multi-colour ──
-//
-// Task 75: premium restyle of the bill printout:
-//   • true full-page A4 sheet — edge-to-edge colour bands top & bottom
-//   • dark charcoal header: logo monogram + shop identity on the LEFT,
-//     INVOICE No. / Dated / Payment on a white card docked on ONE side
-//   • amber→orange accent strip + coloured TAX INVOICE ribbon
-//   • Bill-To panel with a live payment-status chip (PAID / PARTIAL / DUE)
-//   • dark-headed items grid with zebra rows + filler rows so the sheet
-//     always looks complete; totals stay inside the grid (column-aligned)
-//   • OUTPUT CGST/SGST rows, GRAND TOTAL on a dark plate + gold double rule
-//   • amount in words, due-receivable callout, bank + QR, terms,
-//     declaration, watermark, signature block and a dark footer strip
 
-const GST_STATE_CODES: Record<string, string> = {
-  '01': 'Jammu & Kashmir', '02': 'Himachal Pradesh', '03': 'Punjab', '04': 'Chandigarh',
-  '05': 'Uttarakhand', '06': 'Haryana', '07': 'Delhi', '08': 'Rajasthan',
-  '09': 'Uttar Pradesh', '10': 'Bihar', '11': 'Sikkim', '12': 'Arunachal Pradesh',
-  '13': 'Nagaland', '14': 'Manipur', '15': 'Mizoram', '16': 'Tripura',
-  '17': 'Meghalaya', '18': 'Assam', '19': 'West Bengal', '20': 'Jharkhand',
-  '21': 'Odisha', '22': 'Chhattisgarh', '23': 'Madhya Pradesh', '24': 'Gujarat',
-  '26': 'Dadra & Nagar Haveli and Daman & Diu', '27': 'Maharashtra', '29': 'Karnataka',
-  '30': 'Goa', '31': 'Lakshadweep', '32': 'Kerala', '33': 'Tamil Nadu',
-  '34': 'Puducherry', '35': 'Andaman & Nicobar Islands', '36': 'Telangana',
-  '37': 'Andhra Pradesh', '38': 'Ladakh',
-};
+// ── document 1: single-bill FULL-PAGE A4 invoice — "PS TELECOM GST Invoice" ──
+//
+// Task 91 (v2.40.0): the admin bill template is now a same-to-same rebuild of
+// the owner's reference design (upload/PS Telecom GST Invoice Design.png):
+//   • deep-navy outer frame + gold keyline + cream paper with gold corner arcs
+//   • header: circular gold PS monogram (left) · PS TELECOM + "Mobile &
+//     Accessories" + script tagline (centre) · navy/gold TAX INVOICE +
+//     GST INVOICE ribbon (right)
+//   • gold service medallions row — Mobile | Accessories | Service | Recharge
+//   • white meta card: Invoice No. / Invoice Date / Order No. (transactionId)
+//     + gold-bordered payment QR with "Scan to Verify"
+//   • navy "Bill To" banner + gold-edged customer card (name / mobile)
+//   • navy-headed items grid with HSN Code column: # | Product Name | HSN
+//     Code | Qty | Rate (₹) | Amount (₹)
+//   • black/gold "100% Trusted Shop" seal + totals plate: Taxable Amount,
+//     CGST/SGST @ half-rate, Round Off, navy GRAND TOTAL band
+//   • green-check payment box (Mode / Status / Due) + Authorized Signature
+//   • script "Thank You!" + Keep Shopping + CSS phone mock-up
+//   • navy footer strip: Best Price | Best Service | Happy Customer | gold
+//     script "Visit Again…"
+// Pure CSS/SVG art only (inline SVG with xmlns — print iframe AND html2canvas
+// PDF both render it; no emoji, no external images, no box-shadows).
 
 /** Tally money: plain Indian-grouped 2-decimals, NO ₹ symbol (e.g. 12,600.00). */
 function tallyAmt(n: number | undefined | null): string {
@@ -397,124 +350,149 @@ function tallyQty(n: number): string {
   return Number.isInteger(v) ? String(v) : String(Number(v.toFixed(3)));
 }
 
-/** Tally dated format: 31-Oct-2025 */
-function tallyDate(dateStr: string | undefined): string {
-  if (!dateStr) return '—';
-  const d = dateStr.length > 10 ? new Date(dateStr) : new Date(dateStr + 'T00:00:00');
-  if (Number.isNaN(d.getTime())) return dateStr;
-  return `${String(d.getDate()).padStart(2, '0')}-${MONTHS[d.getMonth()]}-${d.getFullYear()}`;
+// ── inline SVG icon set (fixed size + xmlns → print & html2canvas safe) ──
+
+const PS_NAVY = '#0E2A5C';
+const PS_GOLD = '#F2C94C';
+
+function psStrokeIcon(inner: string, size = 20, color = PS_NAVY): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
 }
 
-/** "West Bengal , Code : 19" parsed from the shop GSTIN prefix. */
-function stateFromGstin(gst: string): string | null {
-  const m = (gst || '').trim().match(/^(\d{2})/);
-  if (!m) return null;
-  const name = GST_STATE_CODES[m[1]];
-  return name ? `${name} , Code : ${m[1]}` : `State Code : ${m[1]}`;
+const ICO_MOBILE = psStrokeIcon('<rect x="7" y="2" width="10" height="20" rx="2.5"/><line x1="10.5" y1="18.5" x2="13.5" y2="18.5"/>');
+const ICO_HEADSET = psStrokeIcon('<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/>');
+const ICO_WRENCH = psStrokeIcon('<path d="M14.7 6.3a4.5 4.5 0 0 0-6.4 5.7L3 17.3V21h3.7l5.3-5.3a4.5 4.5 0 0 0 5.7-6.4l-2.9 2.9-2.5-.5-.5-2.5z"/>');
+const ICO_RECHARGE = psStrokeIcon('<rect x="2" y="8" width="16" height="9" rx="2"/><line x1="20.5" y1="10.5" x2="20.5" y2="14.5"/><path d="M10 9.5 7.5 13h3L8.5 16l4-4h-3z"/>');
+const ICO_PERSON = `<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="${PS_GOLD}"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7v1H4z"/></svg>`;
+const ICO_SHIELD = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="${PS_GOLD}"><path d="M12 2l8 3v6c0 5-3.4 9.5-8 11-4.6-1.5-8-6-8-11V5z"/><path d="M8.7 11.8l2.3 2.3 4.3-4.3" fill="none" stroke="#0B2148" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const ICO_WRENCH_GOLD = psStrokeIcon('<path d="M14.7 6.3a4.5 4.5 0 0 0-6.4 5.7L3 17.3V21h3.7l5.3-5.3a4.5 4.5 0 0 0 5.7-6.4l-2.9 2.9-2.5-.5-.5-2.5z"/>', 14, PS_GOLD);
+const ICO_STAR = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="${PS_GOLD}"><path d="M12 2l2.9 6.2 6.6.8-4.9 4.6 1.3 6.6-5.9-3.3-5.9 3.3 1.3-6.6L2.5 9l6.6-.8z"/></svg>`;
+
+/** Two-letter brand initials for the circular logo tile (PS TELECOM → PS). */
+function brandInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const first = parts[0] || 'PS';
+  return /^[A-Z]{2,3}$/.test(first)
+    ? first
+    : ((first[0] || 'P') + (parts[1]?.[0] || 'S')).toUpperCase();
 }
 
 const BILL_CSS = `
 @page { size: A4; margin: 0; }
 * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 html, body { margin:0; padding:0; }
-body { background:#fff; color:#111827; font-family:Arial,'Noto Sans Bengali','Hind Siliguri','Helvetica Neue',Helvetica,'Liberation Sans',sans-serif; font-size:10.5px; line-height:1.4; }
+body { background:#fff; color:#0E2A5C; font-family:Arial,'Noto Sans Bengali','Hind Siliguri','Helvetica Neue',Helvetica,'Liberation Sans',sans-serif; font-size:10.5px; line-height:1.4; }
 
-/* full-page A4 sheet — colour runs edge to edge */
-.sheet { width:210mm; max-width:100%; min-height:296.6mm; margin:0 auto; background:#fff; position:relative; overflow:hidden; display:flex; flex-direction:column; }
+/* full-page A4 sheet — deep-navy frame, gold keyline, cream paper */
+.sheet { width:210mm; max-width:100%; min-height:296.6mm; margin:0 auto; background:linear-gradient(135deg,#16356F 0%,#0B2148 50%,#16356F 100%); padding:2.8mm; display:flex; }
+.frame { flex:1 1 auto; display:flex; flex-direction:column; background:linear-gradient(180deg,#FFFDF6 0%,#FFF8EA 55%,#FDF1D8 100%); border:0.55mm solid #D9B45C; position:relative; overflow:hidden; }
 
-/* thin royal edge at the very top of the sheet */
-.topline { height:2.2mm; background:#1E3A8A; }
+/* gold corner arcs — the reference's ribbon swirls, kept print-safe */
+.arc { position:absolute; width:24mm; height:24mm; }
+.arc.tl { top:1.2mm; left:1.2mm; border-top:1.2mm solid #D9B45C; border-left:1.2mm solid #D9B45C; border-top-left-radius:22mm; }
+.arc.tr { top:1.2mm; right:1.2mm; border-top:1.2mm solid #D9B45C; border-right:1.2mm solid #D9B45C; border-top-right-radius:22mm; }
+.arc.bl { bottom:1.2mm; left:1.2mm; border-bottom:1.2mm solid #D9B45C; border-left:1.2mm solid #D9B45C; border-bottom-left-radius:22mm; }
+.arc.br { bottom:1.2mm; right:1.2mm; border-bottom:1.2mm solid #D9B45C; border-right:1.2mm solid #D9B45C; border-bottom-right-radius:22mm; }
 
-/* royal blue header — shop identity LEFT, invoice meta box docked RIGHT */
-.hdr { background:#1E3A8A; color:#fff; margin:4mm 8mm 0; border-radius:2.5mm; padding:5mm 6mm; display:flex; justify-content:space-between; align-items:stretch; gap:6mm; }
-.hbrand { min-width:0; flex:1 1 auto; }
-.co-name { font-size:21px; font-weight:bold; letter-spacing:.8px; line-height:1.15; }
-.co-sub { font-size:9px; color:#C7D8F5; font-weight:bold; letter-spacing:1.1px; text-transform:uppercase; margin-top:1.2px; }
-.co-line { font-size:9px; color:#DCE6F8; margin-top:1.6px; line-height:1.5; }
-.co-contact { font-size:9.5px; font-weight:bold; color:#fff; margin-top:2.2px; }
-.co-contact .sep { color:#8FA9DD; padding:0 2mm; font-weight:normal; }
+/* header — circular PS monogram · brand block · TAX INVOICE ribbon */
+.hdr { display:flex; align-items:center; gap:5mm; padding:7mm 7mm 2.5mm; }
+.plogo { flex:0 0 24mm; width:24mm; height:24mm; border-radius:50%; background:linear-gradient(135deg,#F3D98B 0%,#D4A853 55%,#A67C34 100%); padding:1.7mm; }
+.plogo .in { width:100%; height:100%; border-radius:50%; background:linear-gradient(160deg,#1A3C82 0%,#0B2148 80%); border:0.5mm solid #F3D98B; display:flex; align-items:center; justify-content:center; }
+.plogo .in b { font-family:Georgia,'Times New Roman',serif; font-style:italic; font-size:18px; font-weight:900; color:#F2C94C; letter-spacing:.5px; }
+.hmid { flex:1 1 auto; min-width:0; text-align:center; }
+.co-name { font-size:27px; font-weight:900; color:#0E2A5C; letter-spacing:1.2px; line-height:1.05; }
+.co-sub { font-size:14.5px; font-weight:800; color:#1D5AB9; margin-top:1mm; letter-spacing:.3px; }
+.co-tag { font-family:'Segoe Script','Brush Script MT','Apple Chancery','Comic Sans MS',cursive; font-style:italic; font-weight:700; font-size:12px; color:#123A7E; margin-top:1.4mm; }
+.co-gstin { font-size:8.5px; font-weight:700; color:#41527A; margin-top:1mm; letter-spacing:.4px; }
+.taxinv { flex:0 0 auto; background:linear-gradient(180deg,#16356F 0%,#0B2148 100%); border:0.55mm solid #D9B45C; border-radius:2.6mm; padding:2.8mm 5mm 2.6mm; text-align:center; }
+.taxinv .t1 { color:#FFFFFF; font-size:14.5px; font-weight:900; letter-spacing:.8px; line-height:1.15; white-space:nowrap; }
+.taxinv .t2 { color:#F2C94C; font-size:8.5px; font-weight:800; letter-spacing:2.2px; margin-top:.9mm; }
 
-/* invoice meta — the bill number lives HERE, in a darker box on one side */
-.invmeta { background:#17306E; border:1px solid rgba(255,255,255,.16); border-radius:2mm; padding:3.2mm 4.5mm; flex:0 0 47mm; color:#fff; }
-.invmeta .k { font-size:7.5px; font-weight:bold; color:#9DB4E4; letter-spacing:1.3px; text-transform:uppercase; margin-top:2mm; }
-.invmeta .k:first-child { margin-top:0; }
-.invmeta .no { font-size:13px; font-weight:bold; letter-spacing:.4px; margin:.6mm 0 1.2mm; white-space:nowrap; }
-.invmeta .v { font-size:10px; font-weight:bold; margin-top:.6mm; }
+/* services medallions — Mobile | Accessories | Service | Recharge */
+.svcs { display:flex; align-items:stretch; margin:1.5mm 9mm 0; }
+.svc { flex:1 1 0; text-align:center; padding:1.4mm 1mm; }
+.svc + .svc { border-left:0.3mm solid rgba(14,42,92,.30); }
+.svc .ic { width:10.5mm; height:10.5mm; margin:0 auto; border-radius:50%; background:linear-gradient(180deg,#F3D98B 0%,#D4A853 62%,#B08A3E 100%); display:flex; align-items:center; justify-content:center; }
+.svc .ic svg { display:block; }
+.svc .lb { font-size:9.5px; font-weight:800; color:#0E2A5C; margin-top:1.3mm; letter-spacing:.2px; }
 
-/* light blue title strip — INVOICE (left) · CUSTOMER COPY (right) */
-.titlebar { display:flex; justify-content:space-between; align-items:center; background:#DCE9F9; margin:3.5mm 8mm 0; border-radius:1.6mm; padding:2.6mm 4.5mm; }
-.titlebar .ttl { font-size:12.5px; font-weight:bold; color:#16306B; letter-spacing:3.5px; }
-.titlebar .copy { font-size:8.5px; font-weight:bold; color:#5B74AD; letter-spacing:1.6px; }
+/* meta card + verify QR */
+.meta { display:flex; gap:5mm; align-items:stretch; margin:4.5mm 7mm 0; }
+.mrows { flex:1 1 auto; min-width:0; background:#FFFFFF; border:0.45mm solid #E3D2A6; border-radius:2.6mm; padding:3mm 5mm; display:flex; flex-direction:column; justify-content:center; gap:1.5mm; }
+.mrow { display:flex; align-items:baseline; font-size:12.5px; font-weight:800; color:#0E2A5C; }
+.mrow .k { flex:0 0 30mm; }
+.mrow .c { flex:0 0 7mm; }
+.mrow .v { flex:1 1 auto; min-width:0; }
+.qrbox { flex:0 0 33mm; background:#FFFFFF; border:0.55mm solid #D9B45C; border-radius:2mm; padding:2mm; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.qrbox img { width:25mm; height:25mm; object-fit:contain; }
+.qrbox .qc { font-size:10px; font-weight:800; color:#0E2A5C; margin-top:1.2mm; letter-spacing:.3px; }
 
-/* bill-to panel + payment status panel */
-.party { display:flex; gap:5mm; padding:4mm 8mm 0; }
-.cap { font-size:7.8px; font-weight:bold; letter-spacing:1.4px; color:#5B74AD; text-transform:uppercase; margin-bottom:1.5px; }
-.bto { flex:1 1 auto; min-width:0; border:1px solid #C3D4EC; border-left:2.6px solid #1E3A8A; border-radius:1.6mm; padding:2.8mm 3.5mm; background:#FBFDFF; }
-.pname { font-size:13px; font-weight:bold; color:#0F1F45; }
-.pline { font-size:9.3px; color:#3E5170; margin-top:1.2px; }
-.pstat { flex:0 0 64mm; border-radius:1.6mm; padding:2.8mm 3.5mm; border:1px solid #BFDFC9; border-left:2.6px solid #1E8E3E; background:#E9F6EE; }
-.pstat .cap { color:#1E8E3E; }
-.pstat .st { font-size:11.5px; font-weight:bold; color:#1E8E3E; margin:.6mm 0 1mm; }
-.pstat.partial { border-color:#F2DCB0; border-left-color:#D97706; background:#FFF7E6; }
-.pstat.partial .cap, .pstat.partial .st { color:#B45309; }
-.pstat.due { border-color:#F3C4C4; border-left-color:#C62828; background:#FDEDED; }
-.pstat.due .cap, .pstat.due .st { color:#C62828; }
-.payline { font-size:9.3px; color:#3E5170; margin-top:1px; }
-.payline b { color:#0F1F45; }
+/* Bill To — navy banner + gold-edged customer card */
+.bto { margin:5mm 7mm 0; }
+.bto-cap { display:inline-flex; align-items:center; gap:3mm; background:linear-gradient(90deg,#0B2148 0%,#16356F 55%,#2A50A0 100%); border:0.55mm solid #D9B45C; border-bottom:none; border-radius:2.6mm 2.6mm 0 0; padding:2.4mm 10mm 2.2mm 4.5mm; color:#FFFFFF; font-size:14px; font-weight:900; letter-spacing:.4px; }
+.bto-cap svg { display:block; }
+.bto-body { border:0.55mm solid #D9B45C; background:#FFFFFF; border-radius:0 2.6mm 2.6mm 2.6mm; padding:2.8mm 5.5mm; }
+.brow { display:flex; align-items:baseline; font-size:12.5px; font-weight:800; color:#0E2A5C; padding:1mm 0; }
+.brow .k { flex:0 0 34mm; }
+.brow .c { flex:0 0 7mm; }
+.brow .v { flex:1 1 auto; min-width:0; }
 
-/* items grid — royal header, light grid lines */
-.tblwrap { padding:4mm 8mm 0; }
-table.items { width:100%; border-collapse:collapse; border:1.4px solid #1E3A8A; }
-.items th { background:#1E3A8A; color:#fff; font-size:8.8px; font-weight:bold; text-align:center; padding:2.6mm 2mm; letter-spacing:.8px; border:1px solid #2A4CA0; line-height:1.3; }
-.items td { border:1px solid #D5E1F4; padding:2.3mm 2.5mm; font-size:10px; vertical-align:top; }
+/* items grid — navy header with gold text, HSN Code column */
+.tblwrap { margin:5mm 7mm 0; border:0.5mm solid #D9B45C; border-radius:1.2mm; overflow:hidden; }
+table.items { width:100%; border-collapse:collapse; }
+.items th { background:#0E2A5C; color:#F2C94C; font-size:11px; font-weight:800; text-align:center; padding:2.8mm 2mm; border:0.3mm solid #2A50A0; letter-spacing:.3px; line-height:1.25; }
+.items td { background:#FFFFFF; border:0.3mm solid #1C3E7E; padding:2.5mm; font-size:11.5px; font-weight:600; color:#0E2A5C; vertical-align:top; }
 .items td.c, .items th.c { text-align:center; }
 .items td.r { text-align:right; }
 .items thead { display:table-header-group; }
 .items tr { page-break-inside:avoid; }
-.items tbody.rows tr:nth-child(even) td { background:#F4F8FD; }
-.sn { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:8.5px; color:#6B7FA6; margin-top:1px; }
-.cat { font-size:8.5px; font-weight:bold; color:#B45309; margin-top:1px; letter-spacing:.03em; }
-.on { font-size:8.3px; color:#8296BC; white-space:nowrap; }
-/* totals inside the grid — light blue rows, then the navy grand plate */
-.items tbody.tots tr.tv td { background:#EFF5FC; font-weight:bold; color:#24355C; }
-.items tbody.tots tr.split td.tqty { background:#DCE9F9; color:#16306B; text-align:center; font-weight:bold; font-size:10.5px; border:1px solid #B9CCEA; border-top:1.4px solid #1E3A8A; }
-.items tbody.tots tr.split td.gtcell { background:#1E3A8A; color:#fff; text-align:center; font-weight:bold; font-size:11px; letter-spacing:1px; border:1px solid #1E3A8A; }
-.items tbody.tots tr.split td.gtcell .amt { font-size:12.5px; letter-spacing:.4px; }
+.cat { font-size:8.5px; font-weight:700; color:#A05A1F; margin-top:1px; }
+.sn { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:8.5px; color:#41527A; margin-top:1px; }
 
-/* amount in words band + due callout */
-.words { margin:3.5mm 8mm 0; background:#EFF5FC; border:1px solid #C3D4EC; border-radius:1.6mm; padding:2.4mm 3.5mm; font-size:10px; color:#24355C; }
-.words b { color:#16306B; letter-spacing:.8px; }
-.duebox { margin:3mm 8mm 0; background:#FDEDED; border:1px solid #F3C4C4; border-left:2.6px solid #C62828; border-radius:1.6mm; padding:2.4mm 3.5mm; font-size:9.8px; color:#C62828; font-weight:bold; }
+/* trusted-shop seal + totals plate */
+.grandrow { display:flex; gap:5mm; align-items:stretch; margin:5mm 7mm 0; }
+.badgewrap { flex:0 0 62mm; display:flex; align-items:center; justify-content:center; padding:1mm 0; }
+.badge { width:37mm; height:37mm; border-radius:50%; background:linear-gradient(180deg,#262B33 0%,#10141A 70%); border:1.3mm solid #D4A853; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.5mm; }
+.badge .b0 { color:#F2C94C; font-size:12px; line-height:1; }
+.badge .b1 { color:#F2C94C; font-size:14.5px; font-weight:900; letter-spacing:.4px; line-height:1.1; }
+.badge .b2 { color:#FFFFFF; font-size:9.5px; font-weight:800; letter-spacing:.4px; line-height:1.2; }
+.badge .b3 { color:#F2C94C; font-size:8px; letter-spacing:2px; line-height:1; }
+.totbox { flex:1 1 auto; min-width:0; background:#FFFFFF; border:0.55mm solid #D9B45C; border-radius:2mm; overflow:hidden; display:flex; flex-direction:column; justify-content:center; }
+.trow { display:flex; justify-content:space-between; align-items:center; gap:4mm; padding:2.3mm 4.5mm; font-size:12px; font-weight:700; color:#0E2A5C; border-bottom:0.3mm solid #EADFC0; }
+.trow .lbl { min-width:0; }
+.trow .amt { flex:0 0 auto; font-weight:800; }
+.trow.neg .amt { color:#15803D; }
+.trow.grand { background:linear-gradient(90deg,#0B2148 0%,#16356F 100%); border-bottom:none; color:#F2C94C; font-size:14px; font-weight:900; padding:3mm 4.5mm; }
+.trow.grand .amt { font-size:15.5px; letter-spacing:.4px; }
 
-/* bank / QR / signature row */
-.mid { display:flex; gap:5mm; padding:4.5mm 8mm 0; align-items:stretch; }
-.bank { flex:1 1 auto; min-width:0; font-size:9.3px; color:#24355C; }
-.bank .cap2 { font-size:8.2px; font-weight:bold; letter-spacing:1.1px; color:#16306B; text-transform:uppercase; margin-bottom:1.5px; }
-.bank div { margin-top:1.2px; }
-.qrbox { flex:0 0 30mm; text-align:center; }
-.qrbox img { width:24mm; height:24mm; object-fit:contain; border:1px solid #C3D4EC; border-radius:1.5mm; padding:1.2mm; background:#fff; }
-.qrcap { font-size:7.8px; color:#5B74AD; font-weight:bold; margin-top:1mm; }
-.sig { flex:0 0 62mm; display:flex; flex-direction:column; justify-content:space-between; align-items:flex-end; text-align:right; min-height:24mm; }
-.sigfor { font-size:10px; font-weight:bold; color:#16306B; letter-spacing:.6px; }
-.sigimg img { max-width:46mm; max-height:14mm; object-fit:contain; }
-.sigline { border-top:1.4px solid #24355C; margin-top:1.6mm; padding-top:1.4mm; font-size:9px; color:#24355C; width:56mm; text-align:center; }
+/* payment box + authorised signature */
+.payrow { display:flex; gap:6mm; align-items:flex-end; margin:4.5mm 7mm 0; }
+.paybox { flex:1 1 auto; min-width:0; background:#FFFFFF; border:0.55mm solid #D9B45C; border-radius:3mm; padding:3mm 4.5mm; display:flex; align-items:center; gap:4mm; }
+.chk { flex:0 0 10mm; width:10mm; height:10mm; border-radius:50%; background:linear-gradient(180deg,#34C759 0%,#1FA342 100%); color:#FFFFFF; font-size:15px; font-weight:900; display:flex; align-items:center; justify-content:center; }
+.plines { flex:1 1 auto; min-width:0; }
+.pline { font-size:12.5px; font-weight:800; color:#0E2A5C; padding:.7mm 0; }
+.pline .ok { color:#1FA342; }
+.pline .part { color:#B45309; }
+.pline .bad { color:#C62828; }
+.sigwrap { flex:0 0 52mm; text-align:center; padding-bottom:1.5mm; }
+.sigwrap img { max-width:50mm; max-height:13mm; object-fit:contain; display:block; margin:0 auto 1mm; }
+.sigline { border-top:0.45mm solid #0E2A5C; padding-top:1.4mm; font-size:11px; font-weight:800; color:#0E2A5C; }
 
-/* terms — bordered box, two Bengali columns like the reference */
-.terms { margin:4mm 8mm 0; border:1.4px solid #1E3A8A; border-radius:1.6mm; padding:3mm 4mm; font-size:8.6px; color:#3E5170; line-height:1.5; column-count:2; column-gap:6mm; column-rule:1px solid #D5E1F5; }
-.terms .ttitle { font-size:8.6px; font-weight:bold; color:#16306B; letter-spacing:1px; text-transform:uppercase; margin-bottom:1.5mm; column-span:all; }
-.terms .tline { margin-top:1px; break-inside:avoid; }
+/* thank-you + phone mock-up */
+.thanksrow { display:flex; align-items:flex-end; gap:6mm; margin:2mm 7mm 0; padding-bottom:7mm; }
+.phonewrap { flex:0 0 30mm; display:flex; align-items:flex-end; justify-content:center; }
+.phone { width:21mm; height:39mm; border-radius:3.6mm; background:linear-gradient(160deg,#1A3C82 0%,#0B2148 75%); padding:1.7mm; }
+.phone .scr { width:100%; height:100%; border-radius:2.6mm; background:linear-gradient(150deg,#9BD1FF 0%,#4364F7 48%,#B23AF0 100%); position:relative; }
+.phone .notch { position:absolute; top:1.2mm; left:6.5mm; width:8mm; height:1.6mm; border-radius:1mm; background:#0B2148; }
+.thanksbox { flex:1 1 auto; min-width:0; text-align:center; padding-bottom:2.5mm; }
+.ty { font-family:'Segoe Script','Brush Script MT','Apple Chancery','Comic Sans MS',cursive; font-style:italic; font-weight:800; font-size:29px; color:#1D5AB9; line-height:1.1; margin:0; }
+.keep { font-size:11.5px; font-weight:800; font-style:italic; color:#0E2A5C; margin-top:1.6mm; }
 
-/* declaration + thank-you */
-.bottomrow { display:flex; justify-content:space-between; gap:8mm; padding:3.5mm 8mm 0; }
-.decl { flex:1 1 auto; min-width:0; }
-.decl .cap2 { font-size:7.8px; font-weight:bold; letter-spacing:1.3px; color:#5B74AD; text-transform:uppercase; margin-bottom:1px; }
-.decl .dtxt { font-size:8.8px; color:#3E5170; line-height:1.5; }
-.jur { font-size:8.5px; color:#8296BC; margin-top:1.6mm; }
-.thanksbox { flex:0 0 62mm; text-align:right; font-size:8.8px; color:#3E5170; line-height:1.55; }
-
-/* footer — royal navy bar, colour to the paper edge */
-.foot { margin-top:auto; background:#1E3A8A; color:#fff; display:flex; justify-content:space-between; align-items:center; gap:6mm; padding:2.8mm 8mm; font-size:9px; font-weight:bold; letter-spacing:.4px; }
-.foot .sep { color:#8FA9DD; padding:0 2mm; font-weight:normal; }
+/* navy footer strip */
+.foot { margin-top:auto; background:linear-gradient(90deg,#0B2148 0%,#16356F 55%,#0B2148 100%); border-top:0.8mm solid #D9B45C; display:flex; align-items:center; gap:6mm; padding:3mm 7mm; }
+.fitem { display:flex; align-items:center; gap:2.2mm; color:#FFFFFF; font-size:10.5px; font-weight:800; letter-spacing:.3px; }
+.fitem svg { display:block; }
+.fvisit { margin-left:auto; font-family:'Segoe Script','Brush Script MT','Apple Chancery','Comic Sans MS',cursive; font-style:italic; font-weight:800; font-size:15px; color:#F2C94C; }
 `;
 
 function billShell(title: string, body: string): string {
@@ -527,7 +505,6 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
   const gstOn = (bill.gstAmount || 0) > 0;
   const inclusiveGst = bill.gstMode === 'inclusive' && gstOn;
   const hasSplit = gstOn && bill.cgstAmount != null;
-  const title = gstOn ? 'TAX INVOICE' : 'INVOICE';
 
   const disc = bill.discountAmount || 0;
   const gstAmt = bill.gstAmount || 0;
@@ -543,208 +520,181 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
           ? 'Card'
           : 'Credit (Due)';
 
-  // per-item GST rate text — e.g. "18 %" / "5 %"
+  // CGST/SGST each carry HALF the headline rate (18% GST → 9% + 9%)
   const rateTxt = (() => {
     const r = Number(bill.gstRate) || 0;
     return `${Number.isInteger(r) ? r : Number(r.toFixed(2))} %`;
   })();
-  // CGST/SGST each carry HALF the headline rate (18% GST → 9% + 9%)
   const halfTxt = (() => {
     const h = Number(halfRate(bill.gstRate)) || 0;
     return `${Number.isInteger(h) ? h : Number(h.toFixed(2))} %`;
   })();
 
-  const qtyTotal = (bill.items || []).reduce((s, it) => s + (Number(it.quantity) || 0), 0);
-  const itemSum = bill.subtotal || 0;
-
-  // taxable base the tax was computed on (for the "On (…)" annotation)
-  const taxableBase = inclusiveGst ? bill.taxableValue ?? 0 : itemSum - disc;
+  // taxable base the CGST/SGST sit on (inclusive bills carry their own value)
+  const taxableBase = inclusiveGst ? bill.taxableValue ?? 0 : (bill.subtotal || 0) - disc;
 
   // paise adjustment booked as "Round Off"
-  const expectedTotal = itemSum - disc + (gstOn && !inclusiveGst ? gstAmt : 0);
+  const expectedTotal = (bill.subtotal || 0) - disc + (gstOn && !inclusiveGst ? gstAmt : 0);
   const roundOff = Math.round(((bill.total || 0) - expectedTotal) * 100) / 100;
 
-  // payment-status panel — green PAID / amber PARTIAL / red DUE (reference style)
-  const paidCls = due > 0.009 ? (paid > 0.009 ? 'partial' : 'due') : '';
-  const stText = due > 0.009 ? (paid > 0.009 ? 'PARTIALLY PAID' : 'PAYMENT DUE') : '✓ PAID';
+  // payment status — green Paid / amber Partial / red Due (reference style)
+  const stCls = due > 0.009 ? (paid > 0.009 ? 'part' : 'bad') : 'ok';
+  const stText = due > 0.009 ? (paid > 0.009 ? 'Partial' : 'Due') : 'Paid';
 
   const itemRows = (bill.items || [])
     .map((it, i) => {
       const sns = (it.serialNumbers || []).filter(Boolean);
+      const hsn = (it.hsnCode || '').trim() || '—';
       return (
         `<tr><td class="c">${i + 1}</td><td>${esc(it.name)}${
-          it.categoryName ? `<div class="cat">Category: ${esc(it.categoryName)}</div>` : ''
+          it.categoryName ? `<div class="cat">${esc(it.categoryName)}</div>` : ''
         }${
           sns.length ? `<div class="sn">S/N: ${sns.map((s) => esc(s)).join(', ')}</div>` : ''
-        }</td><td class="c">${tallyQty(it.quantity)}</td><td class="r">${tallyAmt(
+        }</td><td class="c">${esc(hsn)}</td><td class="c">${tallyQty(it.quantity)}</td><td class="r">${tallyAmt(
           it.unitPrice
-        )}</td><td class="c">Nos.</td><td class="r">${tallyAmt(it.total)}</td></tr>`
+        )}</td><td class="r">${tallyAmt(it.total)}</td></tr>`
       );
     })
     .join('');
 
   // filler rows keep the grid full so a short bill still covers the A4 sheet
-  const MIN_ROWS = 12;
+  const MIN_ROWS = 10;
   const fillers = Math.max(0, MIN_ROWS - (bill.items || []).length);
   const fillerRows = Array.from({ length: fillers }, () => `<tr>${'<td></td>'.repeat(6)}</tr>`).join('');
 
-  // adjustment rows — light blue, inside the grid above the grand plate
+  // totals plate rows — image order: Taxable → CGST → SGST → Grand Total
   const discRow =
     disc > 0.009
-      ? `<tr class="tv"><td colspan="5" class="r">Less: Discount</td><td class="r">${tallyAmt(disc)}</td></tr>`
+      ? `<div class="trow neg"><span class="lbl">Discount</span><span class="amt">− ₹${tallyAmt(disc)}</span></div>`
       : '';
-
-  // Inclusive bills (v2.13+) carry their own breakdown: the tax came OUT of
-  // the entered amount, so show the taxable value the CGST/SGST sit on.
-  const taxableRow =
-    inclusiveGst ? `<tr class="tv"><td colspan="5" class="r">Taxable Value</td><td class="r">${tallyAmt(bill.taxableValue ?? 0)}</td></tr>` : '';
-
+  const taxableRow = gstOn
+    ? `<div class="trow"><span class="lbl">Taxable Amount</span><span class="amt">₹${tallyAmt(taxableBase)}</span></div>`
+    : '';
   const gstRows = !gstOn
     ? ''
     : hasSplit
-      ? `<tr class="tv"><td colspan="5" class="r">OUTPUT CGST @ ${halfTxt}&nbsp;&nbsp;<span class="on">On (${tallyAmt(taxableBase)})</span></td><td class="r">${tallyAmt(bill.cgstAmount)}</td></tr>` +
-        `<tr class="tv"><td colspan="5" class="r">OUTPUT SGST @ ${halfTxt}&nbsp;&nbsp;<span class="on">On (${tallyAmt(taxableBase)})</span></td><td class="r">${tallyAmt(bill.sgstAmount)}</td></tr>`
-      : `<tr class="tv"><td colspan="5" class="r">OUTPUT GST @ ${rateTxt}&nbsp;&nbsp;<span class="on">On (${tallyAmt(taxableBase)})</span></td><td class="r">${tallyAmt(gstAmt)}</td></tr>`;
-
+      ? `<div class="trow"><span class="lbl">CGST @ ${halfTxt}</span><span class="amt">₹${tallyAmt(bill.cgstAmount)}</span></div>` +
+        `<div class="trow"><span class="lbl">SGST @ ${halfTxt}</span><span class="amt">₹${tallyAmt(bill.sgstAmount)}</span></div>`
+      : `<div class="trow"><span class="lbl">GST @ ${rateTxt}</span><span class="amt">₹${tallyAmt(gstAmt)}</span></div>`;
   const roundRow =
     Math.abs(roundOff) >= 0.005
-      ? `<tr class="tv"><td colspan="5" class="r">Round Off</td><td class="r">${roundOff > 0 ? '' : '−'}${tallyAmt(Math.abs(roundOff))}</td></tr>`
+      ? `<div class="trow"><span class="lbl">Round Off</span><span class="amt">${roundOff > 0 ? '+' : '−'} ₹${tallyAmt(Math.abs(roundOff))}</span></div>`
       : '';
 
-  // bottom split row — quantity band LEFT, navy GRAND TOTAL plate RIGHT
-  const splitRow = `<tr class="split"><td colspan="3" class="tqty">Total quantity&nbsp;&nbsp;&nbsp;<b>${tallyQty(qtyTotal)} Nos.</b></td><td colspan="3" class="gtcell">GRAND TOTAL&nbsp;&nbsp;&nbsp;<span class="amt">₹ ${tallyAmt(bill.total)}</span></td></tr>`;
-
-  const supplyState = shop.gst ? stateFromGstin(shop.gst) : null;
-  const buyerLines = [
-    `<div class="pname">${esc(bill.customerName || 'Cash Sale')}</div>`,
-    bill.customerMobile ? `<div class="pline">☎ ${esc(bill.customerMobile)}</div>` : '',
-    bill.customerAddress ? `<div class="pline">${esc(bill.customerAddress)}</div>` : '',
-    supplyState ? `<div class="pline">Place of Supply : ${esc(supplyState)}</div>` : '',
-    bill.note ? `<div class="pline">Note : ${esc(bill.note)}</div>` : '',
-  ].join('');
-
-  const dueBox =
-    due > 0.009
-      ? `<div class="duebox">Amount of Rs. ${tallyAmt(due)} (${esc(amountInWords(due))}) receivable from party.</div>`
-      : '';
-
-  const bankBits = [
-    shop.proprietor ? `<div>A/c Holder: ${esc(shop.proprietor)}</div>` : '',
-    shop.upi ? `<div>UPI ID: ${esc(shop.upi)}</div>` : '',
-  ].filter(Boolean);
-  const bankBlock = bankBits.length
-    ? `<div class="cap2">Bank &amp; Payment Details</div>${bankBits.join('')}`
-    : '';
-
-  const termsItems = shop.terms
-    .split(/\r?\n+/)
-    .map((x) => x.trim())
-    .filter(Boolean);
-  const termsBlock = termsItems.length
-    ? `<div class="terms"><div class="ttitle">Terms &amp; Conditions</div>${termsItems
-        .map((x) => `<div class="tline">${esc(x)}</div>`)
-        .join('')}</div>`
-    : '';
-
-  const jurisdiction = /kolkata/i.test(shop.address) ? 'Kolkata' : 'West Bengal';
-
-  const declBlock = `
-  <div class="bottomrow">
-    <div class="decl">
-      <div class="cap2">Declaration</div>
-      <div class="dtxt">We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.</div>
-      <div class="jur">Subject to ${jurisdiction} Jurisdiction</div>
-    </div>
-    <div class="thanksbox">
-      ${shop.thankyou ? esc(shop.thankyou) : 'Thank you for your business!'}<br>
-      This is a computer generated invoice.
-    </div>
-  </div>`;
+  const qr = safeImgDataUrl(shop.qr);
+  const sig = safeImgDataUrl(shop.signature);
+  const ordNo = (bill.transactionId || '').trim();
 
   const body = `
 <div class="sheet">
-  <div class="topline"></div>
+  <div class="frame">
+    <div class="arc tl"></div><div class="arc tr"></div><div class="arc bl"></div><div class="arc br"></div>
 
-  <div class="hdr">
-    <div class="hbrand">
-      <div class="co-name">${esc(shop.name)}</div>
-      ${shop.proprietor ? `<div class="co-sub">${esc(shop.proprietor)}</div>` : ''}
-      ${shop.address ? `<div class="co-line">${escMultiline(shop.address)}</div>` : ''}
-      ${shop.phone || shop.gst ? `<div class="co-contact">${[
-        shop.phone ? `Phone: ${esc(shop.phone)}` : '',
-        shop.gst ? `GSTIN: ${esc(shop.gst)}` : '',
-      ].filter(Boolean).join('<span class="sep">|</span>')}</div>` : ''}
+    <div class="hdr">
+      <div class="plogo"><div class="in"><b>${esc(brandInitials(shop.name))}</b></div></div>
+      <div class="hmid">
+        <div class="co-name">${esc(shop.name)}</div>
+        <div class="co-sub">Mobile &amp; Accessories</div>
+        <div class="co-tag">Your Trusted Mobile Partner</div>
+        ${shop.gst && gstOn ? `<div class="co-gstin">GSTIN: ${esc(shop.gst)}</div>` : ''}
+      </div>
+      <div class="taxinv">
+        <div class="t1">${gstOn ? 'TAX INVOICE' : 'INVOICE'}</div>
+        ${gstOn ? '<div class="t2">GST INVOICE</div>' : ''}
+      </div>
     </div>
-    <div class="invmeta">
-      <div class="k">Invoice No.</div>
-      <div class="no">${esc(bill.billNumber || '—')}</div>
-      <div class="k">Date</div>
-      <div class="v">${tallyDate(bill.date)}</div>
-      <div class="k">Payment Mode</div>
-      <div class="v">${esc(methodLabel)}</div>
+
+    <div class="svcs">
+      <div class="svc"><div class="ic">${ICO_MOBILE}</div><div class="lb">Mobile</div></div>
+      <div class="svc"><div class="ic">${ICO_HEADSET}</div><div class="lb">Accessories</div></div>
+      <div class="svc"><div class="ic">${ICO_WRENCH}</div><div class="lb">Service</div></div>
+      <div class="svc"><div class="ic">${ICO_RECHARGE}</div><div class="lb">Recharge</div></div>
     </div>
-  </div>
 
-  <div class="titlebar"><span class="ttl">${esc(title)}</span><span class="copy">CUSTOMER COPY</span></div>
+    <div class="meta">
+      <div class="mrows">
+        <div class="mrow"><span class="k">Invoice No.</span><span class="c">:</span><span class="v">${esc(bill.billNumber || '—')}</span></div>
+        <div class="mrow"><span class="k">Invoice Date</span><span class="c">:</span><span class="v">${esc(fmtDate(bill.date))}</span></div>
+        ${ordNo ? `<div class="mrow"><span class="k">Order No.</span><span class="c">:</span><span class="v">${esc(ordNo)}</span></div>` : ''}
+      </div>
+      ${qr ? `<div class="qrbox"><img src="${qr}" alt="QR"><div class="qc">Scan to Verify</div></div>` : ''}
+    </div>
 
-  <div class="party">
     <div class="bto">
-      <div class="cap">Bill To</div>
-      ${buyerLines}
+      <div class="bto-cap">${ICO_PERSON}<span>Bill To</span></div>
+      <div class="bto-body">
+        <div class="brow"><span class="k">Customer Name</span><span class="c">:</span><span class="v">${esc(bill.customerName || 'Cash Sale')}</span></div>
+        ${bill.customerMobile ? `<div class="brow"><span class="k">Mobile No.</span><span class="c">:</span><span class="v">${esc(bill.customerMobile)}</span></div>` : ''}
+        ${bill.customerAddress ? `<div class="brow"><span class="k">Address</span><span class="c">:</span><span class="v">${esc(bill.customerAddress)}</span></div>` : ''}
+      </div>
     </div>
-    <div class="pstat ${paidCls}">
-      <div class="cap">Payment Status</div>
-      <div class="st">${stText}</div>
-      <div class="payline">Paid: <b>${money(paid)}</b></div>
-      <div class="payline">Balance Due: <b>${money(due)}</b></div>
-    </div>
-  </div>
 
-  <div class="tblwrap">
-    <table class="items">
-      <thead><tr>
-        <th class="c" style="width:6%">SL.</th>
-        <th style="width:44%">DESCRIPTION OF GOODS</th>
-        <th class="c" style="width:10%">QTY</th>
-        <th class="c" style="width:13%">RATE</th>
-        <th class="c" style="width:8%">PER</th>
-        <th class="c" style="width:19%">AMOUNT</th>
-      </tr></thead>
-      <tbody class="rows">
-        ${itemRows}
-        ${fillerRows}
-      </tbody>
-      <tbody class="tots">
+    <div class="tblwrap">
+      <table class="items">
+        <thead><tr>
+          <th class="c" style="width:7%">#</th>
+          <th style="width:37%">Product Name</th>
+          <th class="c" style="width:14%">HSN Code</th>
+          <th class="c" style="width:9%">Qty</th>
+          <th class="r" style="width:15%">Rate (₹)</th>
+          <th class="r" style="width:18%">Amount (₹)</th>
+        </tr></thead>
+        <tbody>
+          ${itemRows}
+          ${fillerRows}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="grandrow">
+      <div class="badgewrap">
+        <div class="badge">
+          <div class="b0">★</div>
+          <div class="b1">100%</div>
+          <div class="b2">Trusted Shop</div>
+          <div class="b3">★★★★★</div>
+        </div>
+      </div>
+      <div class="totbox">
         ${discRow}
         ${taxableRow}
         ${gstRows}
         ${roundRow}
-        ${splitRow}
-      </tbody>
-    </table>
-  </div>
-
-  <div class="words"><b>AMOUNT IN WORDS</b>&nbsp;&nbsp; ${esc(amountInWords(bill.total))}</div>
-  ${dueBox}
-
-  <div class="mid">
-    <div class="bank">
-      ${bankBlock}
+        <div class="trow grand"><span class="lbl">Grand Total</span><span class="amt">₹ ${tallyAmt(bill.total)}</span></div>
+      </div>
     </div>
-    <div class="qrbox">${(() => { const q = safeImgDataUrl(shop.qr); return q ? `<img src="${q}" alt="payment QR"><div class="qrcap">Scan to Pay</div>` : ''; })()}</div>
-    <div class="sig">
-      <div class="sigfor">FOR ${esc((shop.name || 'PS TELECOM').toUpperCase())}</div>
-      <div class="sigimg">${(() => { const sg = safeImgDataUrl(shop.signature); return sg ? `<img src="${sg}" alt="signature">` : ''; })()}</div>
-      <div class="sigline">Authorised Signatory</div>
+
+    <div class="payrow">
+      <div class="paybox">
+        <div class="chk">✓</div>
+        <div class="plines">
+          <div class="pline">Payment Mode : ${esc(methodLabel)}</div>
+          <div class="pline">Payment Status : <span class="${stCls}">${stText}</span></div>
+          ${due > 0.009 ? `<div class="pline">Due Amount : <span class="bad">₹${tallyAmt(due)}</span></div>` : ''}
+        </div>
+      </div>
+      <div class="sigwrap">
+        ${sig ? `<img src="${sig}" alt="signature">` : ''}
+        <div class="sigline">Authorized Signature</div>
+      </div>
     </div>
-  </div>
 
-  ${termsBlock}
-  ${declBlock}
+    <div class="thanksrow">
+      <div class="phonewrap">
+        <div class="phone"><div class="scr"><div class="notch"></div></div></div>
+      </div>
+      <div class="thanksbox">
+        <p class="ty">Thank You!</p>
+        <div class="keep">${shop.thankyou ? esc(shop.thankyou) : 'Keep Shopping with PS TELECOM…'}</div>
+      </div>
+    </div>
 
-  <div class="foot">
-    <div><b>${esc(shop.name)}</b>${shop.phone ? `<span class="sep">|</span>${esc(shop.phone)}` : ''}</div>
-    <div>${esc(bill.billNumber || '')}</div>
+    <div class="foot">
+      <div class="fitem">${ICO_SHIELD}<span>Best Price</span></div>
+      <div class="fitem">${ICO_WRENCH_GOLD}<span>Best Service</span></div>
+      <div class="fitem">${ICO_STAR}<span>Happy Customer</span></div>
+      <div class="fvisit">Visit Again…</div>
+    </div>
   </div>
 </div>`;
 

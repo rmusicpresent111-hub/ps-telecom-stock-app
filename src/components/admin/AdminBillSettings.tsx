@@ -86,7 +86,8 @@ function sampleBill(form: BillingSettings): Bill {
     paidAmount: breakup ? breakup.total : subtotal - discountAmount,
     dueAmount: 0,
     note: '',
-    transactionId: '',
+    // shows in the v2.40.0 GST invoice "Order No." row on the settings preview
+    transactionId: 'ORD-0001',
     shopSnapshot: {
       name: form.shopName,
       proprietorName: form.proprietorName,

@@ -2399,3 +2399,24 @@ FIXES (defence-in-depth, all committed so they survive sandbox restores):
 5. SESSION-START.md: the 3-command session protocol (guard:fix → status → log), guard capability table, never-resurrect list, alive-file warnings (api/cloud/d1 route + d1-config/d1-sync + d1-secrets), deployment triad, env restore cheat-sheet.
 
 TESTED: guard clean pass (exit 0); simulated residue (proxy.ts + site-lock dir) → detected exit 2 → --fix scrubbed all → re-verified clean; simulated sandbox junk commit on a throwaway branch (--no-verify, UUID subject) → detected → --fix safety-stashed uncommitted work + reset → work restored via stash pop intact; both hooks block their targets and allow the legitimate commit this entry ships in; eslint 0, tsc 0. No app code touched — version stays 2.39.0, APK/mirror unaffected (already live at v2.39.0).
+
+## Task 91 — v2.40.0: Admin bill template rebuilt SAME-TO-SAME from the owner's "PS Telecom GST Invoice" design
+
+OWNER REQUEST: "ei bill er template ta amar admin panel er bill template e generate kore dao same to same" + the reference artwork upload/PS Telecom GST Invoice Design.png (deep-navy + gold luxury GST invoice). The admin panel's bill template = the A4 print document (print.ts buildBillReceiptHtml) used by Bill Settings A4 preview/print, AdminBills bill print/PDF and SellCartModal post-sell print — all now render the new design.
+
+REFERENCE ELEMENTS REBUILT 1:1 (pure CSS/SVG, no emoji, no external images, print-iframe + html2canvas-PDF safe):
+- Full-page A4: deep-navy outer frame + gold keyline + cream paper + 4 gold corner arcs (renamed .arc after the first pass COLLIDED with the table's td.c/th.c center-align class — absolute-positioned cells bug caught on the A4 preview and fixed).
+- Header: circular gold PS monogram (left) · PS TELECOM + "Mobile & Accessories" + script tagline "Your Trusted Mobile Partner" (centre) + tiny GSTIN line when the bill is GST (compliance) · navy TAX INVOICE + gold GST INVOICE ribbon (right; "INVOICE" alone when GST off).
+- Gold service medallions row — Mobile | Accessories | Service | Recharge (inline SVG phone/headset/wrench/battery icons, thin separators).
+- White meta card: Invoice No. / Invoice Date / Order No. (bill.transactionId, row omitted when empty; sampleBill now carries ORD-0001 so the settings preview shows it) + gold-bordered payment QR with "Scan to Verify" (hidden when no QR uploaded).
+- "Bill To" navy banner (gold person icon) + gold-edged customer card: Customer Name / Mobile No. / Address (when present).
+- Items grid: navy header, gold text — # | Product Name | HSN Code | Qty | Rate (₹) | Amount (₹); new additive BillItem.hsnCode? field (sync-safe, prints "—" until data exists); 10-row filler grid so short bills still fill the sheet.
+- Black/gold circular "100% Trusted Shop" seal (crown star + ★★★★★) beside the totals plate: Discount (when >0) → Taxable Amount → CGST @ half-rate → SGST @ half-rate (or single GST row on legacy bills) → Round Off → navy GRAND TOTAL band with gold amount; inclusive-mode numbers come straight from the stored bill (preview == stored bill guaranteed).
+- Green-check payment box: Payment Mode / Payment Status (Paid green / Partial amber / Due red) + Due Amount line; "Authorized Signature" block with the uploaded signature image.
+- Big script "Thank You!" + shop thank-you note (fallback "Keep Shopping with PS TELECOM…") + CSS smartphone mock-up bottom-left.
+- Navy footer strip: gold shield "Best Price" · wrench "Best Service" · star "Happy Customer" + gold script "Visit Again…".
+- Dropped from the old royal-blue A4 (not in the owner's design): amount-in-words band, declaration, terms box, bank block, Place of Supply, quantity split row — their helpers (amountInWords/W_*/GST_STATE_CODES/stateFromGstin/tallyDate) removed; reports keep their own PRINT_CSS and are untouched.
+
+E2E (agent-browser): onboarding → dashboard → Profile → Admin Panel → বিল সেটিংস → A4 প্রিভিউ. Non-GST render verified (INVOICE banner, GST rows correctly absent); GST toggled ON in the FORM ONLY (never saved — real settings untouched, GSTIN sample discarded on reload): TAX INVOICE + GST INVOICE ribbon, GSTIN line, Taxable ₹423.73 / CGST @ 9% ₹38.14 / SGST @ 9% ₹38.13 / Grand Total ₹500.00 (inclusive math exact), badge + payment Paid green. Full-sheet extraction (iframe srcdoc → standalone render) screenshotted — element-for-element match with the reference image. dev.log clean, cloud sync POSTs 200. tsc 0, eslint 0.
+
+Version 2.39.0 → 2.40.0 (versionCode 24000). Session hygiene: sandbox had AGAIN restored junk commit b350ce0 + lost hooksPath/.env — guard:fix repaired (hooks reinstalled, .env rebuilt); new GitHub token (owner-rotated) saved to /tmp/.ghtoken, embedded in the origin URL and verified (repo API 200, scopes repo+workflow, ls-remote HEAD = 4590709). Web mirror + APK rebuilt after this entry.
