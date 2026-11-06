@@ -207,17 +207,30 @@ function checkEnv() {
   return true;
 }
 
+function hookExecOk(p) {
+  try { fs.accessSync(p, fs.constants.X_OK); return true; } catch { return false; }
+}
+
 function checkHooks() {
   let hp = '';
   try { hp = git('config core.hooksPath'); } catch { /* unset */ }
-  const both = fs.existsSync(path.join(ROOT, '.githooks', 'pre-commit')) &&
-    fs.existsSync(path.join(ROOT, '.githooks', 'commit-msg'));
-  if (hp === '.githooks' && both) {
-    console.log('✅ resurrection hooks installed (core.hooksPath=.githooks: pre-commit + commit-msg)');
+  const pre = path.join(ROOT, '.githooks', 'pre-commit');
+  const msg = path.join(ROOT, '.githooks', 'commit-msg');
+  const both = fs.existsSync(pre) && fs.existsSync(msg);
+  if (!both) {
+    soft('.githooks/pre-commit or .githooks/commit-msg missing from the tree');
+    return false;
+  }
+  // v2.40.0: existence alone is NOT enough — git SILENTLY skips non-executable
+  // hooks (sandbox restores / 100644 index modes strip the bit). Caught live:
+  // a commit slipped through with "hook was ignored because it's not executable".
+  const execOk = hookExecOk(pre) && hookExecOk(msg);
+  if (hp === '.githooks' && execOk) {
+    console.log('✅ resurrection hooks installed (core.hooksPath=.githooks: pre-commit + commit-msg, executable)');
     return true;
   }
-  if (!both) soft('.githooks/pre-commit or .githooks/commit-msg missing from the tree');
-  soft(`core.hooksPath is "${hp || '(unset)'}" — resurrection hooks NOT active`);
+  if (hp !== '.githooks') soft(`core.hooksPath is "${hp || '(unset)'}" — resurrection hooks NOT active`);
+  if (!execOk) soft('.githooks hooks lost the executable bit — git silently SKIPS them (chmod +x / update-index --chmod=+x)');
   return false;
 }
 
@@ -265,7 +278,11 @@ function repair({ junk, localOnly, behind }, residueHits) {
   }
   if (!checkHooks()) {
     git('config core.hooksPath .githooks');
-    console.log('🔧 core.hooksPath=.githooks installed');
+    try {
+      fs.chmodSync(path.join(ROOT, '.githooks', 'pre-commit'), 0o755);
+      fs.chmodSync(path.join(ROOT, '.githooks', 'commit-msg'), 0o755);
+    } catch { /* chmod best-effort — index mode 100755 also restores it */ }
+    console.log('🔧 core.hooksPath=.githooks installed + hooks chmod +x');
   }
 }
 
