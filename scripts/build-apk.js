@@ -784,6 +784,49 @@ function findJavaHome() {
   return null;
 }
 
+/**
+ * Gradle's Java toolchain needs a FULL JDK (javac), but sandbox restores often
+ * leave a JRE-only /usr/lib/jvm behind → "Toolchain installation ... does not
+ * provide the required capabilities: [JAVA_COMPILER]". Probe the resolved
+ * JAVA_HOME (and known fallbacks) for javac; when a real JDK is found, pin it
+ * via org.gradle.java.home in android/gradle.properties (gitignored, machine
+ * local) so the toolchain can never pick the crippled JRE.
+ */
+function ensureFullJdk(preferred) {
+  const jdkCandidates = [
+    preferred,
+    process.env.JAVA_HOME || '',
+    '/home/z/jdk21',
+    '/usr/lib/jvm/temurin-21-jdk-amd64',
+  ];
+  try {
+    for (const j of fs.readdirSync('/usr/lib/jvm')) {
+      jdkCandidates.push(path.join('/usr/lib/jvm', j));
+    }
+  } catch {}
+
+  const javacRel = process.platform === 'win32' ? 'bin\\javac.exe' : 'bin/javac';
+  const jdk = jdkCandidates.find((c) => c && exists(path.join(c, javacRel)));
+  if (!jdk) return preferred; // nothing better — let gradle fail with its own message
+
+  try {
+    const gp = path.join(ANDROID_DIR, 'gradle.properties');
+    let txt = exists(gp) ? fs.readFileSync(gp, 'utf8') : '';
+    const line = `org.gradle.java.home=${jdk}`;
+    if (/^org\.gradle\.java\.home=.*$/m.test(txt)) {
+      if (!/^org\.gradle\.java\.home=.*$/m.exec(txt)[0].includes(jdk)) {
+        txt = txt.replace(/^org\.gradle\.java\.home=.*$/m, line);
+        fs.writeFileSync(gp, txt);
+        console.log(`  🔧 gradle.properties → ${line} (JRE-only toolchain bypassed)`);
+      }
+    } else {
+      fs.writeFileSync(gp, (txt.endsWith('\n') || txt === '' ? txt : txt + '\n') + line + '\n');
+      console.log(`  🔧 gradle.properties → ${line} (JRE-only toolchain bypassed)`);
+    }
+  } catch {}
+  return jdk;
+}
+
 function buildApkWithGradle() {
   const gradlew = process.platform === 'win32'
     ? path.join(ANDROID_DIR, 'gradlew.bat')
@@ -794,7 +837,7 @@ function buildApkWithGradle() {
     return false;
   }
 
-  const javaHome = findJavaHome();
+  const javaHome = ensureFullJdk(findJavaHome());
   if (javaHome === null) {
     console.log('  No JDK found (JAVA_HOME / Android Studio / PATH) — skipping automatic APK build.');
     return false;
