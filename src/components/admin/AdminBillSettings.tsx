@@ -24,6 +24,7 @@ import {
   ImageUp,
   Loader2,
   Receipt,
+  Landmark,
 } from 'lucide-react';
 import {
   getBillingSettingsOffline,
@@ -79,6 +80,7 @@ function sampleBill(form: BillingSettings): Bill {
     billNumber: 'PS-2026-003',
     customerName: 'Rahul Das',
     customerMobile: '9876543210',
+    customerAddress: 'Ranichak, Haldia, Purba Medinipur-721635',
     items,
     subtotal,
     discountValue: 0,
@@ -302,6 +304,10 @@ export default function AdminBillSettings() {
         defaultDiscountPercent: Number(form.defaultDiscountPercent) || 0,
         billPrefix: form.billPrefix,
         upiId: form.upiId,
+        bankName: form.bankName ?? '',
+        bankBranch: form.bankBranch ?? '',
+        bankAccountNo: form.bankAccountNo ?? '',
+        bankIfsc: form.bankIfsc ?? '',
         signatureDataUrl: form.signatureDataUrl,
         qrCodeDataUrl: form.qrCodeDataUrl,
         thankYouNote: form.thankYouNote,
@@ -543,6 +549,50 @@ export default function AdminBillSettings() {
                 onChange={(e) => set('thankYouNote', e.target.value)}
               />
             </Field>
+          </div>
+        </AdminCard>
+
+        {/* bank details — printed in the invoice "Our Bank Details" box (v2.42.0) */}
+        <AdminCard
+          title={
+            <span className="flex items-center gap-2">
+              <Landmark size={16} className="text-[#FA6E41]" /> {t('bset.bank')}
+            </span>
+          }
+        >
+          <div className="space-y-3.5">
+            <Field label={t('bset.bankName')}>
+              <TextInput
+                value={form.bankName ?? ''}
+                onChange={(e) => set('bankName', e.target.value)}
+                placeholder="STATE BANK OF INDIA"
+              />
+            </Field>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Field label={t('bset.bankBranch')}>
+                <TextInput
+                  value={form.bankBranch ?? ''}
+                  onChange={(e) => set('bankBranch', e.target.value)}
+                />
+              </Field>
+              <Field label={t('bset.bankIfsc')}>
+                <TextInput
+                  value={form.bankIfsc ?? ''}
+                  onChange={(e) => set('bankIfsc', e.target.value.toUpperCase())}
+                  placeholder="SBIN00028424"
+                />
+              </Field>
+            </div>
+            <Field label={t('bset.bankAcc')}>
+              <TextInput
+                value={form.bankAccountNo ?? ''}
+                onChange={(e) => set('bankAccountNo', e.target.value)}
+                inputMode="numeric"
+              />
+            </Field>
+            <p className="text-[11px] text-[var(--psa-faint)] bg-[var(--psa-hover)] rounded-lg p-2.5 leading-snug">
+              {t('bset.bankHint')}
+            </p>
           </div>
         </AdminCard>
 

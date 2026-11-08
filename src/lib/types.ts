@@ -302,6 +302,12 @@ export interface BillingSettings {
   billPrefix: string;       // e.g. 'PS'
   thankYouNote: string;
   termsText: string;
+  /** Bank details printed in the invoice "Our Bank Details" box (v2.42.0).
+   *  Additive optional fields — pre-2.42 synced rows decode untouched. */
+  bankName?: string;
+  bankBranch?: string;
+  bankAccountNo?: string;
+  bankIfsc?: string;
   adminPin: string;         // legacy field (lock system removed v2.29.0) — kept so old synced rows decode
   /** Bill receipt template — optional so pre-2.31 synced rows decode untouched
    *  (missing = 'royal-gold'). Additive field: sync-safe, DB schema untouched. */

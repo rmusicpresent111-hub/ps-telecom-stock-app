@@ -18,7 +18,6 @@
 
 import type { AdminLang } from '@/lib/admin-i18n';
 import { ta, taf } from '@/lib/admin-i18n';
-import { halfRate } from '@/lib/gst';
 import type { Bill, BillingSettings } from '@/lib/types';
 import { getBillingSettingsOffline } from '@/lib/offline-service';
 import { DEFAULT_USER_ID } from '@/lib/local-auth';
@@ -77,6 +76,10 @@ interface ShopHeader {
   upi: string;
   terms: string;
   thankyou: string;
+  bankName: string;
+  bankBranch: string;
+  bankAccountNo: string;
+  bankIfsc: string;
 }
 
 function resolveShop(bill: Bill, settings?: BillingSettings | null): ShopHeader {
@@ -94,6 +97,10 @@ function resolveShop(bill: Bill, settings?: BillingSettings | null): ShopHeader 
     upi: (s?.upiId ?? '').trim(),
     terms: (s?.termsText ?? '').trim(),
     thankyou: (s?.thankYouNote ?? '').trim(),
+    bankName: (s?.bankName ?? '').trim(),
+    bankBranch: (s?.bankBranch ?? '').trim(),
+    bankAccountNo: (s?.bankAccountNo ?? '').trim(),
+    bankIfsc: (s?.bankIfsc ?? '').trim(),
   };
 }
 
@@ -316,37 +323,55 @@ function pageShell(title: string, body: string): string {
 }
 
 
-// ── document 1: single-bill FULL-PAGE A4 invoice — "PS TELECOM GST Invoice" ──
+// ── document 1: single-bill FULL-PAGE A4 invoice — blue corporate GST bill ──
 //
-// Task 92 (v2.41.0): owner REJECTED the v2.40 rebuild ("bill sevabe hoyni —
-// abar regenerate koro, same to same hoya chai"). This revision is a faithful
-// element-by-element recreation of upload/PS Telecom GST Invoice Design.png:
-//   • cream paper + thin inset gold keyline + layered gold/navy corner
-//     ribbon curves (SVG, page-anchored — not the old corner arcs)
-//   • corner TAX INVOICE pennant top-right: navy wedge with gold edge,
-//     serif gold TAX / INVOICE + white GST INVOICE (hidden when GST off)
-//   • BIG serif header — huge Georgia PS TELECOM, blue serif Mobile &
-//     Accessories, script tagline + gold swoosh, 40mm gold PS monogram
-//   • four gold medallions (gold ring · navy core · white glyph):
-//     Mobile | Accessories | Service | Recharge with hairline separators
-//   • white meta card (Invoice No. / Invoice Date / Order No.) + gold QR
-//     box "Scan to Verify" (real uploaded QR, or decorative placeholder)
-//   • navy "Bill To" banner + GOLD-GRADIENT customer card (name / mobile)
-//   • navy-headed items grid, GOLD-TINTED rows: # | Product Name | HSN
-//     Code | Qty | Rate (₹) | Amount (₹) — HSN from BillItem.hsnCode
-//   • laurel-wreath "100% Trusted Shop" rosette (crown + stars, SVG) +
-//     white totals plate with navy grid lines and navy GRAND TOTAL band
-//   • green-check payment pill (Mode / Status / Due) + Authorized
-//     Signature (uploaded image, or script scribble placeholder)
-//   • huge script "Thank You!" + Keep Shopping + 3-D phone back art
-//   • navy footer WAVE: Best Price | Best Service | Happy Customer + gold
-//     script "Visit Again…"
-// Pure CSS/SVG art only (inline SVG with xmlns — print iframe AND html2canvas
-// PDF both render it; no emoji, no external images, no box-shadows).
+// Task 93 (v2.42.0): owner rejected the v2.41 cream/gold artwork and supplied
+// a NEW reference (upload/file_000000004ab88211bbc466c1e85adc73.png —
+// "SUNRISE ENTERPRISE" blue corporate GST tax invoice). Element-by-element
+// recreation on white paper:
+//   • thin blue outer page border + bordered header box: blue shopping-bag
+//     logo tile | vertical divider | GSTIN line, big blue shop name, blue
+//     proprietor line, 📍 address + 📞 Contact No rows, "Original Duplicate
+//     Bill" pinned top-right
+//   • Bill To / Ship To tabs (blue pill overlapping a light-blue rounded
+//     box, label : value rows) on the left; right stack = Bill No. / Tax
+//     Date / Payment Mode / Reverse Charge box + Buyer's Order No. /
+//     Supplier's Ref. / Vehicle Number / Delivery Date / Transport Details /
+//     Terms Of Delivery box (no data → blank value, like the reference)
+//   • items grid: solid blue two-row header (GST spans Rate | Amt), columns
+//     Sl. | Goods & Service Description | HSN | Quantity | Rate | Taxable
+//     Value | GST Rate | GST Amt | Total; per-item GST carved out of
+//     inclusive prices / added on exclusive ones; blank filler rows pad the
+//     grid to 9 rows like the reference sheet
+//   • Our Bank Details tab box (Bank/Branch/Account/IFSC/UPI — additive
+//     BillingSettings.bank* fields) + inner white "Invoice Total (InWords) :
+//     Rupees … Only" panel
+//   • totals plate: Sub Total (taxable | GST | pre-round) triple row +
+//     Discount (when any) + CGST / SGST / IGST / Freight-Packing / Round Off
+//     + navy TOTAL AMOUNT band
+//   • bottom: Declaration tab + numbered list | payment QR (uploaded or
+//     placeholder) | For, SHOP + signature + Authorised Signatory
+//   • navy footer band: "Thank You For Doing Business With Us!"
+// Pure CSS/SVG (inline SVG with xmlns — print iframe and html2canvas safe).
 
-/** Tally money: plain Indian-grouped 2-decimals, NO ₹ symbol (e.g. 12,600.00). */
-function tallyAmt(n: number | undefined | null): string {
-  return Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** Plain 2-decimals, NO thousand grouping (reference shows 11988.00). */
+function amt2(n: number | undefined | null): string {
+  return (Number(n) || 0).toFixed(2);
+}
+
+/** 2-decimals with trailing zeros stripped (32618.00 → 32618, 0.50 → 0.5). */
+function amtTrim(n: number | undefined | null): string {
+  const s = (Number(n) || 0).toFixed(2);
+  return s.replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+}
+
+/** dd-mm-yy tax date (reference "10-01-25"). */
+function fmtTaxDate(dateStr: string | undefined): string {
+  if (!dateStr) return '';
+  const d = dateStr.length > 10 ? new Date(dateStr) : new Date(dateStr + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return dateStr;
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${String(d.getFullYear()).slice(-2)}`;
 }
 
 /** Tally quantity: trim trailing zeros (1 → "1", 0.5 → "0.5"). */
@@ -355,122 +380,74 @@ function tallyQty(n: number): string {
   return Number.isInteger(v) ? String(v) : String(Number(v.toFixed(3)));
 }
 
-// ── inline SVG art set (fixed size + xmlns → print & html2canvas safe) ──
+// ── amount in words (Indian crore / lakh / thousand system) ──
 
-const PS_GOLD = '#F2C94C';
+const W_ONES = [
+  '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+  'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen',
+];
+const W_TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
 
-/** White stroke glyph used inside the navy service medallions. */
-function glyph(inner: string): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+function words2(n: number): string {
+  if (n < 20) return W_ONES[n] || '';
+  const t = Math.floor(n / 10);
+  const o = n % 10;
+  return W_TENS[t] + (o ? ' ' + W_ONES[o] : '');
 }
 
-const G_MOBILE = glyph('<rect x="7" y="2.5" width="10" height="19" rx="2.4"/><line x1="10.6" y1="18.4" x2="13.4" y2="18.4"/>');
-const G_ACCESS = glyph('<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.8" y="13.6" width="4.6" height="6.4" rx="1.8"/><rect x="16.6" y="13.6" width="4.6" height="6.4" rx="1.8"/>');
-const G_SERVICE = glyph('<path d="M14.7 6.3a4.5 4.5 0 0 0-6.4 5.7L3 17.3V21h3.7l5.3-5.3a4.5 4.5 0 0 0 5.7-6.4l-2.9 2.9-2.5-.5-.5-2.5z"/>');
-const G_RECHARGE = glyph('<rect x="2.5" y="7.5" width="15" height="9.5" rx="2"/><line x1="20.6" y1="10.6" x2="20.6" y2="14"/><path d="M11.6 9.3 8.6 12.9h3l-2.2 3.4 4.8-4.3h-3z" fill="#FFFFFF" stroke="none"/>');
-
-const I_PERSON = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="#F2C94C"><circle cx="12" cy="7.4" r="4.1"/><path d="M3.8 21.4c0-4.3 3.7-6.8 8.2-6.8s8.2 2.5 8.2 6.8v.2H3.8z"/></svg>`;
-
-const I_SHIELD = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="#F2C94C"><path d="M12 2l8.2 3v6.1c0 5.1-3.5 9.7-8.2 11.3-4.7-1.6-8.2-6.2-8.2-11.3V5z"/><path d="M8.5 11.7l2.4 2.4 4.7-4.7" fill="none" stroke="#0B2447" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-
-const I_HANDSHAKE = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path d="M3 12.2l4.6-4.6 4.1 3.3 3.9-3.1 5.6 4.6-4.4 5.3-4.4-3.5-3.6 3.1z" fill="#F2C94C"/></svg>`;
-
-const I_STAR = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="#F2C94C"><path d="M12 2.2l2.9 6 6.6.9-4.8 4.6 1.2 6.6L12 17.1l-5.9 3.2 1.2-6.6L2.5 9.1l6.6-.9z"/></svg>`;
-
-/** Green gradient check disc for the payment pill. */
-function checkCircleSvg(): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 38 38"><defs><linearGradient id="psChk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3FD668"/><stop offset="1" stop-color="#17913B"/></linearGradient></defs><circle cx="19" cy="19" r="17.4" fill="url(#psChk)"/><path d="M11.6 19.8l5 5 10-11.2" fill="none" stroke="#FFFFFF" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+function words3(n: number): string {
+  const h = Math.floor(n / 100);
+  const rest = n % 100;
+  const head = h ? W_ONES[h] + ' Hundred' + (rest ? ' ' : '') : '';
+  return head + (rest ? words2(rest) : '');
 }
 
-/** Gold swoosh under the script tagline. */
-const TAGLINE_SWOOSH = `<svg class="swoosh" xmlns="http://www.w3.org/2000/svg" width="150" height="9" viewBox="0 0 150 9" aria-hidden="true"><path d="M2 7 C44 1.5 96 1.5 148 5.5" fill="none" stroke="#D4A62A" stroke-width="2" stroke-linecap="round"/></svg>`;
+/** 1234567 → "Twelve Lakh Thirty-Four Thousand Five Hundred Sixty-Seven". */
+function indianWords(n: number): string {
+  n = Math.floor(Math.abs(n));
+  if (n === 0) return 'Zero';
+  const crore = Math.floor(n / 10000000);
+  const lakh = Math.floor((n % 10000000) / 100000);
+  const thou = Math.floor((n % 100000) / 1000);
+  const rest = n % 1000;
+  const parts: string[] = [];
+  if (crore) parts.push(indianWords(crore) + ' Crore');
+  if (lakh) parts.push(words2(lakh) + ' Lakh');
+  if (thou) parts.push(words2(thou) + ' Thousand');
+  if (rest) parts.push(words3(rest));
+  return parts.join(' ');
+}
 
-/**
- * Top page art — layered corner curves (left), TAX INVOICE corner pennant
- * (right) and the swoosh pair under it. Page-absolute coordinates on a
- * 794-wide viewBox stretched to the sheet width.
- */
-function topDecoSvg(gstOn: boolean): string {
-  const gstTxt = gstOn
-    ? `<text x="740" y="110" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="12.5" font-weight="800" letter-spacing="1.2" fill="#FFFFFF">GST INVOICE</text>`
-    : '';
-  return `<svg class="deco top" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 794 186" preserveAspectRatio="none" aria-hidden="true">
-  <defs><linearGradient id="psRib" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2653A4"/><stop offset=".45" stop-color="#12356F"/><stop offset="1" stop-color="#081A3C"/></linearGradient></defs>
-  <path d="M-6 162 C78 152 116 108 124 -6" fill="none" stroke="#D4A62A" stroke-width="6.5"/>
-  <path d="M-6 174 C88 164 126 116 134 -6" fill="none" stroke="#0E2A5C" stroke-width="1.7" opacity=".5"/>
-  <path d="M-6 150 C68 140 104 100 112 -6" fill="none" stroke="#F2C94C" stroke-width="1.5" opacity=".75"/>
-  <path d="M154 10 C330 27 470 22 556 5" fill="none" stroke="#DCBE6E" stroke-width="1.6" opacity=".8"/>
-  <path d="M580 -6 C592 70 650 120 798 142 L798 -6 Z" fill="url(#psRib)"/>
-  <path d="M580 -6 C592 70 650 120 798 142" fill="none" stroke="#D4A62A" stroke-width="5.5"/>
-  <path d="M590 -6 C600 66 654 112 790 132" fill="none" stroke="#F7E39B" stroke-width="1.3" opacity=".8"/>
-  <path d="M452 160 C550 124 662 118 792 154" fill="none" stroke="#D4A62A" stroke-width="4" opacity=".95"/>
-  <path d="M452 166 C550 132 662 126 792 160" fill="none" stroke="#0E2A5C" stroke-width="1.2" opacity=".4"/>
-  <text x="698" y="44" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-size="36" font-weight="900" letter-spacing="1" fill="#F5D061">TAX</text>
-  <text x="714" y="82" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-size="29" font-weight="900" letter-spacing=".5" fill="#F5D061">INVOICE</text>
-  ${gstTxt}
+/** 38076 → "Rupees Thirty-Eight Thousand Seventy-Six Only". */
+function amountInWords(v: number): string {
+  const rup = Math.floor(Math.abs(v));
+  const paise = Math.round((Math.abs(v) - rup) * 100);
+  let s = 'Rupees ' + indianWords(rup);
+  if (paise > 0) s += ' and ' + indianWords(paise) + ' Paise';
+  return s + ' Only';
+}
+
+// ── inline SVG art (fixed size + xmlns → print & html2canvas safe) ──
+
+/** Blue shopping-bag logo tile (reference header-left). */
+function bagLogoSvg(): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
+  <rect x="1.5" y="1.5" width="61" height="61" rx="14" fill="#2E75C5"/>
+  <path d="M20.5 27h23l-2.6 21.4a4.2 4.2 0 0 1-4.2 3.6h-9.4a4.2 4.2 0 0 1-4.2-3.6Z" fill="#FFFFFF"/>
+  <path d="M25.5 27v-5.4a6.5 6.5 0 0 1 13 0V27" fill="none" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M25.5 37.5q6.5 5.4 13 0" fill="none" stroke="#2E75C5" stroke-width="3" stroke-linecap="round"/>
 </svg>`;
 }
 
-/** Bottom page art — gold/navy curve pairs framing the footer wave. */
-function bottomDecoSvg(): string {
-  return `<svg class="deco bot" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 794 158" preserveAspectRatio="none" aria-hidden="true">
-  <path d="M-6 16 C84 26 132 62 142 116" fill="none" stroke="#D4A62A" stroke-width="5.5"/>
-  <path d="M-6 28 C74 38 118 70 128 122" fill="none" stroke="#0E2A5C" stroke-width="1.5" opacity=".5"/>
-  <path d="M800 10 C706 20 656 48 648 100" fill="none" stroke="#D4A62A" stroke-width="5"/>
-  <path d="M800 22 C712 32 666 58 658 106" fill="none" stroke="#0E2A5C" stroke-width="1.5" opacity=".5"/>
-</svg>`;
-}
+/** Small blue location-pin glyph (header address row). */
+const I_PIN = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="#1D5BA6"><path d="M12 2a7.3 7.3 0 0 0-7.3 7.3c0 5.4 6.4 12 7.3 12.7.9-.7 7.3-7.3 7.3-12.7A7.3 7.3 0 0 0 12 2zm0 10a2.8 2.8 0 1 1 0-5.6 2.8 2.8 0 0 1 0 5.6z"/></svg>`;
 
-/** Navy footer wave with double gold accents. */
-function footerWaveSvg(): string {
-  return `<svg class="wave" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 794 100" preserveAspectRatio="none" aria-hidden="true">
-  <path d="M0 54 C110 22 250 68 410 46 C550 28 690 44 794 32 L794 100 L0 100 Z" fill="#0B2447"/>
-  <path d="M0 52 C110 20 250 66 410 44 C550 26 690 42 794 30" fill="none" stroke="#D4A62A" stroke-width="4"/>
-  <path d="M0 60 C110 28 250 74 410 52 C550 34 690 50 794 38" fill="none" stroke="#F7E39B" stroke-width="1.4" opacity=".7"/>
-  <path d="M470 98 C580 78 700 84 794 64" fill="none" stroke="#D4A62A" stroke-width="3" opacity=".9"/>
-</svg>`;
-}
+/** Small blue phone glyph (header contact row). */
+const I_PHONE = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="#1D5BA6"><path d="M6.6 2.8 9 5.2a1.7 1.7 0 0 1 .2 2.2L8 9.1a13.8 13.8 0 0 0 6.9 6.9l1.7-1.2a1.7 1.7 0 0 1 2.2.2l2.4 2.4a1.7 1.7 0 0 1-.1 2.5l-1.6 1.4c-1.4 1.2-3.5 1.3-5.1.3A26.3 26.3 0 0 1 3.4 9.6c-1-1.6-.9-3.7.3-5.1l1.4-1.6a1.7 1.7 0 0 1 1.5-.1z"/></svg>`;
 
-/**
- * "100% Trusted Shop" rosette — gold laurel branches, scalloped gold ring,
- * dark disc, crown, serif 100% + stars (reference centrepiece).
- */
-function trustedBadgeSvg(): string {
-  let leaves = '';
-  for (let k = 0; k < 7; k++) {
-    const degL = 118 + k * 21;
-    const degR = 62 - k * 21;
-    const R = 85;
-    const lx = 100 + R * Math.cos((degL * Math.PI) / 180);
-    const ly = 100 + R * Math.sin((degL * Math.PI) / 180);
-    const rx = 100 + R * Math.cos((degR * Math.PI) / 180);
-    const ry = 100 + R * Math.sin((degR * Math.PI) / 180);
-    const rotL = (degL + 90).toFixed(1);
-    const rotR = (degR + 90).toFixed(1);
-    leaves += `<ellipse cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" rx="6" ry="15" fill="url(#psBg1)" transform="rotate(${rotL} ${lx.toFixed(1)} ${ly.toFixed(1)})"/>`;
-    leaves += `<ellipse cx="${rx.toFixed(1)}" cy="${ry.toFixed(1)}" rx="6" ry="15" fill="url(#psBg1)" transform="rotate(${rotR} ${rx.toFixed(1)} ${ry.toFixed(1)})"/>`;
-  }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" aria-hidden="true">
-  <defs>
-    <linearGradient id="psBg1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F9E9B0"/><stop offset=".5" stop-color="#D9AC33"/><stop offset="1" stop-color="#8C6A1D"/></linearGradient>
-    <linearGradient id="psBg2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2C313D"/><stop offset="1" stop-color="#0B0E14"/></linearGradient>
-  </defs>
-  ${leaves}
-  <circle cx="100" cy="100" r="80" fill="none" stroke="url(#psBg1)" stroke-width="13"/>
-  <circle cx="100" cy="100" r="90" fill="none" stroke="#D4A62A" stroke-width="4" stroke-dasharray="4.5 4.5"/>
-  <circle cx="100" cy="100" r="64" fill="url(#psBg2)"/>
-  <circle cx="100" cy="100" r="64" fill="none" stroke="#D4A62A" stroke-width="1.4"/>
-  <circle cx="100" cy="100" r="58" fill="none" stroke="#F7E39B" stroke-width="1" opacity=".55"/>
-  <g transform="translate(100 50) scale(1.12)">
-    <path d="M-15 8 L-15 -5 L-7 1 L0 -10 L7 1 L15 -5 L15 8 Z" fill="#F5D061"/>
-    <rect x="-16" y="8" width="32" height="4.4" rx="1.6" fill="#D4A62A"/>
-    <circle cx="0" cy="-12.6" r="2.4" fill="#F5D061"/>
-  </g>
-  <text x="100" y="97" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-size="33" font-weight="900" fill="#F5D061">100%</text>
-  <text x="100" y="121" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="20" font-weight="800" fill="#FFFFFF">Trusted</text>
-  <text x="100" y="141" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="20" font-weight="800" fill="#FFFFFF">Shop</text>
-  <text x="100" y="160" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="12" fill="#F2C94C" letter-spacing="2.5">★ ★ ★ ★ ★</text>
-</svg>`;
+/** Script-style signature placeholder (uploaded signature replaces it). */
+function sigScribbleSvg(): string {
+  return `<svg class="scrib" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 52" aria-hidden="true"><path d="M8 40 C16 16 30 8 36 16 C41 23 30 30 25 23 C20 15 36 6 50 10 M48 30 C56 20 68 16 72 22 C76 28 66 32 62 26 C58 19 72 10 86 13 C98 16 96 26 106 22 C114 18 122 20 130 16" fill="none" stroke="#1A2C56" stroke-width="2.4" stroke-linecap="round"/></svg>`;
 }
 
 /** Decorative QR-look placeholder (real uploaded QR replaces it). */
@@ -496,150 +473,97 @@ function qrPlaceholderSvg(): string {
   return `<svg class="qr" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" fill="#FFFFFF"/><g fill="#101418">${cells}</g>${finder(0, 0)}${finder(100 - cell * 7, 0)}${finder(0, 100 - cell * 7)}</svg>`;
 }
 
-/** Script-style signature placeholder (uploaded signature replaces it). */
-function sigScribbleSvg(): string {
-  return `<svg class="scrib" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 52" aria-hidden="true"><path d="M8 40 C16 16 30 8 36 16 C41 23 30 30 25 23 C20 15 36 6 50 10 M48 30 C56 20 68 16 72 22 C76 28 66 32 62 26 C58 19 72 10 86 13 C98 16 96 26 106 22 C114 18 122 20 130 16" fill="none" stroke="#1A2C56" stroke-width="2.4" stroke-linecap="round"/></svg>`;
-}
-
-/** 3-D phone-back art docked above the footer wave (reference bottom-left). */
-function phoneSvg(): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 210" aria-hidden="true">
-  <defs><linearGradient id="psPhone" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F2F4FB"/><stop offset=".5" stop-color="#C6B4EE"/><stop offset="1" stop-color="#9C87DE"/></linearGradient></defs>
-  <g transform="rotate(-10 60 105)">
-    <rect x="15" y="6" width="90" height="198" rx="16" fill="url(#psPhone)" stroke="#8FA3C8" stroke-width="1.6"/>
-    <rect x="24" y="16" width="48" height="48" rx="11" fill="#141B33" opacity=".94"/>
-    <circle cx="36" cy="28" r="7" fill="#1E2C55" stroke="#44619C" stroke-width="1.6"/><circle cx="36" cy="28" r="2.8" fill="#0A1128"/>
-    <circle cx="57" cy="28" r="7" fill="#1E2C55" stroke="#44619C" stroke-width="1.6"/><circle cx="57" cy="28" r="2.8" fill="#0A1128"/>
-    <circle cx="36" cy="50" r="7" fill="#1E2C55" stroke="#44619C" stroke-width="1.6"/><circle cx="36" cy="50" r="2.8" fill="#0A1128"/>
-    <circle cx="58" cy="50" r="3.2" fill="#F2C94C" opacity=".9"/>
-    <rect x="106" y="56" width="3.4" height="24" rx="1.7" fill="#C9D2E8"/>
-    <rect x="106" y="88" width="3.4" height="14" rx="1.7" fill="#C9D2E8"/>
-  </g>
-</svg>`;
-}
-
-/** Two-letter brand initials for the circular logo tile (PS TELECOM → PS). */
-function brandInitials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  const first = parts[0] || 'PS';
-  return /^[A-Z]{2,3}$/.test(first)
-    ? first
-    : ((first[0] || 'P') + (parts[1]?.[0] || 'S')).toUpperCase();
-}
-
 const BILL_CSS = `
 @page { size: A4; margin: 0; }
-* { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+* { box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 html, body { margin:0; padding:0; }
-body { background:#fff; color:#0E2A5C; font-family:Arial,'Noto Sans Bengali','Hind Siliguri','Helvetica Neue',Helvetica,'Liberation Sans',sans-serif; font-size:11px; line-height:1.4; }
+body { background:#fff; color:#17376B; font-family:Arial,'Noto Sans Bengali','Hind Siliguri','Helvetica Neue',Helvetica,'Liberation Sans',sans-serif; font-size:12px; line-height:1.35; }
 
-/* full-page A4 sheet — cream paper, inset gold keyline, corner SVG art */
-.sheet { position:relative; width:210mm; max-width:100%; min-height:296.6mm; margin:0 auto; background:linear-gradient(180deg,#FEFBF0 0%,#FCF3DC 46%,#F8EAC8 100%); overflow:hidden; display:flex; flex-direction:column; }
-.keyline { position:absolute; top:3.2mm; right:3.2mm; bottom:3.2mm; left:3.2mm; border:0.35mm solid #E0C685; border-radius:2mm; z-index:0; pointer-events:none; }
-.deco { position:absolute; left:0; width:100%; z-index:1; pointer-events:none; }
-.deco.top { top:0; height:49mm; }
-.deco.bot { bottom:0; height:42mm; }
-.page { position:relative; z-index:2; flex:1 1 auto; display:flex; flex-direction:column; }
+/* full-page A4 sheet — white paper, thin blue outer border */
+.sheet { width:210mm; max-width:100%; min-height:296.6mm; margin:0 auto; background:#fff; border:0.4mm solid #2E75C5; display:flex; flex-direction:column; }
+.inner { flex:1 1 auto; padding:4.5mm 5mm 2mm; }
 
-/* header — big gold PS monogram · huge serif brand block (pennant is SVG art) */
-.hdr { display:flex; align-items:center; gap:4.5mm; padding:7.5mm 8mm 0 10mm; }
-.plogo { flex:0 0 37mm; width:37mm; height:37mm; border-radius:50%; background:linear-gradient(135deg,#F9E9B0 0%,#D9AC33 42%,#8C6A1D 72%,#E9C766 100%); padding:2.1mm; }
-.plogo .in { width:100%; height:100%; border-radius:50%; background:radial-gradient(circle at 36% 30%,#1E4788 0%,#0B2447 74%); border:0.5mm solid #F7E39B; display:flex; align-items:center; justify-content:center; }
-.plogo .in b { font-family:Georgia,'Times New Roman',serif; font-style:italic; font-size:27px; font-weight:900; color:#F2C94C; letter-spacing:.5px; }
-.hmid { flex:1 1 auto; min-width:0; text-align:center; padding-right:2mm; }
-.co-name { font-family:Georgia,'Times New Roman',serif; font-size:36px; font-weight:900; color:#0E2A5C; letter-spacing:1.4px; line-height:1.05; }
-.co-sub { font-family:Georgia,'Times New Roman',serif; font-size:20.5px; font-weight:800; color:#2447A9; margin-top:.8mm; letter-spacing:.3px; }
-.co-tag { font-family:'Segoe Script','Brush Script MT','Apple Chancery','Comic Sans MS',cursive; font-style:italic; font-weight:700; font-size:14.5px; color:#153A78; margin-top:1mm; }
-.swoosh { display:block; margin:.7mm auto 0; }
-.co-gstin { font-size:9px; font-weight:700; color:#41527A; margin-top:.6mm; letter-spacing:.4px; }
+/* header — bag logo | divider | GSTIN · name · proprietor · 📍 · 📞 | dup */
+.head { position:relative; display:flex; align-items:center; gap:4mm; border:0.35mm solid #2E75C5; border-radius:1.6mm; padding:3.6mm 5mm 3.6mm 4mm; }
+.bag { flex:0 0 16.5mm; width:16.5mm; height:16.5mm; }
+.bag svg { width:100%; height:100%; display:block; }
+.vsep { align-self:stretch; border-left:0.5mm solid #2E75C5; }
+.hinfo { flex:1 1 auto; min-width:0; padding-left:1mm; padding-right:32mm; }
+.h-gstin { font-size:13px; font-weight:800; color:#17376B; letter-spacing:.2px; }
+.h-name { font-size:26px; font-weight:900; color:#1D5BA6; letter-spacing:.3px; line-height:1.14; margin-top:.3mm; }
+.h-sub { font-size:13px; font-weight:800; color:#1D5BA6; margin-top:.4mm; }
+.h-addr { display:flex; align-items:flex-start; gap:1.8mm; font-size:11.8px; font-weight:600; color:#17376B; margin-top:1.7mm; }
+.h-addr svg { flex:0 0 auto; margin-top:.3mm; }
+.dup { position:absolute; top:3.2mm; right:4.6mm; font-size:12.5px; font-weight:800; color:#17376B; }
 
-/* services medallions — gold ring · navy core · white glyph */
-.svcs { display:flex; align-items:stretch; margin:2mm 12mm 0; }
-.svc { flex:1 1 0; text-align:center; padding:.6mm 1mm 0; }
-.svc + .svc { border-left:0.3mm solid rgba(14,42,92,.28); }
-.svc .ic { width:14.5mm; height:14.5mm; margin:0 auto; border-radius:50%; background:linear-gradient(150deg,#F7E39B 0%,#D9AC33 55%,#A67C2E 100%); padding:1.5mm; }
-.svc .inn { width:100%; height:100%; border-radius:50%; background:radial-gradient(circle at 36% 30%,#1E4788 0%,#0B2447 74%); display:flex; align-items:center; justify-content:center; }
-.svc .inn svg { display:block; }
-.svc .lb { font-size:13px; font-weight:800; color:#0E2A5C; margin-top:1.1mm; letter-spacing:.2px; }
+/* pill tabs + light-blue boxes */
+.pbox { position:relative; border:0.35mm solid #2E75C5; background:#EAF3FB; border-radius:2mm; padding:3mm 4mm 2.4mm; margin-top:5.6mm; }
+.pill { position:absolute; top:-3.1mm; left:-0.35mm; background:#2E75C5; color:#FFFFFF; font-size:12.5px; font-weight:800; letter-spacing:.2px; padding:1.3mm 6.5mm 1.3mm 4.5mm; border-radius:2.4mm; white-space:nowrap; }
+.prow { display:flex; align-items:baseline; font-size:12px; color:#17376B; padding:.5mm 0; }
+.prow .k { flex:0 0 21mm; font-weight:800; }
+.prow .c { flex:0 0 4.5mm; }
+.prow .v { flex:1 1 auto; min-width:0; font-weight:600; overflow-wrap:anywhere; }
 
-/* meta card + gold verify-QR box */
-.meta { display:flex; gap:5mm; align-items:stretch; margin:3.4mm 8mm 0; }
-.mrows { flex:1 1 auto; min-width:0; background:rgba(255,255,255,.93); border:0.4mm solid #EAD9A8; border-radius:2.5mm; padding:2.6mm 5mm; display:flex; flex-direction:column; justify-content:center; gap:1.4mm; }
-.mrow { display:flex; align-items:baseline; font-size:16px; font-weight:800; color:#0E2A5C; }
-.mrow .k { flex:0 0 34mm; }
-.mrow .c { flex:0 0 6mm; }
-.mrow .v { flex:1 1 auto; min-width:0; }
-.qrbox { flex:0 0 36mm; background:#FFFFFF; border:0.6mm solid #D4A62A; border-radius:2.2mm; padding:1.8mm 1.8mm 1.3mm; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-.qrbox img, .qrbox svg { width:27.5mm; height:27.5mm; display:block; }
-.qrbox .qc { font-size:12.5px; font-weight:800; color:#0E2A5C; margin-top:.9mm; letter-spacing:.2px; }
+.mid { display:flex; gap:4mm; align-items:stretch; }
+.colL { flex:1 1 54%; min-width:0; }
+.colR { flex:1 1 46%; min-width:0; display:flex; flex-direction:column; gap:4mm; padding-top:5.6mm; }
+.ibox { border:0.35mm solid #2E75C5; background:#EAF3FB; border-radius:2mm; padding:2.4mm 4mm; }
+.ibox .prow .k { flex:0 0 33mm; }
+.colR .ibox { flex:1 1 auto; }
 
-/* Bill To — navy banner + GOLD-GRADIENT customer card */
-.bto { margin:3.4mm 8mm 0; }
-.bto-cap { display:inline-flex; align-items:center; gap:3mm; background:linear-gradient(90deg,#0A1F44 0%,#14336B 55%,#24509E 100%); border:0.5mm solid #D4A62A; border-radius:2.8mm; padding:2.2mm 11mm 2.2mm 4.5mm; }
-.bto-cap .t { font-size:20px; font-weight:900; color:#F5D061; letter-spacing:.6px; }
-.bto-cap svg { display:block; }
-.bto-body { margin-top:1.5mm; border:0.5mm solid #D4A62A; background:linear-gradient(180deg,#FCF1CC 0%,#F5E0A6 100%); border-radius:2.8mm; padding:2mm 5.5mm; }
-.brow { display:flex; align-items:baseline; font-size:16px; font-weight:800; color:#0E2A5C; padding:.8mm 0; }
-.brow .k { flex:0 0 42mm; }
-.brow .c { flex:0 0 6mm; }
-.brow .v { flex:1 1 auto; min-width:0; }
-
-/* items grid — navy header, gold-tinted rows, navy cell lines */
-.tblwrap { margin:3.4mm 8mm 0; border:0.5mm solid #0E2A5C; border-radius:1.6mm; overflow:hidden; background:#FDF3DC; }
+/* items grid — blue two-row header (GST spans Rate | Amt) */
+.tblwrap { margin-top:5.6mm; border:0.4mm solid #2E75C5; border-radius:1.2mm; overflow:hidden; }
 table.items { width:100%; border-collapse:collapse; }
-.items th { background:#0B2447; color:#F2C94C; font-size:14px; font-weight:800; text-align:center; padding:2.8mm 2mm; border:0.3mm solid #274F94; letter-spacing:.3px; }
-.items td { background:#FDF3DC; border:0.3mm solid #14336B; padding:3mm 2mm; font-size:14px; font-weight:700; color:#0E2A5C; vertical-align:middle; }
-.items td.c, .items th.c { text-align:center; }
-.items td.r, .items th.r { text-align:center; padding-right:0; }
+.items th { background:#2E75C5; color:#FFFFFF; font-size:11.5px; font-weight:800; text-align:center; padding:1.8mm 1.2mm; border:0.25mm solid #5B93D4; line-height:1.25; }
+.items thead tr.subrow th { font-size:10.8px; padding:1.2mm; }
+.items td { border:0.25mm solid #A9C9E8; padding:2.2mm 1.2mm; font-size:11.5px; font-weight:600; color:#17376B; text-align:center; vertical-align:middle; }
+.items td.name { text-align:left; padding-left:2.4mm; }
 .items thead { display:table-header-group; }
 .items tr { page-break-inside:avoid; }
-.cat { font-size:9px; font-weight:700; color:#A05A1F; margin-top:1px; }
-.sn { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:9px; color:#41527A; margin-top:1px; }
+.items td.empty { height:7.4mm; }
+.cat { font-size:9px; font-weight:700; color:#4A78B8; margin-top:.4mm; }
+.sn { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:9px; color:#4A78B8; margin-top:.4mm; }
 
-/* trusted-shop rosette + navy totals plate */
-.grandrow { display:flex; gap:5mm; align-items:center; margin:3.4mm 8mm 0; }
-.badgewrap { flex:0 0 56mm; display:flex; align-items:center; justify-content:center; }
-.badgewrap svg { width:43mm; height:43mm; }
-.totbox { flex:1 1 auto; min-width:0; background:#FFFFFF; border:0.5mm solid #0E2A5C; border-radius:2mm; overflow:hidden; }
-.trow { display:flex; justify-content:space-between; align-items:center; gap:4mm; padding:2.5mm 4.5mm; font-size:15px; font-weight:800; color:#0E2A5C; border-bottom:0.35mm solid #14336B; }
-.trow .lbl { min-width:0; }
-.trow .amt { flex:0 0 auto; }
-.trow.neg .amt { color:#15803D; }
-.trow.grand { background:linear-gradient(90deg,#0A1F44 0%,#15336B 100%); border-bottom:none; color:#F5D061; font-size:18px; font-weight:900; padding:2.9mm 4.5mm; }
-.trow.grand .amt { font-size:20px; letter-spacing:.4px; }
+/* bank details + totals plate */
+.bot { display:flex; gap:4mm; align-items:flex-start; margin-top:5.6mm; }
+.botL { flex:1 1 54%; min-width:0; }
+.botR { flex:1 1 46%; min-width:0; }
+.inwords { margin-top:2mm; background:#FFFFFF; border:0.3mm solid #7FAEDC; border-radius:1.6mm; padding:1.8mm 3mm; }
+.inwords .lbl { font-weight:800; color:#17376B; font-size:11.5px; }
+.inwords .val { color:#1D5BA6; font-weight:800; font-size:12.5px; margin-top:.6mm; }
 
-/* payment pill + authorised signature */
-.payrow { display:flex; align-items:center; gap:8mm; margin:3.8mm 8mm 0; }
-.paybox { display:inline-flex; align-items:center; gap:3.6mm; margin-left:40mm; background:#FFFFFF; border:0.6mm solid #D4A62A; border-radius:14mm; padding:2.4mm 8mm 2.4mm 3mm; }
-.chkbox { flex:0 0 auto; }
-.chkbox svg { width:11.5mm; height:11.5mm; display:block; }
-.plines { min-width:0; }
-.pline { font-size:15.5px; font-weight:800; color:#0E2A5C; padding:.5mm 0; white-space:nowrap; }
-.pline .ok { color:#1FA342; }
-.pline .part { color:#B45309; }
-.pline .bad { color:#C62828; }
-.sigwrap { margin-left:auto; flex:0 0 46mm; text-align:center; }
-.sigwrap img { max-width:44mm; max-height:13mm; object-fit:contain; display:block; margin:0 auto; }
-.sigwrap svg { width:36mm; height:13.5mm; display:block; margin:0 auto; }
-.sigcap { font-size:13.5px; font-weight:800; color:#0E2A5C; margin-top:.4mm; }
+.totbox { border:0.35mm solid #2E75C5; background:#EAF3FB; border-radius:2mm; padding:1.6mm 3mm 2mm; }
+.trow { display:flex; align-items:baseline; font-size:12px; color:#17376B; padding:1.3mm 1mm; }
+.trow .lbl { flex:1 1 auto; text-align:right; font-weight:700; min-width:0; }
+.trow .c { flex:0 0 4.5mm; text-align:center; }
+.trow .val { flex:0 0 26mm; text-align:right; font-weight:700; }
+.trow.sub3 .lbl { flex:0 0 auto; text-align:left; }
+.trow.sub3 .v1 { flex:0 0 17mm; text-align:right; font-weight:800; }
+.trow.sub3 .v2 { flex:0 0 22mm; text-align:right; font-weight:800; }
+.trow.sub3 .v3 { flex:0 0 26mm; text-align:right; font-weight:800; }
+.trow.grand { background:#1B4A7C; border-radius:1.8mm; color:#FFFFFF; font-weight:800; font-size:12.8px; padding:2.2mm 2.4mm; margin-top:.8mm; }
+.trow.grand .lbl { color:#FFFFFF; }
+.trow.grand .c { color:#FFFFFF; }
+.trow.grand .val { color:#FFFFFF; font-size:13.5px; }
 
-/* thank-you script row */
-.thanksrow { display:flex; align-items:flex-end; margin:1mm 8mm 0; padding-bottom:3mm; }
-.thanksbox { flex:1 1 auto; min-width:0; text-align:center; padding-right:34mm; padding-bottom:1mm; }
-.ty { font-family:'Segoe Script','Brush Script MT','Apple Chancery','Comic Sans MS',cursive; font-style:italic; font-weight:800; font-size:39px; color:#1D5AB9; line-height:1.05; margin:0; }
-.keep { font-size:14px; font-weight:800; font-style:italic; color:#0E2A5C; margin-top:1.2mm; }
+/* bottom — declaration | QR | signature */
+.botm { display:flex; gap:5mm; align-items:stretch; margin-top:6mm; }
+.decl { flex:1 1 50%; min-width:0; }
+.decl .pill { position:static; display:inline-block; margin-bottom:2.4mm; }
+.decl ol { margin:0; padding-left:5mm; font-size:10.6px; color:#17376B; }
+.decl li { margin:.6mm 0; line-height:1.3; }
+.qrwrap { flex:0 0 23mm; display:flex; align-items:center; justify-content:center; padding-top:4mm; }
+.qrwrap img, .qrwrap svg.qr { width:21mm; height:21mm; display:block; }
+.sigc { flex:1 1 36%; min-width:0; text-align:center; padding-top:1mm; }
+.sigc .for { font-size:13px; font-weight:800; color:#17376B; }
+.sigc img { max-width:42mm; max-height:12mm; object-fit:contain; display:block; margin:1.8mm auto .8mm; }
+.sigc svg.scrib { width:34mm; height:11mm; display:block; margin:1.8mm auto .8mm; }
+.sigc .cap { display:inline-block; border-top:0.35mm solid #17376B; padding-top:1.4mm; min-width:40mm; font-size:11.8px; font-weight:800; color:#17376B; }
 
-/* 3-D phone art docked above the footer wave */
-.phoneart { position:absolute; left:2.5mm; bottom:19mm; width:31mm; z-index:2; pointer-events:none; }
-.phoneart svg { width:100%; height:auto; display:block; }
-
-/* navy footer wave */
-.foot { margin-top:auto; position:relative; height:20mm; }
-.foot svg.wave { position:absolute; top:0; left:0; width:100%; height:100%; display:block; }
-.fcontent { position:relative; z-index:2; display:flex; align-items:center; gap:7mm; height:100%; padding:5mm 8mm 0; }
-.fitem { display:flex; align-items:center; gap:2.2mm; color:#FFFFFF; font-size:12.5px; font-weight:800; letter-spacing:.3px; }
-.fitem svg { display:block; }
-.fvisit { margin-left:auto; font-family:'Segoe Script','Brush Script MT','Apple Chancery','Comic Sans MS',cursive; font-style:italic; font-weight:800; font-size:20px; color:#F5D061; }
+/* navy footer band */
+.footband { margin-top:auto; background:#1D4E77; min-height:12.5mm; display:flex; align-items:center; justify-content:center; gap:5mm; padding:2mm 4mm; }
+.footband .ln { flex:0 0 30mm; border-top:0.45mm solid rgba(255,255,255,.9); }
+.footband .tx { font-family:Georgia,'Times New Roman',serif; font-style:italic; font-weight:700; font-size:16px; color:#FFFFFF; letter-spacing:.2px; white-space:nowrap; }
 `;
 
 function billShell(title: string, body: string): string {
@@ -667,124 +591,157 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
           ? 'Card'
           : 'Credit (Due)';
 
-  // CGST/SGST each carry HALF the headline rate (18% GST → 9% + 9%)
-  const rateTxt = (() => {
-    const r = Number(bill.gstRate) || 0;
-    return `${Number.isInteger(r) ? r : Number(r.toFixed(2))} %`;
-  })();
-  const halfTxt = (() => {
-    const h = Number(halfRate(bill.gstRate)) || 0;
-    return `${Number.isInteger(h) ? h : Number(h.toFixed(2))} %`;
-  })();
+  const rateNum = Number(bill.gstRate) || 0;
+  const rate = gstOn ? rateNum / 100 : 0;
+  const rateTxt = `${Number.isInteger(rateNum) ? rateNum : Number(rateNum.toFixed(2))}%`;
 
-  // taxable base the CGST/SGST sit on (inclusive bills carry their own value)
+  // taxable base the GST sits on (inclusive bills carry their own value)
   const taxableBase = inclusiveGst ? bill.taxableValue ?? 0 : (bill.subtotal || 0) - disc;
-
-  // paise adjustment booked as "Round Off"
+  // pre-round total = taxable + GST (reference Sub-Total row's 3rd figure)
   const expectedTotal = (bill.subtotal || 0) - disc + (gstOn && !inclusiveGst ? gstAmt : 0);
   const roundOff = Math.round(((bill.total || 0) - expectedTotal) * 100) / 100;
 
-  // payment status — green Paid / amber Partial / red Due (reference style)
-  const stCls = due > 0.009 ? (paid > 0.009 ? 'part' : 'bad') : 'ok';
-  const stText = due > 0.009 ? (paid > 0.009 ? 'Partial' : 'Due') : 'Paid';
+  // per-item GST columns — inclusive: carve out of the price; exclusive: add on top
+  const calc = (total: number): { tx: number; gst: number | null; tot: number } => {
+    if (!gstOn) return { tx: total, gst: null, tot: total };
+    if (inclusiveGst) {
+      const tx = total / (1 + rate);
+      return { tx, gst: total - tx, tot: total };
+    }
+    return { tx: total, gst: total * rate, tot: total + total * rate };
+  };
 
   const itemRows = (bill.items || [])
     .map((it, i) => {
       const sns = (it.serialNumbers || []).filter(Boolean);
       const hsn = (it.hsnCode || '').trim() || '—';
+      const c = calc(it.total || 0);
       return (
-        `<tr><td class="c">${i + 1}</td><td>${esc(it.name)}${
+        `<tr><td>${i + 1}</td><td class="name">${esc(it.name)}${
           it.categoryName ? `<div class="cat">${esc(it.categoryName)}</div>` : ''
         }${
           sns.length ? `<div class="sn">S/N: ${sns.map((s) => esc(s)).join(', ')}</div>` : ''
-        }</td><td class="c">${esc(hsn)}</td><td class="c">${tallyQty(it.quantity)}</td><td class="r">${tallyAmt(
-          it.unitPrice
-        )}</td><td class="r">${tallyAmt(it.total)}</td></tr>`
+        }</td><td>${esc(hsn)}</td><td>${tallyQty(it.quantity)}</td><td>${amt2(it.unitPrice)}</td><td>${amt2(c.tx)}</td><td>${gstOn ? esc(rateTxt) : '-'}</td><td>${c.gst == null ? '-' : amt2(c.gst)}</td><td>${amt2(c.tot)}</td></tr>`
       );
     })
     .join('');
 
-  // the reference shows a full 3-row grid — pad shorter bills so the
-  // sheet never shows a collapsed table
-  const MIN_ROWS = 3;
+  // blank filler rows keep the grid as tall as the reference sheet
+  const MIN_ROWS = 12;
   const fillers = Math.max(0, MIN_ROWS - (bill.items || []).length);
-  const fillerRows = Array.from({ length: fillers }, () => `<tr>${'<td></td>'.repeat(6)}</tr>`).join('');
+  const fillerRows = Array.from({ length: fillers }, () => `<tr>${'<td class="empty"></td>'.repeat(9)}</tr>`).join('');
 
-  // totals plate rows — image order: Taxable → CGST → SGST → Grand Total
-  const discRow =
-    disc > 0.009
-      ? `<div class="trow neg"><span class="lbl">Discount</span><span class="amt">− ₹${tallyAmt(disc)}</span></div>`
-      : '';
-  const taxableRow = gstOn
-    ? `<div class="trow"><span class="lbl">Taxable Amount</span><span class="amt">₹${tallyAmt(taxableBase)}</span></div>`
-    : '';
-  const gstRows = !gstOn
-    ? ''
-    : hasSplit
-      ? `<div class="trow"><span class="lbl">CGST @ ${halfTxt}</span><span class="amt">₹${tallyAmt(bill.cgstAmount)}</span></div>` +
-        `<div class="trow"><span class="lbl">SGST @ ${halfTxt}</span><span class="amt">₹${tallyAmt(bill.sgstAmount)}</span></div>`
-      : `<div class="trow"><span class="lbl">GST @ ${rateTxt}</span><span class="amt">₹${tallyAmt(gstAmt)}</span></div>`;
-  const roundRow =
-    Math.abs(roundOff) >= 0.005
-      ? `<div class="trow"><span class="lbl">Round Off</span><span class="amt">${roundOff > 0 ? '+' : '−'} ₹${tallyAmt(Math.abs(roundOff))}</span></div>`
-      : '';
+  const dash = '-';
+  const cgstV = gstOn ? (hasSplit ? bill.cgstAmount ?? null : gstAmt / 2) : null;
+  const sgstV = gstOn ? (hasSplit ? bill.sgstAmount ?? null : gstAmt / 2) : null;
+  const val = (v: number | null) => (v == null ? dash : amt2(v));
+
+  const totRows = `
+    <div class="trow sub3"><span class="lbl">Sub Total</span><span class="c">:</span><span class="v1">${amtTrim(taxableBase)}</span><span class="v2">${gstOn ? amt2(gstAmt) : dash}</span><span class="v3">${amt2(expectedTotal)}</span></div>
+    ${disc > 0.009 ? `<div class="trow"><span class="lbl">Discount</span><span class="c">:</span><span class="val">-${amt2(disc)}</span></div>` : ''}
+    <div class="trow"><span class="lbl">CGST Amt</span><span class="c">:</span><span class="val">${val(cgstV)}</span></div>
+    <div class="trow"><span class="lbl">SGST Amt</span><span class="c">:</span><span class="val">${val(sgstV)}</span></div>
+    <div class="trow"><span class="lbl">IGST Amt</span><span class="c">:</span><span class="val">${dash}</span></div>
+    <div class="trow"><span class="lbl">Freight/ Packing Charge</span><span class="c">:</span><span class="val">${dash}</span></div>
+    <div class="trow"><span class="lbl">Round Off</span><span class="c">:</span><span class="val">${roundOff !== 0 ? `${roundOff > 0 ? '' : '-'}${amt2(Math.abs(roundOff))}` : dash}</span></div>
+    <div class="trow grand"><span class="lbl">Total Amount</span><span class="c">:</span><span class="val">${amt2(bill.total)}</span></div>`;
+
+  const partyRow = (k: string, v: string) =>
+    `<div class="prow"><span class="k">${esc(k)}</span><span class="c">:</span><span class="v">${esc(v)}</span></div>`;
+
+  const btoRows = [
+    partyRow('Name', bill.customerName || 'Cash Sale'),
+    partyRow('Address', bill.customerAddress || ''),
+    bill.customerMobile ? partyRow('Mobile', bill.customerMobile) : '',
+  ].join('');
+
+  const ordNo = (bill.transactionId || '').trim();
+  const ibox1 = [
+    partyRow('Bill No.', bill.billNumber || '—'),
+    partyRow('Tax Date', fmtTaxDate(bill.date)),
+    partyRow('Payment Mode', methodLabel),
+    partyRow('Reverse Charge', 'No'),
+  ].join('');
+  const ibox2 = [
+    partyRow("Buyer's Order No.", ordNo),
+    partyRow("Supplier's Ref.", ''),
+    partyRow('Vehicle Number', ''),
+    partyRow('Delivery Date', ''),
+    partyRow('Transport Details', ''),
+    partyRow('Terms Of Delivery', ''),
+  ].join('');
+
+  const bankRows = [
+    shop.bankName ? partyRow('Bank Name', shop.bankName) : '',
+    shop.bankBranch ? partyRow('Branch', shop.bankBranch) : '',
+    shop.bankAccountNo ? partyRow('Account No.', shop.bankAccountNo) : '',
+    shop.bankIfsc ? partyRow('IFSC Code', shop.bankIfsc) : '',
+    shop.upi ? partyRow('UPI ID', shop.upi) : '',
+  ].join('');
+
+  // declaration lines — settings terms, else the reference's 4 defaults
+  const declLines = (shop.terms ? shop.terms.split(/\r?\n+/) : [])
+    .map((s) => s.trim().replace(/^\d+[.)]\s*/, ''))
+    .filter(Boolean);
+  const DECL_DEFAULTS = [
+    'Subject to local jurisdiction.',
+    'Interest @ 18% p.a. will be charged if the payment is not made within due date.',
+    'Our risk & responsibility ceases after delivery of goods.',
+    'E. & O.E.',
+  ];
+  const declItems = declLines.length ? declLines : DECL_DEFAULTS;
+
+  // legacy default thankyou note → the reference footer text
+  const footTxt =
+    !shop.thankyou || shop.thankyou === 'Thank you for your business!'
+      ? 'Thank You For Doing Business With Us!'
+      : shop.thankyou;
 
   const qr = safeImgDataUrl(shop.qr);
   const sig = safeImgDataUrl(shop.signature);
-  const ordNo = (bill.transactionId || '').trim();
 
   const body = `
 <div class="sheet">
-  <div class="keyline"></div>
-  ${topDecoSvg(gstOn)}
-  ${bottomDecoSvg()}
-  <div class="page">
-    <div class="hdr">
-      <div class="plogo"><div class="in"><b>${esc(brandInitials(shop.name))}</b></div></div>
-      <div class="hmid">
-        <div class="co-name">${esc(shop.name)}</div>
-        <div class="co-sub">Mobile &amp; Accessories</div>
-        <div class="co-tag">Your Trusted Mobile Partner</div>
-        ${TAGLINE_SWOOSH}
-        ${shop.gst && gstOn ? `<div class="co-gstin">GSTIN: ${esc(shop.gst)}</div>` : ''}
+  <div class="inner">
+    <div class="head">
+      <div class="bag">${bagLogoSvg()}</div>
+      <div class="vsep"></div>
+      <div class="hinfo">
+        ${shop.gst ? `<div class="h-gstin">GSTIN : ${esc(shop.gst)}</div>` : ''}
+        <div class="h-name">${esc(shop.name)}</div>
+        ${shop.proprietor ? `<div class="h-sub">${esc(shop.proprietor)}</div>` : ''}
+        ${shop.address ? `<div class="h-addr">${I_PIN}<span>${esc(shop.address)}</span></div>` : ''}
+        ${shop.phone ? `<div class="h-addr">${I_PHONE}<span>Contact No : ${esc(shop.phone)}</span></div>` : ''}
       </div>
+      <div class="dup">Original Duplicate Bill</div>
     </div>
 
-    <div class="svcs">
-      <div class="svc"><div class="ic"><div class="inn">${G_MOBILE}</div></div><div class="lb">Mobile</div></div>
-      <div class="svc"><div class="ic"><div class="inn">${G_ACCESS}</div></div><div class="lb">Accessories</div></div>
-      <div class="svc"><div class="ic"><div class="inn">${G_SERVICE}</div></div><div class="lb">Service</div></div>
-      <div class="svc"><div class="ic"><div class="inn">${G_RECHARGE}</div></div><div class="lb">Recharge</div></div>
-    </div>
-
-    <div class="meta">
-      <div class="mrows">
-        <div class="mrow"><span class="k">Invoice No.</span><span class="c">:</span><span class="v">${esc(bill.billNumber || '—')}</span></div>
-        <div class="mrow"><span class="k">Invoice Date</span><span class="c">:</span><span class="v">${esc(fmtDate(bill.date))}</span></div>
-        ${ordNo ? `<div class="mrow"><span class="k">Order No.</span><span class="c">:</span><span class="v">${esc(ordNo)}</span></div>` : ''}
+    <div class="mid">
+      <div class="colL">
+        <div class="pbox"><span class="pill">Bill To</span>${btoRows}</div>
+        <div class="pbox"><span class="pill">Ship To</span>${btoRows}</div>
       </div>
-      <div class="qrbox">${qr ? `<img src="${qr}" alt="QR">` : qrPlaceholderSvg()}<div class="qc">Scan to Verify</div></div>
-    </div>
-
-    <div class="bto">
-      <div class="bto-cap">${I_PERSON}<span class="t">Bill To</span></div>
-      <div class="bto-body">
-        <div class="brow"><span class="k">Customer Name</span><span class="c">:</span><span class="v">${esc(bill.customerName || 'Cash Sale')}</span></div>
-        ${bill.customerMobile ? `<div class="brow"><span class="k">Mobile No.</span><span class="c">:</span><span class="v">${esc(bill.customerMobile)}</span></div>` : ''}
-        ${bill.customerAddress ? `<div class="brow"><span class="k">Address</span><span class="c">:</span><span class="v">${esc(bill.customerAddress)}</span></div>` : ''}
+      <div class="colR">
+        <div class="ibox">${ibox1}</div>
+        <div class="ibox">${ibox2}</div>
       </div>
     </div>
 
     <div class="tblwrap">
       <table class="items">
-        <thead><tr>
-          <th class="c" style="width:7%">#</th>
-          <th style="width:34%">Product Name</th>
-          <th class="c" style="width:15%">HSN Code</th>
-          <th class="c" style="width:9%">Qty</th>
-          <th class="r" style="width:16%">Rate (₹)</th>
-          <th class="r" style="width:19%">Amount (₹)</th>
-        </tr></thead>
+        <thead>
+          <tr>
+            <th rowspan="2" style="width:5%">Sl.</th>
+            <th rowspan="2" style="width:26%">Goods &amp; Service Description</th>
+            <th rowspan="2" style="width:8%">HSN</th>
+            <th rowspan="2" style="width:10%">Quantity</th>
+            <th rowspan="2" style="width:10%">Rate</th>
+            <th rowspan="2" style="width:12%">Taxable Value</th>
+            <th colspan="2" style="width:19%">GST</th>
+            <th rowspan="2" style="width:10%">Total</th>
+          </tr>
+          <tr class="subrow"><th>Rate</th><th>Amt</th></tr>
+        </thead>
         <tbody>
           ${itemRows}
           ${fillerRows}
@@ -792,51 +749,33 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
       </table>
     </div>
 
-    <div class="grandrow">
-      <div class="badgewrap">${trustedBadgeSvg()}</div>
-      <div class="totbox">
-        ${discRow}
-        ${taxableRow}
-        ${gstRows}
-        ${roundRow}
-        <div class="trow grand"><span class="lbl">Grand Total</span><span class="amt">₹ ${tallyAmt(bill.total)}</span></div>
-      </div>
-    </div>
-
-    <div class="payrow">
-      <div class="paybox">
-        <span class="chkbox">${checkCircleSvg()}</span>
-        <div class="plines">
-          <div class="pline">Payment Mode : ${esc(methodLabel)}</div>
-          <div class="pline">Payment Status : <span class="${stCls}">${stText}</span></div>
-          ${due > 0.009 ? `<div class="pline">Due Amount : <span class="bad">₹${tallyAmt(due)}</span></div>` : ''}
+    <div class="bot">
+      <div class="botL">
+        <div class="pbox"><span class="pill">Our Bank Details</span>${bankRows}
+          <div class="inwords"><span class="lbl">Invoice Total (InWords) :</span><div class="val">${esc(amountInWords(bill.total || 0))}</div></div>
         </div>
       </div>
-      <div class="sigwrap">
+      <div class="botR">
+        <div class="totbox">${totRows}
+        </div>
+      </div>
+    </div>
+
+    <div class="botm">
+      <div class="decl">
+        <span class="pill">Declaration :</span>
+        <ol>${declItems.map((d) => `<li>${esc(d)}</li>`).join('')}</ol>
+      </div>
+      <div class="qrwrap">${qr ? `<img src="${qr}" alt="QR">` : qrPlaceholderSvg()}</div>
+      <div class="sigc">
+        <div class="for">For, ${esc(shop.name)}</div>
         ${sig ? `<img src="${sig}" alt="signature">` : sigScribbleSvg()}
-        <div class="sigcap">Authorized Signature</div>
-      </div>
-    </div>
-
-    <div class="thanksrow">
-      <div class="thanksbox">
-        <p class="ty">Thank You!</p>
-        <div class="keep">${shop.thankyou ? esc(shop.thankyou) : 'Keep Shopping with PS TELECOM…'}</div>
-      </div>
-    </div>
-
-    <div class="phoneart">${phoneSvg()}</div>
-
-    <div class="foot">
-      ${footerWaveSvg()}
-      <div class="fcontent">
-        <div class="fitem">${I_SHIELD}<span>Best Price</span></div>
-        <div class="fitem">${I_HANDSHAKE}<span>Best Service</span></div>
-        <div class="fitem">${I_STAR}<span>Happy Customer</span></div>
-        <div class="fvisit">Visit Again…</div>
+        <div class="cap">Authorised Signatory</div>
       </div>
     </div>
   </div>
+
+  <div class="footband"><span class="ln"></span><span class="tx">${esc(footTxt)}</span><span class="ln"></span></div>
 </div>`;
 
   return billShell(`${shop.name} — ${bill.billNumber}`, body);

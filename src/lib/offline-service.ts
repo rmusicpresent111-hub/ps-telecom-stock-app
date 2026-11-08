@@ -2086,6 +2086,10 @@ const DEFAULT_BILLING_SETTINGS: Omit<BillingSettings, 'userId' | 'updatedAt'> = 
   billPrefix: 'PS',
   thankYouNote: 'Thank you for your business!',
   termsText: '',
+  bankName: '',   // invoice "Our Bank Details" box (v2.42.0)
+  bankBranch: '',
+  bankAccountNo: '',
+  bankIfsc: '',
   adminPin: '9732881732', // admin panel security PIN (change in Bill Settings)
   billTemplate: 'royal-gold', // receipt style (v2.31.0)
   thermalWidthMm: 58,         // thermal printer paper width

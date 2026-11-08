@@ -469,6 +469,16 @@ const D: Record<string, Entry> = {
   'bset.prefixHint': { bn: 'যেমন PS → PS-2610-0001', en: 'e.g. PS → PS-2610-0001', hi: 'जैसे PS → PS-2610-0001' },
   'bset.upi': { bn: 'UPI আইডি', en: 'UPI ID', hi: 'UPI आईडी' },
   'bset.thankyou': { bn: 'থ্যাংক-ইউ নোট', en: 'Thank-you Note', hi: 'धन्यवाद नोट' },
+  'bset.bank': { bn: 'ব্যাংক ডিটেইলস (ইনভয়েস)', en: 'Bank Details (Invoice)', hi: 'बैंक विवरण (इनवॉइस)' },
+  'bset.bankName': { bn: 'ব্যাংকের নাম', en: 'Bank Name', hi: 'बैंक का नाम' },
+  'bset.bankBranch': { bn: 'শাখা', en: 'Branch', hi: 'শাখা' },
+  'bset.bankAcc': { bn: 'অ্যাকাউন্ট নম্বর', en: 'Account No.', hi: 'खाता संख्या' },
+  'bset.bankIfsc': { bn: 'IFSC কোড', en: 'IFSC Code', hi: 'IFSC कोड' },
+  'bset.bankHint': {
+    bn: 'এই তথ্যগুলো ইনভয়েসের "Our Bank Details" বক্সে ছাপা হবে',
+    en: 'These details are printed in the invoice "Our Bank Details" box',
+    hi: 'ये विवरण इनवॉइस के "Our Bank Details" बॉक्स में छपेगा',
+  },
   'bset.signature': { bn: 'স্বাক্ষর (Signature)', en: 'Signature', hi: 'হস্তাক্ষর' },
   'bset.sigHint': {
     bn: 'সাদা কাগজে সই করে ছবি তুলে আপলোড করুন — প্রতিটি বিলের নিচে ছাপা হবে',
