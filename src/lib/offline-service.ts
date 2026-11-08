@@ -2180,6 +2180,60 @@ function nextBillNumberFromRows(
   return candidate;
 }
 
+/** v2.43.0 — per-bill GST invoice number in the user's spec format
+ *  `PS-DDMMYYYY-N` (example PS-08112026-1): the prefix comes from Bill
+ *  Settings, the date key is the BILL's local date, and `-N` is a sequence
+ *  that increments per calendar day so every bill gets its own number.
+ *  Allocation is collision-checked inside the same atomic IndexedDB
+ *  transaction as the bill save, so a double-tap can never mint two equal
+ *  invoice numbers. */
+function nextInvoiceNumberFromRows(
+  bills: OfflineDBSchema['bills']['value'][],
+  prefix: string,
+  dateStr: string
+): string {
+  // dateStr is YYYY-MM-DD (local) → DDMMYYYY
+  const parts = dateStr.split('-');
+  const dayKey = parts.length === 3 ? `${parts[2]}${parts[1]}${parts[0]}` : dateStr.replace(/\D/g, '');
+  const dayPrefix = `${prefix}-${dayKey}-`;
+  let maxSeq = 0;
+  const taken = new Set<string>();
+  for (const b of bills) {
+    const inv = typeof b.invoiceNumber === 'string' ? b.invoiceNumber : '';
+    if (inv.startsWith(dayPrefix)) {
+      taken.add(inv);
+      const seq = parseInt(inv.slice(dayPrefix.length), 10);
+      if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
+    }
+  }
+  let seq = maxSeq + 1;
+  let candidate = `${dayPrefix}${seq}`;
+  while (taken.has(candidate)) {
+    seq += 1;
+    candidate = `${dayPrefix}${seq}`;
+  }
+  return candidate;
+}
+
+/** v2.43.0 — unique 10-digit Order ID per bill (user spec: every bill gets
+ *  its own 10-digit order id). Random 10-digit number, collision-checked
+ *  against every existing row inside the same atomic transaction. */
+function nextOrderIdFromRows(bills: OfflineDBSchema['bills']['value'][]): string {
+  const taken = new Set<string>();
+  for (const b of bills) {
+    if (typeof b.orderId === 'string' && b.orderId) taken.add(b.orderId);
+  }
+  for (let attempt = 0; attempt < 40; attempt++) {
+    // 1000000000..9999999999 — always exactly 10 digits, never a leading 0
+    const candidate = String(Math.floor(1e9 + Math.random() * 9e9));
+    if (!taken.has(candidate)) return candidate;
+  }
+  // Astronomically unlikely fallback: time-derived 10-digit value.
+  let t = Date.now() % 10_000_000_000;
+  while (taken.has(String(t).padStart(10, '0'))) t = (t + 1) % 10_000_000_000;
+  return String(t).padStart(10, '0');
+}
+
 export async function createBillOffline(data: {
   userId: string;
   transactionId: string;
@@ -2261,11 +2315,17 @@ export async function createBillOffline(data: {
   if (dupe) throw new Error('A bill already exists for this transaction');
 
   const billNumber = nextBillNumberFromRows(existingBills, settings.billPrefix.trim() || 'PS');
+  // v2.43.0 — per-bill invoice number (PS-DDMMYYYY-N) + unique 10-digit Order ID
+  const date = data.date || localDateStr();
+  const invoiceNumber = nextInvoiceNumberFromRows(existingBills, settings.billPrefix.trim() || 'PS', date);
+  const orderId = nextOrderIdFromRows(existingBills);
 
   const bill: OfflineDBSchema['bills']['value'] = {
     id: generateRecordId(),
     userId: data.userId,
     billNumber,
+    invoiceNumber,
+    orderId,
     customerName: (data.customerName ?? '').trim() || 'Walk-in Customer',
     customerMobile: (data.customerMobile ?? '').replace(/[^\d+]/g, ''),
     ...((data.customerAddress ?? '').trim() ? { customerAddress: (data.customerAddress ?? '').trim() } : {}),
@@ -2296,6 +2356,7 @@ export async function createBillOffline(data: {
     dueAmount,
     note: (data.note ?? '').trim(),
     transactionId: data.transactionId,
+    date,
     shopSnapshot: {
       name: settings.shopName,
       proprietorName: settings.proprietorName,
@@ -2303,7 +2364,6 @@ export async function createBillOffline(data: {
       phone: settings.shopPhone,
       gstNumber: settings.gstNumber,
     },
-    date: data.date || localDateStr(),
     createdAt: now,
     updatedAt: now,
   };
@@ -2511,11 +2571,16 @@ export async function createCartBillOffline(data: {
 
   const existingBills = await billsOs.index('by-userId').getAll(data.userId);
   const billNumber = nextBillNumberFromRows(existingBills, settings.billPrefix.trim() || 'PS');
+  // v2.43.0 — per-bill invoice number (PS-DDMMYYYY-N) + unique 10-digit Order ID
+  const invoiceNumber = nextInvoiceNumberFromRows(existingBills, settings.billPrefix.trim() || 'PS', date);
+  const orderId = nextOrderIdFromRows(existingBills);
 
   const bill: OfflineDBSchema['bills']['value'] = {
     id: generateRecordId(),
     userId: data.userId,
     billNumber,
+    invoiceNumber,
+    orderId,
     customerName: (data.customerName ?? '').trim() || 'Walk-in Customer',
     customerMobile: (data.customerMobile ?? '').replace(/[^\d+]/g, ''),
     ...((data.customerAddress ?? '').trim() ? { customerAddress: (data.customerAddress ?? '').trim() } : {}),

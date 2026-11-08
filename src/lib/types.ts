@@ -279,6 +279,13 @@ export interface Bill {
   dueAmount: number;
   note: string;
   transactionId: string;   // the STOCK_OUT/SELL transaction this bill documents
+  /** v2.43.0 — per-bill GST invoice number in `PS-DDMMYYYY-N` format (user
+   *  spec: every bill gets its own number, per-day sequence). Generated at
+   *  bill creation; additive optional field — old synced rows decode untouched. */
+  invoiceNumber?: string;
+  /** v2.43.0 — unique 10-digit Order ID generated per bill (user spec).
+   *  Additive optional field — pre-2.43 bills fall back to a stable id hash on print. */
+  orderId?: string;
   shopSnapshot: { name: string; address: string; phone: string; gstNumber: string; proprietorName?: string };
   date: string;            // YYYY-MM-DD (local)
   createdAt: string;

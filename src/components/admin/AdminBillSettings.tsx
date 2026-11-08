@@ -74,10 +74,16 @@ function sampleBill(form: BillingSettings): Bill {
   const gstMode = normalizeGstMode(form.gstMode);
   const breakup = gstEnabled ? computeGst(subtotal - discountAmount, gstRate, gstMode) : null;
   const ym = '2602';
+  // v2.43.0 — preview mirrors the printed invoice: PS-DDMMYYYY-N invoice
+  // number + unique 10-digit Order ID (same format real bills generate).
+  const ds = localDateStr().split('-');
+  const invSample = `PS-${ds[2] ?? '01'}${ds[1] ?? '01'}${ds[0] ?? '2026'}-1`;
   return {
     id: 'sample-bill',
     userId: 'sample',
     billNumber: 'PS-2026-003',
+    invoiceNumber: invSample,
+    orderId: '4802517639',
     customerName: 'Rahul Das',
     customerMobile: '9876543210',
     customerAddress: 'Ranichak, Haldia, Purba Medinipur-721635',

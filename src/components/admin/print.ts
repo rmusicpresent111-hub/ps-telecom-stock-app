@@ -21,6 +21,7 @@ import { ta, taf } from '@/lib/admin-i18n';
 import type { Bill, BillingSettings } from '@/lib/types';
 import { getBillingSettingsOffline } from '@/lib/offline-service';
 import { DEFAULT_USER_ID } from '@/lib/local-auth';
+import { halfRate } from '@/lib/gst';
 
 // ── small local formatters (standalone — no React imports) ─────
 
@@ -429,14 +430,26 @@ function amountInWords(v: number): string {
 
 // ── inline SVG art (fixed size + xmlns → print & html2canvas safe) ──
 
-/** Blue shopping-bag logo tile (reference header-left). */
-function bagLogoSvg(): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
-  <rect x="1.5" y="1.5" width="61" height="61" rx="14" fill="#2E75C5"/>
-  <path d="M20.5 27h23l-2.6 21.4a4.2 4.2 0 0 1-4.2 3.6h-9.4a4.2 4.2 0 0 1-4.2-3.6Z" fill="#FFFFFF"/>
-  <path d="M25.5 27v-5.4a6.5 6.5 0 0 1 13 0V27" fill="none" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round"/>
-  <path d="M25.5 37.5q6.5 5.4 13 0" fill="none" stroke="#2E75C5" stroke-width="3" stroke-linecap="round"/>
-</svg>`;
+/** Blue shopping-bag logo tile (reference header-left). UNUSED since v2.43.0
+ *  — kept intentionally removed: the real PS brand logo replaced it. */
+
+/**
+ * v2.43.0 — the REAL PS Telecom brand logo (public/bill-logo.png) on the
+ * invoice header, per the shop owner's request. Uses the build-time
+ * NEXT_PUBLIC_BASE_PATH (same pattern as the manifest link) so the same
+ * absolute path works in dev ("/bill-logo.png"), on Vercel AND on the
+ * GitHub Pages basePath mirror ("/ps-telecom-stock-app/bill-logo.png").
+ */
+function psBillLogoUrl(): string {
+  return `${process.env.NEXT_PUBLIC_BASE_PATH || ''}/bill-logo.png`;
+}
+
+/** Pre-2.43 bills carry no orderId — display a stable 10-digit id hash so
+ *  the printed "Order ID" row never shows a gap for legacy rows. */
+function orderIdFallback(id: string): string {
+  let h = 5381;
+  for (let i = 0; i < id.length; i++) h = ((h << 5) + h + id.charCodeAt(i)) >>> 0;
+  return String(h).padStart(10, '0');
 }
 
 /** Small blue location-pin glyph (header address row). */
@@ -483,18 +496,18 @@ body { background:#fff; color:#17376B; font-family:Arial,'Noto Sans Bengali','Hi
 .sheet { width:210mm; max-width:100%; min-height:296.6mm; margin:0 auto; background:#fff; border:0.4mm solid #2E75C5; display:flex; flex-direction:column; }
 .inner { flex:1 1 auto; padding:4.5mm 5mm 2mm; }
 
-/* header — bag logo | divider | GSTIN · name · proprietor · 📍 · 📞 | dup */
-.head { position:relative; display:flex; align-items:center; gap:4mm; border:0.35mm solid #2E75C5; border-radius:1.6mm; padding:3.6mm 5mm 3.6mm 4mm; }
-.bag { flex:0 0 16.5mm; width:16.5mm; height:16.5mm; }
-.bag svg { width:100%; height:100%; display:block; }
+/* header — PS brand logo | divider | GSTIN · name · proprietor · 📍 · 📞 | Original Invoice pill */
+.head { position:relative; display:flex; align-items:center; gap:4mm; border:0.35mm solid #2E75C5; border-radius:1.6mm; padding:3.6mm 5mm 3.6mm 4mm; background:linear-gradient(180deg,#FFFFFF 0%,#F4F9FE 100%); }
+.bag { flex:0 0 24mm; width:24mm; }
+.bag img { width:100%; height:auto; display:block; }
 .vsep { align-self:stretch; border-left:0.5mm solid #2E75C5; }
-.hinfo { flex:1 1 auto; min-width:0; padding-left:1mm; padding-right:32mm; }
+.hinfo { flex:1 1 auto; min-width:0; padding-left:1mm; padding-right:36mm; }
 .h-gstin { font-size:13px; font-weight:800; color:#17376B; letter-spacing:.2px; }
 .h-name { font-size:26px; font-weight:900; color:#1D5BA6; letter-spacing:.3px; line-height:1.14; margin-top:.3mm; }
 .h-sub { font-size:13px; font-weight:800; color:#1D5BA6; margin-top:.4mm; }
 .h-addr { display:flex; align-items:flex-start; gap:1.8mm; font-size:11.8px; font-weight:600; color:#17376B; margin-top:1.7mm; }
 .h-addr svg { flex:0 0 auto; margin-top:.3mm; }
-.dup { position:absolute; top:3.2mm; right:4.6mm; font-size:12.5px; font-weight:800; color:#17376B; }
+.dup { position:absolute; top:3.4mm; right:4.6mm; font-size:12.5px; font-weight:800; color:#FFFFFF; background:#1D5BA6; padding:1.5mm 4.5mm; border-radius:1.8mm; letter-spacing:.4px; box-shadow:0 .4mm 1.2mm rgba(29,91,166,.35); }
 
 /* pill tabs + light-blue boxes */
 .pbox { position:relative; border:0.35mm solid #2E75C5; background:#EAF3FB; border-radius:2mm; padding:3mm 4mm 2.4mm; margin-top:5.6mm; }
@@ -635,12 +648,17 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
   const cgstV = gstOn ? (hasSplit ? bill.cgstAmount ?? null : gstAmt / 2) : null;
   const sgstV = gstOn ? (hasSplit ? bill.sgstAmount ?? null : gstAmt / 2) : null;
   const val = (v: number | null) => (v == null ? dash : amt2(v));
+  // user spec — the bill must SHOW the split: 18% set → 9% CGST + 9% SGST rows
+  const half = halfRate(rateNum);
+  const halfTxt = `${Number.isInteger(half) ? half : half.toFixed(2)}%`;
+  const cgstLbl = gstOn ? `CGST @ ${halfTxt}` : 'CGST Amt';
+  const sgstLbl = gstOn ? `SGST @ ${halfTxt}` : 'SGST Amt';
 
   const totRows = `
     <div class="trow sub3"><span class="lbl">Sub Total</span><span class="c">:</span><span class="v1">${amtTrim(taxableBase)}</span><span class="v2">${gstOn ? amt2(gstAmt) : dash}</span><span class="v3">${amt2(expectedTotal)}</span></div>
     ${disc > 0.009 ? `<div class="trow"><span class="lbl">Discount</span><span class="c">:</span><span class="val">-${amt2(disc)}</span></div>` : ''}
-    <div class="trow"><span class="lbl">CGST Amt</span><span class="c">:</span><span class="val">${val(cgstV)}</span></div>
-    <div class="trow"><span class="lbl">SGST Amt</span><span class="c">:</span><span class="val">${val(sgstV)}</span></div>
+    <div class="trow"><span class="lbl">${esc(cgstLbl)}</span><span class="c">:</span><span class="val">${val(cgstV)}</span></div>
+    <div class="trow"><span class="lbl">${esc(sgstLbl)}</span><span class="c">:</span><span class="val">${val(sgstV)}</span></div>
     <div class="trow"><span class="lbl">IGST Amt</span><span class="c">:</span><span class="val">${dash}</span></div>
     <div class="trow"><span class="lbl">Freight/ Packing Charge</span><span class="c">:</span><span class="val">${dash}</span></div>
     <div class="trow"><span class="lbl">Round Off</span><span class="c">:</span><span class="val">${roundOff !== 0 ? `${roundOff > 0 ? '' : '-'}${amt2(Math.abs(roundOff))}` : dash}</span></div>
@@ -649,13 +667,26 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
   const partyRow = (k: string, v: string) =>
     `<div class="prow"><span class="k">${esc(k)}</span><span class="c">:</span><span class="v">${esc(v)}</span></div>`;
 
-  const btoRows = [
+  // v2.43.0 — user spec: "Bill To" = THE SHOP (dokaner name + address),
+  // "Ship To" = the CUSTOMER (name + address).
+  const shopRows = [
+    partyRow('Name', shop.name || '—'),
+    partyRow('Address', shop.address || ''),
+    shop.phone ? partyRow('Mobile', shop.phone) : '',
+    shop.gst ? partyRow('GSTIN', shop.gst) : '',
+  ].join('');
+  const custRows = [
     partyRow('Name', bill.customerName || 'Cash Sale'),
     partyRow('Address', bill.customerAddress || ''),
     bill.customerMobile ? partyRow('Mobile', bill.customerMobile) : '',
   ].join('');
 
-  const ordNo = (bill.transactionId || '').trim();
+  // v2.43.0 — user spec: right info box shows ONLY Invoice Number (unique per
+  // bill, PS-DDMMYYYY-N), unique 10-digit Order ID and the Invoice Date.
+  // Buyer's Order No. / Supplier's Ref. / Vehicle Number / Delivery Date /
+  // Transport Details / Terms Of Delivery rows are REMOVED.
+  const invNo = (bill.invoiceNumber || bill.billNumber || '—').trim();
+  const ordId = (bill.orderId && /^\d{10}$/.test(bill.orderId) ? bill.orderId : orderIdFallback(bill.id || ''));
   const ibox1 = [
     partyRow('Bill No.', bill.billNumber || '—'),
     partyRow('Tax Date', fmtTaxDate(bill.date)),
@@ -663,12 +694,9 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
     partyRow('Reverse Charge', 'No'),
   ].join('');
   const ibox2 = [
-    partyRow("Buyer's Order No.", ordNo),
-    partyRow("Supplier's Ref.", ''),
-    partyRow('Vehicle Number', ''),
-    partyRow('Delivery Date', ''),
-    partyRow('Transport Details', ''),
-    partyRow('Terms Of Delivery', ''),
+    partyRow('Invoice No.', invNo),
+    partyRow('Order ID', ordId),
+    partyRow('Invoice Date', fmtTaxDate(bill.date)),
   ].join('');
 
   const bankRows = [
@@ -704,7 +732,7 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
 <div class="sheet">
   <div class="inner">
     <div class="head">
-      <div class="bag">${bagLogoSvg()}</div>
+      <div class="bag"><img src="${psBillLogoUrl()}" alt="PS Telecom logo"></div>
       <div class="vsep"></div>
       <div class="hinfo">
         ${shop.gst ? `<div class="h-gstin">GSTIN : ${esc(shop.gst)}</div>` : ''}
@@ -713,13 +741,13 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
         ${shop.address ? `<div class="h-addr">${I_PIN}<span>${esc(shop.address)}</span></div>` : ''}
         ${shop.phone ? `<div class="h-addr">${I_PHONE}<span>Contact No : ${esc(shop.phone)}</span></div>` : ''}
       </div>
-      <div class="dup">Original Duplicate Bill</div>
+      <div class="dup">Original Invoice</div>
     </div>
 
     <div class="mid">
       <div class="colL">
-        <div class="pbox"><span class="pill">Bill To</span>${btoRows}</div>
-        <div class="pbox"><span class="pill">Ship To</span>${btoRows}</div>
+        <div class="pbox"><span class="pill">Bill To</span>${shopRows}</div>
+        <div class="pbox"><span class="pill">Ship To</span>${custRows}</div>
       </div>
       <div class="colR">
         <div class="ibox">${ibox1}</div>
