@@ -1,68 +1,147 @@
 /*
- * PS TELECOM Web Admin — theme tokens (Vyapar-style console).
+ * PS TELECOM Web Admin — NEUMORPHISM theme (v2.44.0).
+ *
+ * Soft-UI design: every surface shares ONE background tone and depth comes
+ * exclusively from paired light/dark shadows (light from the top-left, dark
+ * to the bottom-right). Raised = cards/buttons, Inset = inputs/chips.
  * Scoped under .psadmin so the mobile app's theme variables NEVER interact
  * with the admin design system. Dark mode = .psadmin.admin-dark.
  */
 
 .psadmin {
-  /* light (default) — Vyapar light gray canvas + white cards */
-  --psa-canvas: #f4f6f8;
-  --psa-card: #ffffff;
-  --psa-ink: #1f2937;
-  --psa-sub: #374151;
-  --psa-muted: #6b7280;
-  --psa-faint: #9ca3af;
-  --psa-border: #e8eaed;
-  --psa-field-border: #e1e4e8;
-  --psa-line: #f1f3f5;
-  --psa-hover: #f9fafb;
-  --psa-hover2: #f3f4f6;
-  --psa-row-hover: #fffbf9;
+  /* light — soft cool-gray canvas; card IS the canvas (neumorphic key rule) */
+  --psa-canvas: #e4e9f4;
+  --psa-card: #e4e9f4;
+  --psa-ink: #2b3446;
+  --psa-sub: #3d4759;
+  --psa-muted: #64708a;
+  --psa-faint: #8e99b3;
+  --psa-border: #d7def0;
+  --psa-field-border: #ced8ec;
+  --psa-line: #d5ddef;
+  --psa-hover: #dde3f2;
+  --psa-hover2: #d6dded;
+  --psa-row-hover: #dee5f4;
 
-  --psa-soft-orange: #fff1eb;
-  --psa-soft-orange-h: #ffe4d6;
-  --psa-soft-green: #f0fdf4;
-  --psa-soft-red: #fef2f2;
-  --psa-soft-amber: #fffbeb;
-  --psa-soft-slate: #f1f5f9;
-  --psa-amber-line: #fde68a;
-  --psa-amber-ink: #92400e;
-  --psa-green-line: #bbf7d0;
-  --psa-green-ink: #166534;
+  --psa-soft-orange: #ffe9dc;
+  --psa-soft-orange-h: #ffd8c2;
+  --psa-soft-green: #dcf3e4;
+  --psa-soft-red: #ffdede;
+  --psa-soft-amber: #fff0cf;
+  --psa-soft-slate: #d9e0ef;
+  --psa-amber-line: #f3dd9d;
+  --psa-amber-ink: #9a6d0b;
+  --psa-green-line: #b9e7c8;
+  --psa-green-ink: #1c6b3c;
+
+  /* neumorphic light source — top-left */
+  --psa-neu-dark: rgba(151, 165, 199, 0.55);
+  --psa-neu-light: rgba(255, 255, 255, 0.92);
+  --psa-neu-dark-sm: rgba(151, 165, 199, 0.42);
+  --psa-neu-light-sm: rgba(255, 255, 255, 0.8);
 
   color-scheme: light;
 }
 
 .psadmin.admin-dark {
-  /* dark — deep navy-slate console, same orange/green/red accents */
-  --psa-canvas: #0b1220;
-  --psa-card: #131c30;
-  --psa-ink: #edf1f7;
-  --psa-sub: #c3cdd9;
-  --psa-muted: #8e9aab;
-  --psa-faint: #64748b;
-  --psa-border: #243047;
-  --psa-field-border: #2a3750;
-  --psa-line: #1c2740;
-  --psa-hover: #182238;
-  --psa-hover2: #1d2942;
-  --psa-row-hover: #182238;
+  /* dark — deep graphite console, same orange/green/red accents */
+  --psa-canvas: #1f2430;
+  --psa-card: #1f2430;
+  --psa-ink: #e6ebf5;
+  --psa-sub: #c0c9dc;
+  --psa-muted: #8a95ad;
+  --psa-faint: #64708a;
+  --psa-border: #2b3344;
+  --psa-field-border: #303950;
+  --psa-line: #262d3d;
+  --psa-hover: #252c3b;
+  --psa-hover2: #2a3243;
+  --psa-row-hover: #252d3d;
 
-  --psa-soft-orange: #38251a;
-  --psa-soft-orange-h: #462d1f;
-  --psa-soft-green: #122a1c;
-  --psa-soft-red: #331b1b;
-  --psa-soft-amber: #2f2510;
-  --psa-soft-slate: #1d2942;
+  --psa-soft-orange: #34241a;
+  --psa-soft-orange-h: #402c1f;
+  --psa-soft-green: #13291d;
+  --psa-soft-red: #2e1a1a;
+  --psa-soft-amber: #2d2310;
+  --psa-soft-slate: #262e42;
   --psa-amber-line: #5c4514;
   --psa-amber-ink: #fbbf24;
   --psa-green-line: #1d4630;
   --psa-green-ink: #4ade80;
 
+  --psa-neu-dark: rgba(9, 12, 19, 0.62);
+  --psa-neu-light: rgba(255, 255, 255, 0.055);
+  --psa-neu-dark-sm: rgba(9, 12, 19, 0.5);
+  --psa-neu-light-sm: rgba(255, 255, 255, 0.04);
+
   color-scheme: dark;
+}
+
+/* ── neumorphic utilities ─────────────────────────────────────── */
+
+/* raised surface — cards, panels, floating chips */
+.psa-neu {
+  box-shadow:
+    5px 5px 12px var(--psa-neu-dark),
+    -5px -5px 12px var(--psa-neu-light);
+}
+.psa-neu-sm {
+  box-shadow:
+    3px 3px 7px var(--psa-neu-dark-sm),
+    -3px -3px 7px var(--psa-neu-light-sm);
+}
+/* pressed surface — fields, wells, toggles */
+.psa-neu-in {
+  box-shadow:
+    inset 3px 3px 7px var(--psa-neu-dark),
+    inset -3px -3px 7px var(--psa-neu-light);
+}
+.psa-neu-in-sm {
+  box-shadow:
+    inset 2px 2px 5px var(--psa-neu-dark-sm),
+    inset -2px -2px 5px var(--psa-neu-light-sm);
+}
+
+/* raised button that physically presses down on :active */
+.psa-btn-neu {
+  box-shadow:
+    3px 3px 7px var(--psa-neu-dark-sm),
+    -3px -3px 7px var(--psa-neu-light-sm);
+}
+.psa-btn-neu:active:not(:disabled) {
+  box-shadow:
+    inset 2px 2px 5px var(--psa-neu-dark-sm),
+    inset -2px -2px 5px var(--psa-neu-light-sm);
+}
+
+/* ── global neumorphic fields — EVERY input/select/textarea inside the
+      admin gets the inset "carved into the surface" look ─────────── */
+.psadmin input:not([type='checkbox']):not([type='radio']):not([type='range']),
+.psadmin select,
+.psadmin textarea {
+  background: var(--psa-card);
+  border-color: transparent;
+  box-shadow:
+    inset 2px 2px 5px var(--psa-neu-dark-sm),
+    inset -2px -2px 5px var(--psa-neu-light-sm);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.psadmin input:not([type='checkbox']):not([type='radio']):not([type='range']):focus,
+.psadmin select:focus,
+.psadmin textarea:focus {
+  border-color: #fa6e41;
+  box-shadow:
+    inset 2px 2px 5px var(--psa-neu-dark-sm),
+    inset -2px -2px 5px var(--psa-neu-light-sm),
+    0 0 0 3px rgba(250, 110, 65, 0.18);
 }
 
 /* Dark-mode tuning for elements that keep fixed accent colors */
 .psadmin.admin-dark .psa-shadow {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+/* native date/calendar pickers keep their dark glyph on dark surfaces */
+.psadmin.admin-dark input[type='date']::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
 }

@@ -17,7 +17,6 @@ const D: Record<string, Entry> = {
   'nav.products': { bn: 'স্টক / প্রোডাক্ট', en: 'Products / Stock', hi: 'स्टॉक / प्रोडक्ट' },
   'nav.bills': { bn: 'বিল / বিক্রি', en: 'Bills / Sales', hi: 'बिल / बिक्री' },
   'nav.due': { bn: 'বাকির খাতা', en: 'Due Book', hi: 'बाकी खाता' },
-  'nav.dueEntry': { bn: 'বাকি এন্ট্রি', en: 'Due Entry', hi: 'उधार एंट्री' },
   'nav.expenses': { bn: 'খরচ', en: 'Expenses', hi: 'खर्च' },
   'nav.reports': { bn: 'রিপোর্ট', en: 'Reports', hi: 'रिपोर्ट' },
   'nav.sync': { bn: 'ক্লাউড সিঙ্ক', en: 'Cloud Sync', hi: 'क्लाउड सिंक' },
@@ -32,6 +31,8 @@ const D: Record<string, Entry> = {
   'dash.todaySale': { bn: 'আজকের বিক্রি', en: "Today's Sale", hi: 'आज की बिक्री' },
   'dash.todayProfit': { bn: 'আজকের লাভ', en: "Today's Profit", hi: 'आज का लाभ' },
   'dash.toCollect': { bn: 'বাকি আদায়', en: 'To Collect', hi: 'वसूली बाकी' },
+  // v2.44.0 — combined To Collect sub line (bill dues + due entries together)
+  'dash.toCollectSub': { bn: '{bills} বিল · {entries} এন্ট্রি', en: '{bills} bills · {entries} entries', hi: '{bills} बिल · {entries} एंट्री' },
   'dash.totalItems': { bn: 'মোট আইটেম', en: 'Total Items', hi: 'कुल आइटम' },
   'dash.lowStock': { bn: 'কম স্টক', en: 'Low Stock', hi: 'कम स्टॉक' },
   'dash.saleOverview': { bn: 'শেষ ৭ দিনের বিক্রি', en: 'Last 7 Days Sale', hi: 'पिछले 7 दिन की बिक्री' },
@@ -167,9 +168,16 @@ const D: Record<string, Entry> = {
   'due.title': { bn: 'বাকির খাতা', en: 'Due Book', hi: 'बाकी खाता' },
   'due.totalDue': { bn: 'মোট বাকি', en: 'Total Due', hi: 'कुल बाकी' },
   'due.customers': { bn: 'কাস্টমার', en: 'Customers', hi: 'ग्राहक' },
-  'due.billsCount': { bn: 'টি বিলে বাকি', en: 'bills with due', hi: 'बिल में बाकी' },
   'due.noDue': { bn: 'কারো কোনো বাকি নেই 🎉', en: 'No dues from anyone 🎉', hi: 'किसी की कोई बाकी नहीं 🎉' },
   'due.remind': { bn: 'WhatsApp রিমাইন্ডার', en: 'WhatsApp reminder', hi: 'WhatsApp रिमाइंडर' },
+  // v2.44.0 — SMS/message reminder next to the WhatsApp one
+  'due.remindSms': { bn: 'SMS রিমাইন্ডার', en: 'SMS reminder', hi: 'SMS रिमाइंडर' },
+  // v2.44.0 — unified due book tabs (bill dues + due entries in ONE place)
+  'due.tabAll': { bn: 'সব বাকি', en: 'All Dues', hi: 'सभी बाकी' },
+  'due.tabEntries': { bn: 'বাকি এন্ট্রি', en: 'Due Entries', hi: 'उधार एंट्री' },
+  'due.tagBill': { bn: 'বিল', en: 'Bill', hi: 'बिल' },
+  'due.tagEntry': { bn: 'এন্ট্রি', en: 'Entry', hi: 'एंट्री' },
+  'due.itemsCount': { bn: 'আইটেমে বাকি', en: 'Open items', hi: 'आइटम में बाकी' },
   'due.tabList': { bn: 'বাকির তালিকা', en: 'Due List', hi: 'बाकी सूची' },
   'due.tabHistory': { bn: 'হিস্ট্রি', en: 'History', hi: 'इतिहास' },
   'due.historyTitle': { bn: 'বাকির হিস্ট্রি — দিন অনুযায়ী', en: 'Due History — day by day', hi: 'बाकी इतिहास — दिन के हिसाब से' },
@@ -186,12 +194,9 @@ const D: Record<string, Entry> = {
   'due.walkIn': { bn: 'নাম-নেই কাস্টমার', en: 'Unnamed customer', hi: 'अनाम ग्राहक' },
 
   // ── due entry (custom credit ledger, v2.23.0) ───────────────
-  'dentry.subtitle': { bn: 'কাস্টমারের বাকির হিসাব — ছবি, পরিমাণ ও কিস্তি সহ', en: 'Customer credit ledger — photos, amount & payment schedule', hi: 'ग्राहक उधार खाता — फोटो, राशि और किस्ती के साथ' },
   'dentry.add': { bn: 'নতুন বাকি', en: 'New Due', hi: 'नई उधार' },
   'dentry.edit': { bn: 'বাকি এডিট', en: 'Edit Due', hi: 'उधार बदलें' },
   'dentry.outstanding': { bn: 'মোট বাকি', en: 'Outstanding', hi: 'कुल बाकी' },
-  'dentry.collected': { bn: 'কালেক্ট হয়েছে', en: 'Collected', hi: 'वसूल हुआ' },
-  'dentry.entries': { bn: 'বাকি এন্ট্রি', en: 'Due entries', hi: 'उधार एंट्री' },
   'dentry.overdue': { bn: 'ওভারডিউ কিস্তি', en: 'Overdue installments', hi: 'ओवरड्यू किस्ती' },
   'dentry.customer': { bn: 'কাস্টমারের নাম', en: 'Customer name', hi: 'ग्राहक का नाम' },
   'dentry.mobile': { bn: 'মোবাইল নম্বর (ঐচ্ছিক)', en: 'Mobile number (optional)', hi: 'मोबाइल नंबर (वैकल्पिक)' },

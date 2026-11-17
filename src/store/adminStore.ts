@@ -18,6 +18,7 @@ export type AdminSection =
   | 'products'
   | 'bills'
   | 'due'
+  /** @deprecated v2.44.0 — merged into 'due' (kept only so migrate can map stale persisted values). */
   | 'dueentry'
   | 'expenses'
   | 'extraincome'
@@ -67,6 +68,10 @@ export const useAdminStore = create<AdminState>()(
       // back to the dashboard instead of rendering a blank content area.
       migrate: (persisted) => {
         const p = (persisted ?? {}) as Partial<AdminState>;
+        // v2.44.0 merged Due Entry INTO the Due Book — the standalone
+        // 'dueentry' section no longer exists; a stale persisted value maps
+        // to 'due' so nobody lands on a dead section. Anything else unknown
+        // falls back to the dashboard (no blank content area).
         const valid: AdminSection[] = [
           'dashboard',
           'cash',
@@ -74,7 +79,6 @@ export const useAdminStore = create<AdminState>()(
           'products',
           'bills',
           'due',
-          'dueentry',
           'expenses',
           'parties',
           'staff',
@@ -82,9 +86,15 @@ export const useAdminStore = create<AdminState>()(
           'billsettings',
           'sync',
         ];
+        const section =
+          p.section === 'dueentry'
+            ? 'due'
+            : valid.includes(p.section as AdminSection)
+              ? (p.section as AdminSection)
+              : 'dashboard';
         return {
           ...p,
-          section: valid.includes(p.section as AdminSection) ? (p.section as AdminSection) : 'dashboard',
+          section,
         } as AdminState;
       },
       partialize: (state) => ({ language: state.language, section: state.section, theme: state.theme }),

@@ -1,10 +1,11 @@
 'use client';
 
 /**
- * Admin UI kit — PS TELECOM Web Admin (Vyapar-style).
+ * Admin UI kit — PS TELECOM Web Admin (Neumorphic, v2.44.0).
  *
  * A deliberately SEPARATE design system from the mobile app:
- *  - light gray canvas (#F4F6F8), white cards, 12px radius, hairline borders
+ *  - soft-UI surfaces: card = canvas, depth via paired light/dark shadows
+ *    (raised cards/buttons · inset inputs — see admin.css .psa-neu*)
  *  - Vyapar orange (#FA6E41) primary, green = money-in, red = money-out
  *  - business tables, dialogs and toasts (no shadcn theme coupling —
  *    the app's dark/gold theme variables must never leak into the admin)
@@ -68,7 +69,7 @@ export function AdminCard({
 }) {
   return (
     <div
-      className={`bg-[var(--psa-card)] rounded-xl border border-[var(--psa-border)] shadow-[0_1px_2px_rgba(16,24,40,0.04)] ${className}`}
+      className={`bg-[var(--psa-card)] rounded-2xl psa-neu ${className}`}
     >
       {(title || action) && (
         <div className="flex items-center justify-between gap-3 px-4 sm:px-5 pt-4 pb-1">
@@ -111,11 +112,11 @@ export function StatCard({
     <button
       type="button"
       onClick={onClick}
-      className={`text-left bg-[var(--psa-card)] rounded-xl border border-[var(--psa-border)] shadow-[0_1px_2px_rgba(16,24,40,0.04)] p-4 flex items-start gap-3 transition-all ${onClick ? 'hover:border-[#FA6E41]/40 hover:shadow-[0_4px_12px_rgba(250,110,65,0.12)] cursor-pointer' : 'cursor-default'}`}
+      className={`text-left bg-[var(--psa-card)] rounded-2xl psa-neu p-4 flex items-start gap-3 transition-all ${onClick ? 'hover:shadow-[5px_5px_14px_var(--psa-neu-dark),-5px_-5px_14px_var(--psa-neu-light)] cursor-pointer active:psa-neu-in' : 'cursor-default'}`}
     >
       <span
         aria-hidden
-        className="shrink-0 w-10 h-10 rounded-lg flex items-center justify-center"
+        className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center psa-neu-in-sm"
         style={{ background: t.bg, color: t.fg }}
       >
         {icon}
@@ -148,12 +149,12 @@ export function PageHeader({ title, sub, action }: { title: string; sub?: string
 type BtnVariant = 'primary' | 'soft' | 'outline' | 'danger' | 'ghost' | 'green';
 
 const BTN_STYLES: Record<BtnVariant, string> = {
-  primary: 'bg-[#FA6E41] hover:bg-[#E8552C] text-white shadow-sm disabled:bg-[#FA6E41]/50',
-  soft: 'bg-[var(--psa-soft-orange)] hover:bg-[var(--psa-soft-orange-h)] text-[#E8552C]',
-  outline: 'border border-[var(--psa-border)] bg-[var(--psa-card)] hover:bg-[var(--psa-hover)] text-[var(--psa-sub)]',
-  danger: 'bg-[#DC2626] hover:bg-[#B91C1C] text-white',
+  primary: 'bg-[#FA6E41] hover:bg-[#E8552C] text-white shadow-[3px_3px_8px_var(--psa-neu-dark-sm),-3px_-3px_8px_var(--psa-neu-light-sm)] disabled:bg-[#FA6E41]/50',
+  soft: 'bg-[var(--psa-soft-orange)] hover:bg-[var(--psa-soft-orange-h)] text-[#E8552C] psa-btn-neu',
+  outline: 'border-0 bg-[var(--psa-card)] psa-btn-neu text-[var(--psa-sub)]',
+  danger: 'bg-[#DC2626] hover:bg-[#B91C1C] text-white shadow-[3px_3px_8px_var(--psa-neu-dark-sm),-3px_-3px_8px_var(--psa-neu-light-sm)]',
   ghost: 'text-[var(--psa-muted)] hover:bg-[var(--psa-hover2)] hover:text-[var(--psa-ink)]',
-  green: 'bg-[#16A34A] hover:bg-[#15803D] text-white',
+  green: 'bg-[#16A34A] hover:bg-[#15803D] text-white shadow-[3px_3px_8px_var(--psa-neu-dark-sm),-3px_-3px_8px_var(--psa-neu-light-sm)]',
 };
 
 export function Btn({
@@ -183,7 +184,7 @@ export function Btn({
 // ── form controls ───────────────────────────────────────────────
 
 const FIELD_BASE =
-  'w-full h-10 rounded-lg border border-[var(--psa-field-border)] bg-[var(--psa-card)] px-3 text-sm text-[var(--psa-ink)] placeholder:text-[var(--psa-faint)] outline-none focus:border-[#FA6E41] focus:ring-2 focus:ring-[#FA6E41]/15 transition-shadow';
+  'w-full h-10 rounded-lg border border-transparent bg-[var(--psa-card)] px-3 text-sm text-[var(--psa-ink)] placeholder:text-[var(--psa-faint)] outline-none focus:border-[#FA6E41] transition-shadow';
 
 export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   const { className = '', ...rest } = props;
@@ -230,8 +231,8 @@ export function Toggle({
       className="inline-flex items-center gap-2.5 select-none"
     >
       <span
-        className={`w-10 h-[22px] rounded-full p-0.5 transition-colors shrink-0 ${
-          checked ? 'bg-[#16A34A]' : 'bg-[#C7CDD6]'
+        className={`w-10 h-[22px] rounded-full p-0.5 transition-colors shrink-0 psa-neu-in-sm ${
+          checked ? 'bg-[#16A34A]' : 'bg-[var(--psa-soft-slate)]'
         }`}
       >
         <span
@@ -306,7 +307,7 @@ export function Modal({
     <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-[#0F172A]/45 backdrop-blur-[2px]" onClick={onClose} />
       <div
-        className={`relative bg-[var(--psa-card)] w-full ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'} rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[92vh] flex flex-col`}
+        className={`relative bg-[var(--psa-card)] w-full ${wide ? 'sm:max-w-2xl' : 'sm:max-w-md'} rounded-t-2xl sm:rounded-2xl shadow-[0_24px_60px_rgba(9,12,19,0.35),0_0_0_1px_var(--psa-border)] max-h-[92vh] flex flex-col`}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--psa-border)] shrink-0">
           <h3 className="text-base font-bold text-[var(--psa-ink)]">{title}</h3>
@@ -342,7 +343,7 @@ export function Spinner({ className = '' }: { className?: string }) {
 export function EmptyState({ icon, title, body }: { icon: ReactNode; title: string; body?: string }) {
   return (
     <div className="py-10 text-center">
-      <div className="mx-auto w-12 h-12 rounded-full bg-[var(--psa-soft-orange)] text-[#FA6E41] flex items-center justify-center mb-3">
+      <div className="mx-auto w-12 h-12 rounded-full bg-[var(--psa-soft-orange)] text-[#FA6E41] flex items-center justify-center mb-3 psa-neu-in-sm">
         {icon}
       </div>
       <p className="text-sm font-semibold text-[var(--psa-sub)]">{title}</p>
@@ -384,7 +385,7 @@ export function AdminToaster() {
         <div
           key={t.id}
           role="status"
-          className="flex items-center gap-2.5 bg-[var(--psa-card)] border border-[var(--psa-border)] shadow-[0_8px_24px_rgba(16,24,40,0.16)] rounded-xl px-4 py-2.5 text-sm font-medium text-[var(--psa-ink)]"
+          className="flex items-center gap-2.5 bg-[var(--psa-card)] psa-neu rounded-xl px-4 py-2.5 text-sm font-medium text-[var(--psa-ink)]"
         >
           <span
             aria-hidden

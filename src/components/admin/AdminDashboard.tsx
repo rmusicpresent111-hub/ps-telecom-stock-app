@@ -31,11 +31,12 @@ import {
   ResponsiveContainer,
   Cell,
 } from 'recharts';
-import { getDashboardOffline, getCashBookOffline } from '@/lib/offline-service';
+import { getDashboardOffline, getCashBookOffline, getDueEntriesOffline, dueEntryOutstanding } from '@/lib/offline-service';
 import type { CashBook } from '@/lib/offline-service';
+import type { DueEntry } from '@/lib/types';
 import { DEFAULT_USER_ID } from '@/lib/local-auth';
 import { useAdminStore } from '@/store/adminStore';
-import { ta } from '@/lib/admin-i18n';
+import { ta, taf } from '@/lib/admin-i18n';
 import { useAdminDataTick } from './useAdminData';
 import { loadCached } from './adminCache';
 import { AdminCard, StatCard, Badge, Btn, fmtMoney, EmptyState } from './admin-ui';
@@ -61,20 +62,24 @@ export default function AdminDashboard({
   const [data, setData] = useState<Dashboard | null>(null);
   const [bills, setBills] = useState<Bill[]>([]);
   const [cash, setCash] = useState<CashBook | null>(null);
+  // v2.44.0 — standalone due entries count into the To Collect total
+  const [dueEntries, setDueEntries] = useState<DueEntry[]>([]);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       const svc = await import('@/lib/offline-service');
-      const [d, b, c] = await Promise.all([
+      const [d, b, c, de] = await Promise.all([
         loadCached('admin:dashboard', () => svc.getDashboardOffline(DEFAULT_USER_ID)),
         svc.getBillsOffline(DEFAULT_USER_ID),
         loadCached('admin:cashbook', () => svc.getCashBookOffline(DEFAULT_USER_ID)),
+        svc.getDueEntriesOffline(DEFAULT_USER_ID),
       ]);
       if (!alive) return;
       setData(d);
       setBills(b);
       setCash(c);
+      setDueEntries(de);
     })().catch((err) => {
       // v2.35.0 audit: a transient IndexedDB failure must not become an
       // unhandled rejection with a permanent skeleton — the next tick retries.
@@ -98,6 +103,12 @@ export default function AdminDashboard({
   const { stats, saleOverview, stockOverview, lowStockProducts, todayProfit } = data;
   const maxCatValue = Math.max(1, ...stockOverview.map((s) => s.value));
   const recentBills = [...bills].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 6);
+
+  // v2.44.0 — To Collect sub line now splits the combined total: stats.totalDue
+  // ALREADY = bill dues + বাকি এন্ট্রি outstanding (v2.37.0), so the value needs
+  // no recomputation — adding entries again would double-count.
+  const billDueCount = bills.filter((b) => (b.dueAmount || 0) > 0.009).length;
+  const openEntryCount = dueEntries.filter((e) => dueEntryOutstanding(e) > 0.009).length;
 
   return (
     <div className="space-y-4">
@@ -144,7 +155,7 @@ export default function AdminDashboard({
           label={t('dash.toCollect')}
           value={fmtMoney(stats.totalDue)}
           tone="red"
-          sub={`${stats.dueBills} ${t('dash.items')}`}
+          sub={taf('dash.toCollectSub', lang, { bills: billDueCount, entries: openEntryCount })}
           onClick={() => goSection('due')}
         />
       </div>

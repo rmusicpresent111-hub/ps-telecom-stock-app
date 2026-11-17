@@ -16,7 +16,6 @@ import {
   Package,
   ReceiptText,
   Wallet,
-  WalletCards,
   Coins,
   Users,
   UserCog,
@@ -48,7 +47,6 @@ import AdminInvest from './AdminInvest';
 import AdminProducts from './AdminProducts';
 import AdminBills from './AdminBills';
 import AdminDueBook from './AdminDueBook';
-import AdminDueEntry from './AdminDueEntry';
 import AdminExpenses from './AdminExpenses';
 import AdminExtraIncome from './AdminExtraIncome';
 import AdminParties from './AdminParties';
@@ -57,6 +55,10 @@ import AdminReports from './AdminReports';
 import AdminBillSettings from './AdminBillSettings';
 import AdminSync from './AdminSync';
 
+/**
+ * v2.44.0 — Due Entry is no longer a standalone section: it lives INSIDE
+ * the Due Book as a tab. Old '#dueentry' deep links normalize to 'due'.
+ */
 const NAV: { key: AdminSection; icon: React.ComponentType<{ size?: number | string }>; navKey: string }[] = [
   { key: 'dashboard', icon: LayoutDashboard, navKey: 'nav.dashboard' },
   { key: 'cash', icon: Banknote, navKey: 'nav.cash' },
@@ -64,7 +66,6 @@ const NAV: { key: AdminSection; icon: React.ComponentType<{ size?: number | stri
   { key: 'products', icon: Package, navKey: 'nav.products' },
   { key: 'bills', icon: ReceiptText, navKey: 'nav.bills' },
   { key: 'due', icon: Wallet, navKey: 'nav.due' },
-  { key: 'dueentry', icon: WalletCards, navKey: 'nav.dueEntry' },
   { key: 'parties', icon: Users, navKey: 'nav.parties' },
   { key: 'expenses', icon: Coins, navKey: 'nav.expenses' },
   { key: 'extraincome', icon: PiggyBank, navKey: 'nav.extraincome' },
@@ -83,7 +84,7 @@ const SECTION_TITLE: Record<AdminSection, string> = {
   products: 'nav.products',
   bills: 'nav.bills',
   due: 'nav.due',
-  dueentry: 'nav.dueEntry',
+  dueentry: 'nav.due', // deprecated — never navigated to, mapped for the title lookup
   parties: 'nav.parties',
   expenses: 'nav.expenses',
   extraincome: 'nav.extraincome',
@@ -116,7 +117,7 @@ function SyncChip() {
             : ta('sync.off', lang);
 
   return (
-    <span className="inline-flex items-center gap-1.5 bg-[var(--psa-card)] border border-[var(--psa-border)] rounded-full pl-2 pr-3 py-1 text-[11px] font-semibold text-[var(--psa-sub)]">
+    <span className="inline-flex items-center gap-1.5 bg-[var(--psa-card)] psa-neu-in-sm rounded-full pl-2 pr-3 py-1 text-[11px] font-semibold text-[var(--psa-sub)]">
       <span className="relative flex w-2 h-2">
         <span className="absolute inline-flex w-full h-full rounded-full opacity-40 animate-ping" style={{ background: color }} />
         <span className="relative inline-flex w-2 h-2 rounded-full" style={{ background: color }} />
@@ -135,12 +136,12 @@ function LangSwitch({ compact = false }: { compact?: boolean }) {
     { v: 'hi', label: 'हिं' },
   ];
   return (
-    <div className={`inline-flex bg-[var(--psa-card)] border border-[var(--psa-border)] rounded-full overflow-hidden ${compact ? '' : ''}`}>
+    <div className={`inline-flex bg-[var(--psa-card)] psa-neu-in-sm rounded-full overflow-hidden ${compact ? '' : ''}`}>
       {opts.map((o) => (
         <button
           key={o.v}
           onClick={() => setLanguage(o.v)}
-          className={`px-2.5 py-1 text-[11px] font-bold transition-colors ${lang === o.v ? 'bg-[var(--psa-soft-orange)] text-[#E8552C]' : 'text-[var(--psa-muted)] hover:bg-[var(--psa-hover)]'}`}
+          className={`px-2.5 py-1 text-[11px] font-bold transition-colors ${lang === o.v ? 'bg-[var(--psa-soft-orange)] text-[#E8552C] rounded-full' : 'text-[var(--psa-muted)] hover:bg-[var(--psa-hover)]'}`}
         >
           {o.label}
         </button>
@@ -165,8 +166,8 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
               setSection(key);
               onNavigate?.();
             }}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors text-left ${
-              active ? 'bg-[var(--psa-soft-orange)] text-[#E8552C]' : 'text-[var(--psa-sub)] hover:bg-[var(--psa-hover2)]'
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all text-left ${
+              active ? 'bg-[var(--psa-soft-orange)] text-[#E8552C] psa-neu-sm' : 'text-[var(--psa-sub)] hover:bg-[var(--psa-hover2)]'
             }`}
             aria-current={active ? 'page' : undefined}
           >
@@ -189,7 +190,7 @@ function ThemeToggle() {
       onClick={toggleTheme}
       title={dark ? ta('theme.toLight', lang) : ta('theme.toDark', lang)}
       aria-label={dark ? ta('theme.toLight', lang) : ta('theme.toDark', lang)}
-      className="w-9 h-9 rounded-lg flex items-center justify-center border border-[var(--psa-border)] bg-[var(--psa-card)] text-[var(--psa-muted)] hover:text-[#E8552C] hover:border-[#FA6E41]/40 transition-colors"
+      className="w-9 h-9 rounded-full flex items-center justify-center bg-[var(--psa-card)] psa-btn-neu text-[var(--psa-muted)] hover:text-[#E8552C] transition-colors"
     >
       {dark ? <Sun size={17} /> : <Moon size={17} />}
     </button>
@@ -284,9 +285,10 @@ function AdminShellInner() {
     prefetchAdminData(); // dashboard + cash book load while the first paint happens
   }, []);
 
-  // deep-link: /admin#bills etc.
+  // deep-link: /admin#bills etc. ('#dueentry' → the merged Due Book)
   useEffect(() => {
-    const hash = window.location.hash.replace('#', '') as AdminSection;
+    const raw = window.location.hash.replace('#', '') as AdminSection;
+    const hash = raw === 'dueentry' ? 'due' : raw;
     if (SECTION_TITLE[hash]) setSection(hash);
   }, []);
 
@@ -303,12 +305,11 @@ function AdminShellInner() {
       >
         <SidebarInner onLogoClick={toggleSidebar} />
       </aside>
-
       {/* drawer menu — mobile always; desktop when the sidebar is collapsed */}
       {drawerOpen && (
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-[#0F172A]/45" onClick={() => setDrawerOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-72 bg-[var(--psa-card)] shadow-2xl flex flex-col">
+          <aside className="absolute inset-y-0 left-0 w-72 bg-[var(--psa-card)] shadow-[10px_0_30px_rgba(9,12,19,0.3)] flex flex-col">
             <button
               onClick={() => setDrawerOpen(false)}
               aria-label="Close menu"
@@ -357,7 +358,7 @@ function AdminShellInner() {
               onClick={() => openQuickSell()}
               title={ta('shell.newSale', lang)}
               aria-label={`${ta('shell.newSale', lang)}${cartCount ? ` (${cartCount})` : ''}`}
-              className="relative w-9 h-9 rounded-lg flex items-center justify-center border border-[var(--psa-border)] bg-[var(--psa-card)] text-[#E8552C] hover:bg-[var(--psa-soft-orange)] hover:border-[#FA6E41]/40 transition-colors shrink-0"
+              className="relative w-9 h-9 rounded-full flex items-center justify-center bg-[var(--psa-card)] psa-btn-neu text-[#E8552C] hover:text-[#FA6E41] transition-colors shrink-0"
             >
               <ShoppingCart size={17} />
               {cartCount > 0 && (
@@ -386,7 +387,6 @@ function AdminShellInner() {
           {section === 'products' && <AdminProducts onQuickSell={(p) => openQuickSell(p)} />}
           {section === 'bills' && <AdminBills />}
           {section === 'due' && <AdminDueBook />}
-          {section === 'dueentry' && <AdminDueEntry />}
           {section === 'parties' && <AdminParties />}
           {section === 'expenses' && <AdminExpenses />}
           {section === 'extraincome' && <AdminExtraIncome />}
@@ -410,7 +410,7 @@ function AdminShellInner() {
 
       {/* mobile bottom nav */}
       <nav
-        className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-[var(--psa-card)] border-t border-[var(--psa-border)] flex"
+        className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-[var(--psa-card)] border-t border-[var(--psa-border)] flex psa-shadow"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         aria-label="Admin mobile nav"
       >

@@ -1,13 +1,26 @@
 'use client';
 
 /**
- * Admin Due Book — customer-wise dues (same grouping rules as the app's screen):
- * summary cards, expandable customer groups, two-tap mark paid, WhatsApp reminder.
+ * Admin Due Book — THE single place for every due (v2.44.0 unified):
+ *
+ *  • সব বাকি / All Dues — one customer-wise list merging BILL dues and
+ *    standalone DUE ENTRIES; each group is expandable and carries both a
+ *    WhatsApp and a native SMS reminder.
+ *  • বাকি এন্ট্রি / Due Entries — the full due-entry manager embedded as a
+ *    tab (photos, schedules, installments) instead of a separate section.
+ *  • হিস্ট্রি / History — day-wise due growth + collection tally.
+ *
+ * The dashboard "To Collect" card links here and shows the SAME combined
+ * total, so nothing about dues lives outside this page anymore.
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, Users, BadgeIndianRupee, ReceiptText, MessageCircle, CheckCircle2, LineChart as LineChartIcon, Banknote, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
-import { getBillsOffline, markBillPaidOffline, getDueEntriesOffline } from '@/lib/offline-service';
+import {
+  ChevronDown, Users, BadgeIndianRupee, ReceiptText, MessageCircle, Smartphone,
+  CheckCircle2, LineChart as LineChartIcon, Banknote, ArrowDownLeft, ArrowUpRight,
+  HandCoins, CalendarClock, Plus,
+} from 'lucide-react';
+import { getBillsOffline, markBillPaidOffline, getDueEntriesOffline, recordDueEntryPaymentOffline, dueEntryOutstanding } from '@/lib/offline-service';
 import { buildDueDaily } from '@/lib/cash-daily';
 import type { DueEntry } from '@/lib/types';
 import { DEFAULT_USER_ID } from '@/lib/local-auth';
@@ -30,16 +43,35 @@ import {
 } from './admin-ui';
 import { PeriodToggle, windowPoints, DailyTallyChart, collapseFlat, type Period, type ChartPoint, type TallyRow } from './AdminHistoryKit';
 import type { Bill } from '@/lib/types';
+import AdminDueEntry from './AdminDueEntry';
+
+const EPS = 0.009;
+
+/** One open due item — either a bill's remaining due or a due entry. */
+interface UnifiedItem {
+  kind: 'bill' | 'entry';
+  id: string;
+  label: string;
+  date: string;
+  due: number;
+  total: number;
+  paid: number;
+  bill?: Bill;
+  entry?: DueEntry;
+}
 
 interface DueGroup {
   key: string;
   name: string;
   mobile: string;
-  bills: Bill[];
+  items: UnifiedItem[];
   totalDue: number;
 }
 
-type DueTab = 'list' | 'history';
+type DueTab = 'all' | 'entries' | 'history';
+
+/** Which kind of record the unified payment modal is settling. */
+type PayTarget = { item: UnifiedItem; partial: boolean; amount: string };
 
 export default function AdminDueBook() {
   const lang = useAdminStore((s) => s.language);
@@ -50,10 +82,12 @@ export default function AdminDueBook() {
   const [bills, setBills] = useState<Bill[]>([]);
   const [dueEntries, setDueEntries] = useState<DueEntry[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [payModal, setPayModal] = useState<{ bill: Bill; partial: boolean; amount: string } | null>(null);
+  const [payModal, setPayModal] = useState<PayTarget | null>(null);
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<DueTab>('list');
+  const [tab, setTab] = useState<DueTab>('all');
   const [period, setPeriod] = useState<Period>('30');
+  // v2.44.0 — "+ নতুন বাকি" pops the entry form inside the entries tab
+  const [formSignal, setFormSignal] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -63,7 +97,7 @@ export default function AdminDueBook() {
         getDueEntriesOffline(DEFAULT_USER_ID),
       ]);
       if (!alive) return;
-      setBills(rows.filter((b) => (b.dueAmount || 0) > 0.009));
+      setBills(rows.filter((b) => (b.dueAmount || 0) > EPS));
       setDueEntries(entries);
     })();
     return () => {
@@ -71,35 +105,75 @@ export default function AdminDueBook() {
     };
   }, [tick]);
 
+  // ── UNIFIED groups: bill dues + due entries per customer ──────────
   const groups = useMemo<DueGroup[]>(() => {
     const map = new Map<string, DueGroup>();
+    const touch = (key: string, name: string, mobile: string): DueGroup => {
+      const g = map.get(key) || { key, name, mobile, items: [], totalDue: 0 };
+      map.set(key, g);
+      return g;
+    };
     for (const b of bills) {
       const mobile = (b.customerMobile || '').trim();
       const name = (b.customerName || '').trim();
       const key = mobile || name || 'walk-in';
-      const g = map.get(key) || {
-        key,
-        name: name || (mobile ? mobile : t('due.walkIn')),
-        mobile,
-        bills: [],
-        totalDue: 0,
-      };
-      g.bills.push(b);
-      g.totalDue += b.dueAmount || 0;
-      map.set(key, g);
+      const g = touch(key, name || (mobile ? mobile : t('due.walkIn')), mobile);
+      g.items.push({
+        kind: 'bill',
+        id: b.id,
+        label: b.billNumber || '—',
+        date: b.date,
+        due: Number(b.dueAmount) || 0,
+        total: Number(b.total) || 0,
+        paid: Number(b.paidAmount) || 0,
+        bill: b,
+      });
+      g.totalDue += Number(b.dueAmount) || 0;
     }
+    for (const e of dueEntries) {
+      const out = dueEntryOutstanding(e);
+      if (out <= EPS) continue; // settled entries don't clutter the due list
+      const mobile = (e.customerMobile || '').trim();
+      const name = (e.customerName || '').trim();
+      const key = mobile || name || 'walk-in';
+      const g = touch(key, name || (mobile ? mobile : t('due.walkIn')), mobile);
+      g.items.push({
+        kind: 'entry',
+        id: e.id,
+        label: e.productName,
+        date: e.date,
+        due: out,
+        total: Number(e.amount) || 0,
+        paid: Number(e.paidAmount) || 0,
+        entry: e,
+      });
+      g.totalDue += out;
+    }
+    for (const g of map.values()) g.items.sort((a, b) => b.date.localeCompare(a.date));
     return [...map.values()].sort((a, b) => b.totalDue - a.totalDue);
-  }, [bills, t]);
+  }, [bills, dueEntries, t]);
 
   const totalDue = groups.reduce((s, g) => s + g.totalDue, 0);
+  const openItems = groups.reduce((s, g) => s + g.items.length, 0);
+  const overdueItems = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    let n = 0;
+    for (const e of dueEntries) {
+      if (dueEntryOutstanding(e) <= EPS) continue;
+      for (const it of e.schedule || []) {
+        if (it.dueDate && it.dueDate < today && it.amount - (it.paidAmount || 0) > EPS) n++;
+      }
+    }
+    return n;
+  }, [dueEntries]);
 
-  // ── history: day-wise due made/collected + running outstanding (v2.27) ──
+  // ── history: day-wise due made/collected + running outstanding ──
   const daily = useMemo(() => {
     const events: { date: string; dueMade: number; collected: number }[] = [];
     // open bill dues — remaining due attributed to the bill's own date;
     // day-end balance still converges EXACTLY to today's real outstanding
     for (const b of bills) {
-      if ((b.dueAmount || 0) > 0.009) events.push({ date: b.date, dueMade: Number(b.dueAmount) || 0, collected: 0 });
+      if ((b.dueAmount || 0) > EPS) events.push({ date: b.date, dueMade: Number(b.dueAmount) || 0, collected: 0 });
     }
     // standalone due entries — full amount on creation date
     for (const e of dueEntries) {
@@ -125,12 +199,23 @@ export default function AdminDueBook() {
     [daily]
   );
 
+  // ── actions ──────────────────────────────────────────────────────
+
+  const openNewEntry = () => {
+    setFormSignal((s) => s + 1);
+    setTab('entries');
+  };
+
   const doMarkPaid = async () => {
     if (!payModal) return;
     setBusy(true);
     try {
-      const amount = payModal.partial ? Number(payModal.amount) : undefined;
-      await markBillPaidOffline(payModal.bill.id, DEFAULT_USER_ID, amount);
+      const { item, partial, amount } = payModal;
+      if (item.kind === 'bill' && item.bill) {
+        await markBillPaidOffline(item.bill.id, DEFAULT_USER_ID, partial ? Number(amount) : undefined);
+      } else if (item.entry) {
+        await recordDueEntryPaymentOffline(item.entry.id, DEFAULT_USER_ID, partial ? Number(amount) : undefined);
+      }
       adminToast(t('bills.paidDone'));
       setPayModal(null);
     } catch (err) {
@@ -140,29 +225,57 @@ export default function AdminDueBook() {
     }
   };
 
-  const remind = (g: DueGroup) => {
+  /** WhatsApp reminder with the customer's combined due summary. */
+  const remindWhatsApp = (g: DueGroup) => {
     const phone = g.mobile.replace(/\D/g, '');
     if (!phone) {
       adminToast(t('due.walkIn'), 'info');
       return;
     }
     const msg = encodeURIComponent(
-      `${ta('due.remindMsg', lang)}\n\n${g.name} — ${fmtMoney(g.totalDue)} (${g.bills.length} ${ta('bills.billNo', lang)})`
+      `${ta('due.remindMsg', lang)}\n\n${g.name} — ${fmtMoney(g.totalDue)} (${g.items.length} ${ta('due.itemsCount', lang)})`
     );
     window.open(`https://wa.me/${phone}?text=${msg}`, '_blank');
   };
 
+  /** v2.44.0 — native SMS app reminder (sms: URI, Android/iOS). */
+  const remindSms = (g: DueGroup) => {
+    const phone = g.mobile.replace(/\D/g, '');
+    if (!phone) {
+      adminToast(t('due.walkIn'), 'info');
+      return;
+    }
+    const msg = encodeURIComponent(
+      `${ta('due.remindMsg', lang)}\n\n${g.name} — ${fmtMoney(g.totalDue)} (${g.items.length} ${ta('due.itemsCount', lang)})`
+    );
+    window.location.href = `sms:${phone}?body=${msg}`;
+  };
+
   return (
     <div>
-      <PageHeader title={t('due.title')} />
+      <PageHeader
+        title={t('due.title')}
+        action={
+          <Btn onClick={openNewEntry}>
+            <Plus size={16} /> {t('dentry.add')}
+          </Btn>
+        }
+      />
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+      {/* one combined snapshot — bills + due entries together */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
         <StatCard icon={<BadgeIndianRupee size={18} />} label={t('due.totalDue')} value={fmtMoney(totalDue)} tone="red" />
         <StatCard icon={<Users size={18} />} label={t('due.customers')} value={groups.length} tone="orange" />
-        <StatCard icon={<ReceiptText size={18} />} label={t('bills.billNo')} value={bills.length} tone="amber" />
+        <StatCard icon={<ReceiptText size={18} />} label={t('due.itemsCount')} value={openItems} tone="amber" />
+        <StatCard
+          icon={<CalendarClock size={18} />}
+          label={t('dentry.overdue')}
+          value={overdueItems}
+          tone={overdueItems > 0 ? 'amber' : 'slate'}
+        />
       </div>
 
-      {/* growth graph — daily due bars + outstanding line */}
+      {/* growth graph — daily due bars + outstanding line (both sources) */}
       <AdminCard
         title={
           <span className="inline-flex items-center gap-2">
@@ -194,7 +307,8 @@ export default function AdminDueBook() {
           <div className="flex items-center gap-1.5" role="tablist" aria-label={t('due.title')}>
             {(
               [
-                ['list', 'due.tabList'],
+                ['all', 'due.tabAll'],
+                ['entries', 'due.tabEntries'],
                 ['history', 'due.tabHistory'],
               ] as [DueTab, string][]
             ).map(([v, key]) => (
@@ -203,7 +317,11 @@ export default function AdminDueBook() {
                 type="button"
                 role="tab"
                 aria-selected={tab === v}
-                onClick={() => setTab(v)}
+                onClick={() => {
+                  setTab(v);
+                  // a manual tab visit must not auto-pop the entry form
+                  if (v === 'entries') setFormSignal(0);
+                }}
                 className={`h-8 px-3 rounded-lg text-xs font-bold transition-colors ${
                   tab === v
                     ? 'bg-[#FA6E41] text-white shadow-sm'
@@ -217,7 +335,12 @@ export default function AdminDueBook() {
         }
         bodyClass="!p-0"
       >
-        {tab === 'history' ? (
+        {/* ── বাকি এন্ট্রি tab: the full due-entry manager, embedded ── */}
+        {tab === 'entries' ? (
+          <div className="p-4 sm:p-5">
+            <AdminDueEntry formSignal={formSignal} />
+          </div>
+        ) : tab === 'history' ? (
           histRows.length === 0 ? (
             <div className="p-4 sm:p-5">
               <EmptyState icon={<CheckCircle2 size={22} />} title={t('due.noDue')} body={t('due.growthSub')} />
@@ -297,7 +420,7 @@ export default function AdminDueBook() {
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-[var(--psa-ink)] truncate">{g.name}</p>
                       <p className="text-[11px] text-[var(--psa-faint)]">
-                        {g.bills.length} {t('due.billsCount')}{g.mobile ? ` · ${g.mobile}` : ''}
+                        {g.items.length} {t('due.itemsCount')}{g.mobile ? ` · ${g.mobile}` : ''}
                       </p>
                     </div>
                   </div>
@@ -312,28 +435,49 @@ export default function AdminDueBook() {
 
                 {expanded === g.key && (
                   <div className="px-4 sm:px-5 pb-4 space-y-2">
-                    {g.bills.map((b) => (
-                      <div key={b.id} className="flex items-center justify-between gap-3 bg-[var(--psa-hover)] rounded-lg px-3 py-2.5">
+                    {g.items.map((item) => (
+                      <div
+                        key={`${item.kind}-${item.id}`}
+                        className="flex items-center justify-between gap-3 bg-[var(--psa-hover)] rounded-lg px-3 py-2.5"
+                      >
                         <div className="min-w-0">
-                          <p className="text-xs font-semibold text-[var(--psa-ink)]">
-                            {b.billNumber || '—'} · {fmtDate(b.date)}
+                          <p className="text-xs font-semibold text-[var(--psa-ink)] truncate">
+                            <Badge tone={item.kind === 'bill' ? 'orange' : 'slate'}>
+                              {item.kind === 'bill' ? t('due.tagBill') : t('due.tagEntry')}
+                            </Badge>{' '}
+                            {item.label} · {fmtDate(item.date)}
                           </p>
                           <p className="text-[11px] text-[var(--psa-faint)] tabular-nums">
-                            {t('bills.total')} {fmtMoney(b.total)} · {t('bills.paid')} {fmtMoney(b.paidAmount)}
+                            {t('bills.total')} {fmtMoney(item.total)} · {t('dentry.collectedOf')} {fmtMoney(item.paid)}
                           </p>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          <Badge tone="red">{fmtMoney(b.dueAmount)}</Badge>
-                          <Btn size="sm" variant="green" onClick={() => setPayModal({ bill: b, partial: false, amount: '' })}>
-                            {t('bills.markPaid')}
+                          <Badge tone="red">{fmtMoney(item.due)}</Badge>
+                          <Btn
+                            size="sm"
+                            variant="green"
+                            onClick={() => setPayModal({ item, partial: false, amount: '' })}
+                          >
+                            {item.kind === 'bill' ? (
+                              t('bills.markPaid')
+                            ) : (
+                              <>
+                                <HandCoins size={13} /> {t('dentry.recordPayment')}
+                              </>
+                            )}
                           </Btn>
                         </div>
                       </div>
                     ))}
                     {g.mobile && (
-                      <Btn size="sm" variant="outline" onClick={() => remind(g)}>
-                        <MessageCircle size={14} /> {t('due.remind')}
-                      </Btn>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <Btn size="sm" variant="outline" onClick={() => remindWhatsApp(g)}>
+                          <MessageCircle size={14} /> {t('due.remind')}
+                        </Btn>
+                        <Btn size="sm" variant="outline" onClick={() => remindSms(g)}>
+                          <Smartphone size={14} /> {t('due.remindSms')}
+                        </Btn>
+                      </div>
                     )}
                   </div>
                 )}
@@ -343,10 +487,11 @@ export default function AdminDueBook() {
         )}
       </AdminCard>
 
+      {/* unified payment modal — settles bills AND due entries */}
       <Modal
         open={!!payModal}
         onClose={() => setPayModal(null)}
-        title={t('bills.markPaid')}
+        title={payModal?.item.kind === 'bill' ? t('bills.markPaid') : t('dentry.recordPayment')}
         footer={
           <>
             <Btn variant="outline" onClick={() => setPayModal(null)}>
@@ -361,14 +506,16 @@ export default function AdminDueBook() {
         {payModal && (
           <div className="space-y-3.5">
             <p className="text-sm text-[var(--psa-sub)]">
-              {payModal.bill.billNumber} · {payModal.bill.customerName || t('due.walkIn')} — <b>{fmtMoney(payModal.bill.dueAmount)}</b>
+              {payModal.item.kind === 'bill' ? `${t('due.tagBill')} · ${payModal.item.label}` : `${t('due.tagEntry')} · ${payModal.item.label}`}
+              {' — '}
+              <b>{fmtMoney(payModal.item.due)}</b>
             </p>
             {!payModal.partial ? (
               <p className="text-xs text-[var(--psa-muted)] bg-[var(--psa-soft-green)] rounded-lg p-3">
-                {tf('bills.markPaidFull', { amount: fmtMoney(payModal.bill.dueAmount) })}
+                {tf('bills.markPaidFull', { amount: fmtMoney(payModal.item.due) })}
               </p>
             ) : (
-              <Field label={tf('bills.markPaidPartial', { amount: fmtMoney(payModal.bill.dueAmount) })}>
+              <Field label={tf('bills.markPaidPartial', { amount: fmtMoney(payModal.item.due) })}>
                 <TextInput
                   type="number"
                   min="0"

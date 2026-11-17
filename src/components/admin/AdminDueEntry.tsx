@@ -11,13 +11,17 @@
  *
  * Data rides the generic `dueEntries` D1 store — create/edit/delete/pay here
  * sync to the app's Due Book (বাকির খাতা → বাকি এন্ট্রি tab) on every device.
+ *
+ * v2.44.0 — rendered ONLY as a tab inside the Due Book (AdminDueBook):
+ *  • no own PageHeader / stat cards (the shell shows the combined numbers)
+ *  • formSignal > 0: the parent pops the "new due entry" form remotely
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  WalletCards, Plus, Pencil, Trash2, ImageUp, Upload, Loader2, HandCoins,
-  Check, ChevronDown, Users, BadgeIndianRupee, MessageCircle, Search,
-  CalendarClock, Package, CircleAlert,
+  Plus, Pencil, Trash2, ImageUp, Upload, Loader2, HandCoins,
+  Check, ChevronDown, Users, MessageCircle, Search,
+  CalendarClock, Package, CircleAlert, Smartphone,
 } from 'lucide-react';
 import {
   getDueEntriesOffline,
@@ -34,8 +38,8 @@ import { useAdminStore } from '@/store/adminStore';
 import { ta, taf } from '@/lib/admin-i18n';
 import { useAdminDataTick } from './useAdminData';
 import {
-  AdminCard, Badge, Btn, EmptyState, Field, Modal, PageHeader, SelectInput,
-  StatCard, TextArea, TextInput, adminToast, fmtMoney, fmtDate,
+  AdminCard, Badge, Btn, EmptyState, Field, Modal, SelectInput,
+  TextArea, TextInput, adminToast, fmtMoney, fmtDate,
 } from './admin-ui';
 import type { DueEntry, DueScheduleItem } from '@/lib/types';
 
@@ -166,7 +170,7 @@ function emptyForm(): FormState {
 
 type StatusFilter = 'all' | 'pending' | 'partial' | 'paid';
 
-export default function AdminDueEntry() {
+export default function AdminDueEntry({ formSignal = 0 }: { formSignal?: number }) {
   const lang = useAdminStore((s) => s.language);
   const t = (k: string) => ta(k, lang);
   const tick = useAdminDataTick();
@@ -208,25 +212,22 @@ export default function AdminDueEntry() {
      
   }, [entries]);
 
+  // v2.44.0 — parent (Due Book) can pop the "new due entry" form remotely
+  useEffect(() => {
+    if (formSignal > 0) openAdd();
+  }, [formSignal]);
+
   const stats = useMemo(() => {
-    let outstanding = 0;
-    let collected = 0;
     let overdue = 0;
     const today = localDateStr();
     for (const e of entries) {
-      outstanding += dueEntryOutstanding(e);
-      collected += Number(e.paidAmount) || 0;
       if (dueEntryOutstanding(e) > EPS) {
         for (const it of e.schedule || []) {
           if (it.dueDate && it.dueDate < today && it.amount - (it.paidAmount || 0) > EPS) overdue++;
         }
       }
     }
-    return {
-      outstanding: Math.round(outstanding * 100) / 100,
-      collected: Math.round(collected * 100) / 100,
-      overdue,
-    };
+    return { overdue };
   }, [entries]);
 
   const filtered = useMemo(() => {
@@ -446,6 +447,16 @@ export default function AdminDueEntry() {
     window.open(`https://wa.me/${phone}?text=${msg}`, '_blank');
   };
 
+  /** v2.44.0 — native SMS app reminder (sms: URI works on Android/iOS). */
+  const remindSms = (e: DueEntry) => {
+    const phone = (e.customerMobile || '').replace(/\D/g, '');
+    if (!phone) { adminToast(t('due.walkIn'), 'info'); return; }
+    const msg = encodeURIComponent(
+      `${ta('due.remindMsg', lang)}\n\n${e.customerName} — ${fmtMoney(dueEntryOutstanding(e))} (${e.productName})`
+    );
+    window.location.href = `sms:${phone}?body=${msg}`;
+  };
+
   const statusBadge = (e: DueEntry) => {
     const s = entryStatus(e);
     return s === 'paid'
@@ -459,23 +470,6 @@ export default function AdminDueEntry() {
 
   return (
     <div>
-      <PageHeader
-        title={t('nav.dueEntry')}
-        sub={t('dentry.subtitle')}
-        action={
-          <Btn onClick={openAdd}>
-            <Plus size={16} /> {t('dentry.add')}
-          </Btn>
-        }
-      />
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-        <StatCard icon={<BadgeIndianRupee size={18} />} label={t('dentry.outstanding')} value={fmtMoney(stats.outstanding)} tone="red" />
-        <StatCard icon={<HandCoins size={18} />} label={t('dentry.collected')} value={fmtMoney(stats.collected)} tone="green" />
-        <StatCard icon={<WalletCards size={18} />} label={t('dentry.entries')} value={entries.length} tone="orange" />
-        <StatCard icon={<CalendarClock size={18} />} label={t('dentry.overdue')} value={stats.overdue} tone={stats.overdue > 0 ? 'amber' : 'slate'} />
-      </div>
-
       <AdminCard bodyClass="!p-0">
         <div className="flex flex-col sm:flex-row gap-2 p-4 sm:p-5 pb-3">
           <div className="relative grow">
@@ -505,7 +499,7 @@ export default function AdminDueEntry() {
           <div className="p-10 text-center"><span className="inline-block w-6 h-6 rounded-full border-2 border-[#FA6E41]/25 border-t-[#FA6E41] animate-spin" role="status" /></div>
         ) : filtered.length === 0 ? (
           <EmptyState
-            icon={<WalletCards size={22} />}
+            icon={<Users size={22} />}
             title={entries.length === 0 ? t('dentry.noEntries') : t('c.noData')}
             body={entries.length === 0 ? t('dentry.noEntriesDesc') : undefined}
           />
@@ -744,9 +738,14 @@ export default function AdminDueEntry() {
           detail && (
             <>
               {detail.customerMobile && (
-                <Btn variant="outline" onClick={() => remind(detail)}>
-                  <MessageCircle size={15} /> {t('due.remind')}
-                </Btn>
+                <>
+                  <Btn variant="outline" onClick={() => remind(detail)}>
+                    <MessageCircle size={15} /> {t('due.remind')}
+                  </Btn>
+                  <Btn variant="outline" onClick={() => remindSms(detail)}>
+                    <Smartphone size={15} /> {t('due.remindSms')}
+                  </Btn>
+                </>
               )}
               <Btn variant="outline" onClick={() => { setDetail(null); openEdit(detail); }}>
                 <Pencil size={15} /> {t('c.edit')}
