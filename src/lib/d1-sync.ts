@@ -110,6 +110,7 @@ const SYNCED_STORES = [
   'investments', // v2.20.0 — Others Invest (admin Cash Book)
   'dueEntries',  // v2.23.0 — Due Entry (custom credit ledger, photos + kisti schedule)
   'extraIncome', // v2.38.0 — Extra Income (entries added directly to profit)
+  'duePlans',    // v2.46.0 — per-customer payment schedule (Due Book সব বাকি)
   'billingSettings',
 ] as const;
 type SyncStore = (typeof SYNCED_STORES)[number];

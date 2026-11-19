@@ -6,13 +6,15 @@
 
 import { openDB, type IDBPDatabase } from 'idb';
 import { Bill, BillingSettings } from './types';
-import type { DuePaymentRecord } from './types';
+import type { DuePaymentPlan, DuePaymentRecord } from './types';
 
 const DB_NAME = 'ps-telecom-offline';
 // v10 (v2.23.0): + 'dueEntries' — custom due ledger (customer/product photos,
 // amount, payment schedule/kisti) managed from the Admin Panel + Due Book.
 // v11 (v2.38.0): + 'extraIncome' — extra income entries added to profit.
-const DB_VERSION = 11;
+// v12 (v2.46.0): + 'duePlans' — per-customer payment schedule (kisti plan)
+// for the Due Book সব বাকি tab.
+const DB_VERSION = 12;
 
 // ============ LOCAL USERS (authentication) ============
 
@@ -268,6 +270,14 @@ export interface OfflineDBSchema {
     };
     indexes: { 'by-userId': string; 'by-dirty': number };
   };
+  duePlans: {
+    key: string;
+    value: DuePaymentPlan & {
+      _synced: number;
+      _dirty: number;
+    };
+    indexes: { 'by-userId': string; 'by-dirty': number };
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<OfflineDBSchema>> | null = null;
@@ -362,6 +372,13 @@ function getDB(): Promise<IDBPDatabase<OfflineDBSchema>> {
           const eiStore = db.createObjectStore('extraIncome', { keyPath: 'id' });
           eiStore.createIndex('by-userId', 'userId');
           eiStore.createIndex('by-dirty', '_dirty');
+        }
+        // v12 (v2.46.0): Due Payment Plans — kisti schedule per Due Book customer.
+        // Additive, safe on every existing device.
+        if (!db.objectStoreNames.contains('duePlans')) {
+          const planStore = db.createObjectStore('duePlans', { keyPath: 'id' });
+          planStore.createIndex('by-userId', 'userId');
+          planStore.createIndex('by-dirty', '_dirty');
         }
       },
     }).catch((err) => {
@@ -537,6 +554,19 @@ export const offlineExtraIncome = {
   delete: (id: string) => deleteItem('extraIncome', id),
 };
 
+// ============ DUE PAYMENT PLANS (v2.46.0 — kisti schedule per customer) ============
+
+export const offlineDuePlans = {
+  getAll: (userId: string) => getAllByUser('duePlans', userId),
+  getById: async (id: string) => {
+    const db = await getDB();
+    return db.get('duePlans', id);
+  },
+  put: (row: OfflineDBSchema['duePlans']['value']) => putItem('duePlans', row),
+  putBulk: (rows: OfflineDBSchema['duePlans']['value'][]) => putBulk('duePlans', rows),
+  delete: (id: string) => deleteItem('duePlans', id),
+};
+
 // ============ CLEAR ALL ============
 
 // NOTE: the legacy `syncMeta` / `pendingDeletes` object stores are kept in the
@@ -546,7 +576,7 @@ export const offlineExtraIncome = {
 export async function clearOfflineData(userId: string): Promise<void> {
   const db = await getDB();
   const userStores = (
-    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'syncMeta', 'pendingDeletes', 'serviceTransactions', 'bills', 'staffPayments', 'investments', 'dueEntries', 'extraIncome'] as const
+    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'syncMeta', 'pendingDeletes', 'serviceTransactions', 'bills', 'staffPayments', 'investments', 'dueEntries', 'extraIncome', 'duePlans'] as const
   ).filter(s => db.objectStoreNames.contains(s));
   const txStores: (keyof OfflineDBSchema)[] = [...userStores];
   if (db.objectStoreNames.contains('billingSettings')) txStores.push('billingSettings');

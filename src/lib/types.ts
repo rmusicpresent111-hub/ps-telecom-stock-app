@@ -240,6 +240,45 @@ export interface DueEntry {
   updatedAt: string;
 }
 
+// ============ DUE PAYMENT PLAN (পেমেন্ট শিডিউল — v2.46.0) ============
+
+/** How often a planned kisti repeats. */
+export type DuePlanFrequency = 'daily' | 'weekly' | 'monthly';
+
+/** One planned installment (শিডিউল কিস্তি) of a customer's payment plan. */
+export interface DuePlanItem {
+  id: string;
+  /** Planned collection date — YYYY-MM-DD (may be in the future, unlike ledger payments). */
+  dueDate: string;
+  /** Planned amount (₹). */
+  amount: number;
+  /** ISO timestamp — set when THIS installment has been collected. */
+  paidAt?: string;
+}
+
+/**
+ * A payment schedule (কিস্তি শিডিউল) for one Due Book customer GROUP —
+ * v2.46.0. Plans the outstanding due into dated installments; collecting a
+ * slot distributes the money across the group's open bills/entries through
+ * the normal payment services, so ledgers/cash reports stay consistent.
+ * Keyed by the SAME customer key the Due Book groups by (mobile || name ||
+ * 'walk-in'), one plan per group. Syncs via the generic D1 store `duePlans`.
+ * (Type ALIAS, not an interface — stripSync's Record<string, unknown>
+ * parameter relies on the implicit index signature only aliases get.)
+ */
+export type DuePaymentPlan = {
+  id: string;
+  userId: string;
+  customerKey: string;
+  customerName: string;
+  customerMobile: string;
+  frequency: DuePlanFrequency;
+  items: DuePlanItem[];
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 // ============ BILLING (e-Bill / Invoice) ============
 
 export type PaymentMethod = 'cash' | 'upi' | 'card' | 'due';

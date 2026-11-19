@@ -23,6 +23,7 @@ import {
   offlineStaffPayments,
   offlineInvestments,
   offlineDueEntries,
+  offlineDuePlans,
   offlineExtraIncome,
   clearOfflineData,
   getOfflineDB,
@@ -32,7 +33,7 @@ import { getLocalUser, updateLocalUser } from './local-auth';
 import { generateRecordId } from './id';
 import { notifyLocalDataChanged, notifyLocalWipe } from './sync-events';
 import { computeGst, normalizeGstMode, round2 } from './gst';
-import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillItem, BillingSettings, PaymentMethod, StaffPayment, StaffPaymentKind, Investment, DueEntry, DueScheduleItem, DuePaymentMethod, DuePaymentRecord, BillTemplateId, ExtraIncome } from './types';
+import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillItem, BillingSettings, PaymentMethod, StaffPayment, StaffPaymentKind, Investment, DueEntry, DueScheduleItem, DuePaymentMethod, DuePaymentRecord, DuePaymentPlan, DuePlanFrequency, DuePlanItem, BillTemplateId, ExtraIncome } from './types';
 import { BILL_TEMPLATE_IDS } from './bill-templates';
 
 // ============ DATE HELPERS (local timezone — never use UTC for business days) ============
@@ -92,7 +93,7 @@ function stripSync<T>(row: Record<string, unknown>): T {
  * the cloud on device B.
  */
 async function recordPendingDelete(
-  storeName: 'products' | 'expenses' | 'cashEntries' | 'serviceTransactions' | 'bills' | 'staffPayments' | 'investments' | 'dueEntries' | 'extraIncome',
+  storeName: 'products' | 'expenses' | 'cashEntries' | 'serviceTransactions' | 'bills' | 'staffPayments' | 'investments' | 'dueEntries' | 'duePlans' | 'extraIncome',
   itemId: string,
   userId: string
 ): Promise<void> {
@@ -1175,6 +1176,115 @@ export async function deleteDueEntryOffline(id: string, userId: string): Promise
   if (!row || row.userId !== userId) throw new Error('Due entry not found');
   await offlineDueEntries.delete(id);
   await recordPendingDelete('dueEntries', id, userId);
+  notifyLocalDataChanged(userId);
+  return { success: true };
+}
+
+// ============ DUE PAYMENT PLANS (v2.46.0 — পেমেন্ট শিডিউল per customer) ============
+
+/** Coerce/repair a raw plan-items array (save/import funnel here): clamps
+ *  amounts, generates missing ids, drops empty rows, sorts by date. */
+function normalizePlanItems(raw: unknown): DuePlanItem[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((it, ix): DuePlanItem => {
+      const r = (it && typeof it === 'object' ? it : {}) as Record<string, unknown>;
+      const amount = round2(Math.max(0, Number(r.amount) || 0));
+      const item: DuePlanItem = {
+        id: typeof r.id === 'string' && r.id ? r.id : `p${ix}-${Date.now().toString(36)}-${ix}`,
+        dueDate: typeof r.dueDate === 'string' ? r.dueDate.slice(0, 10) : '',
+        amount,
+      };
+      const paidAt = typeof r.paidAt === 'string' && r.paidAt && Number.isFinite(Date.parse(r.paidAt)) ? r.paidAt : '';
+      if (amount > DUE_EPS && paidAt) item.paidAt = paidAt;
+      return item;
+    })
+    .filter(it => it.amount > DUE_EPS)
+    .sort((a, b) => (a.dueDate || '9999-99-99').localeCompare(b.dueDate || '9999-99-99'));
+}
+
+export async function getDuePlansOffline(userId: string): Promise<DuePaymentPlan[]> {
+  const rows = await offlineDuePlans.getAll(userId);
+  return rows
+    .map(r => stripSync<DuePaymentPlan>(r))
+    .map(p => ({ ...p, items: normalizePlanItems(p.items) }))
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+}
+
+/** Create or replace ONE plan per customer key (the Due Book group key). */
+export async function saveDuePlanOffline(data: {
+  userId: string;
+  /** Existing plan id — updates that plan instead of creating a new one. */
+  id?: string;
+  /** The Due Book group key (mobile || name || 'walk-in'); one plan per key. */
+  customerKey: string;
+  customerName?: string;
+  customerMobile?: string;
+  frequency: DuePlanFrequency;
+  /** Full replacement rows; per-item paidAt progress carries over by id. */
+  items: { id?: string; dueDate: string; amount: number; paidAt?: string }[];
+  note?: string;
+}): Promise<{ plan: DuePaymentPlan }> {
+  const customerKey = (data.customerKey || '').trim();
+  if (!customerKey) throw new Error('Customer key is required');
+  const freq: DuePlanFrequency = data.frequency === 'daily' || data.frequency === 'weekly' ? data.frequency : 'monthly';
+  const items = normalizePlanItems(data.items);
+  if (items.length === 0) throw new Error('At least one installment is required');
+  for (const it of items) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(it.dueDate)) throw new Error('Every installment needs a date');
+  }
+
+  const now = new Date().toISOString();
+  let row: OfflineDBSchema['duePlans']['value'];
+  if (data.id) {
+    const existing = await offlineDuePlans.getById(data.id);
+    if (!existing || existing.userId !== data.userId) throw new Error('Payment plan not found');
+    // Carry each previously-collected installment's progress over by id
+    // (same rule the due-entry schedule editor uses).
+    const prevById = new Map(normalizePlanItems(existing.items).map(it => [it.id, it] as const));
+    const carried = items.map(it => {
+      const prev = prevById.get(it.id);
+      return prev?.paidAt ? { ...it, paidAt: prev.paidAt } : it;
+    });
+    row = {
+      ...(existing as OfflineDBSchema['duePlans']['value']),
+      customerKey,
+      customerName: (data.customerName ?? existing.customerName ?? '').trim(),
+      customerMobile: (data.customerMobile ?? existing.customerMobile ?? '').trim(),
+      frequency: freq,
+      items: carried,
+      ...(data.note !== undefined ? { note: (data.note || '').trim().slice(0, 200) } : {}),
+      updatedAt: now,
+      _synced: Date.now(),
+      _dirty: Date.now(),
+    };
+  } else {
+    row = {
+      id: generateRecordId(),
+      userId: data.userId,
+      customerKey,
+      customerName: (data.customerName || '').trim(),
+      customerMobile: (data.customerMobile || '').trim(),
+      frequency: freq,
+      items,
+      ...(data.note && data.note.trim() ? { note: data.note.trim().slice(0, 200) } : {}),
+      createdAt: now,
+      updatedAt: now,
+      _synced: Date.now(),
+      _dirty: Date.now(),
+    };
+  }
+
+  await offlineDuePlans.put(row);
+  notifyLocalDataChanged(data.userId);
+  return { plan: stripSync<DuePaymentPlan>(row) };
+}
+
+export async function deleteDuePlanOffline(id: string, userId: string): Promise<{ success: boolean }> {
+  const row = await offlineDuePlans.getById(id);
+  if (!row || row.userId !== userId) throw new Error('Payment plan not found');
+  await offlineDuePlans.delete(id);
+  await recordPendingDelete('duePlans', id, userId);
   notifyLocalDataChanged(userId);
   return { success: true };
 }
@@ -2783,7 +2893,7 @@ export async function markBillPaidOffline(
 // ============ BACKUP (Local) ============
 
 export async function exportBackupOffline(userId: string) {
-  const [localCategories, localProducts, localTransactions, localExpenses, localCashEntries, localServiceTxns, localBills, localStaffPayments, localInvestments, localDueEntries, localExtraIncome, billingSettings] = await Promise.all([
+  const [localCategories, localProducts, localTransactions, localExpenses, localCashEntries, localServiceTxns, localBills, localStaffPayments, localInvestments, localDueEntries, localExtraIncome, localDuePlans, billingSettings] = await Promise.all([
     offlineCategories.getAll(userId),
     offlineProducts.getAll(userId),
     offlineTransactions.getAll(userId),
@@ -2795,6 +2905,7 @@ export async function exportBackupOffline(userId: string) {
     offlineInvestments.getAll(userId),
     offlineDueEntries.getAll(userId),
     offlineExtraIncome.getAll(userId),
+    offlineDuePlans.getAll(userId),
     getBillingSettingsOffline(userId),
   ]);
 
@@ -2812,6 +2923,7 @@ export async function exportBackupOffline(userId: string) {
     investments: localInvestments.map(i => stripSync(i)),
     dueEntries: localDueEntries.map(d => stripSync(d)),
     extraIncome: localExtraIncome.map(e => stripSync(e)),
+    duePlans: localDuePlans.map(p => stripSync(p)),
     billingSettings,
     exportedAt: new Date().toISOString(),
   };
@@ -2829,6 +2941,8 @@ export async function importBackupOffline(userId: string, backupData: {
   investments?: unknown[];
   dueEntries?: unknown[];
   extraIncome?: unknown[];
+  /** v2.46.0 — payment schedules; optional (older backups lack it). */
+  duePlans?: unknown[];
   billingSettings?: unknown;
 }) {
   const now = Date.now();
@@ -2885,11 +2999,12 @@ export async function importBackupOffline(userId: string, backupData: {
   const investments = asRows(backupData.investments || []);
   const dueEntries = asRows(backupData.dueEntries || []);
   const extraIncome = asRows(backupData.extraIncome || []);
+  const duePlans = asRows(backupData.duePlans || []);
   const billingSettings = (backupData.billingSettings && typeof backupData.billingSettings === 'object')
     ? backupData.billingSettings as Record<string, unknown>
     : null;
 
-  if (categories.length === 0 && products.length === 0 && transactions.length === 0 && expenses.length === 0 && cashEntries.length === 0 && serviceTransactions.length === 0 && bills.length === 0 && staffPayments.length === 0 && investments.length === 0 && dueEntries.length === 0 && extraIncome.length === 0 && !billingSettings) {
+  if (categories.length === 0 && products.length === 0 && transactions.length === 0 && expenses.length === 0 && cashEntries.length === 0 && serviceTransactions.length === 0 && bills.length === 0 && staffPayments.length === 0 && investments.length === 0 && dueEntries.length === 0 && extraIncome.length === 0 && duePlans.length === 0 && !billingSettings) {
     // A settings-only backup (fresh shop, no rows yet) is legitimate — only
     // reject a file that has literally nothing usable.
     throw new Error('Backup file contains no valid data');
@@ -3020,16 +3135,37 @@ export async function importBackupOffline(userId: string, backupData: {
       _dirty: Date.now(),
     }, { amount: 'num' }) as OfflineDBSchema['extraIncome']['value']
   );
+  const planRows: OfflineDBSchema['duePlans']['value'][] = duePlans.map(
+    (row) => ({
+      ...fixDates(row),
+      userId,
+      // customerKey is the group identity — never restore an empty one.
+      customerKey: typeof row.customerKey === 'string' && row.customerKey.trim()
+        ? row.customerKey.trim()
+        : (typeof row.customerMobile === 'string' && row.customerMobile.trim()
+          ? row.customerMobile.trim()
+          : (typeof row.customerName === 'string' && row.customerName.trim() ? row.customerName.trim() : 'walk-in')),
+      customerName: typeof row.customerName === 'string' ? row.customerName : '',
+      customerMobile: typeof row.customerMobile === 'string' ? row.customerMobile : '',
+      frequency: row.frequency === 'daily' || row.frequency === 'weekly' ? row.frequency : 'monthly',
+      items: normalizePlanItems(row.items),
+      ...(typeof row.note === 'string' && row.note ? { note: row.note } : {}),
+      createdAt: isoStr(row.createdAt) || nowIso,
+      updatedAt: nowIso,
+      _synced: now,
+      _dirty: Date.now(),
+    }) as unknown as OfflineDBSchema['duePlans']['value']
+  );
 
   // 2. One readwrite transaction across ALL stores: wipe this user's rows,
   //    write the imported ones, swap billingSettings — all or nothing.
   const db = await getOfflineDB();
   const tx = db.transaction(
-    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills', 'staffPayments', 'investments', 'dueEntries', 'extraIncome', 'billingSettings'],
+    ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills', 'staffPayments', 'investments', 'dueEntries', 'extraIncome', 'duePlans', 'billingSettings'],
     'readwrite'
   );
 
-  for (const store of ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills', 'staffPayments', 'investments', 'dueEntries', 'extraIncome'] as const) {
+  for (const store of ['categories', 'products', 'transactions', 'expenses', 'cashEntries', 'serviceTransactions', 'bills', 'staffPayments', 'investments', 'dueEntries', 'extraIncome', 'duePlans'] as const) {
     const os = tx.objectStore(store);
     const keys = await os.index('by-userId').getAllKeys(userId);
     for (const key of keys) void os.delete(key);
@@ -3046,6 +3182,7 @@ export async function importBackupOffline(userId: string, backupData: {
   for (const row of invRows) void tx.objectStore('investments').put(row);
   for (const row of dueRows) void tx.objectStore('dueEntries').put(row);
   for (const row of eiRows) void tx.objectStore('extraIncome').put(row);
+  for (const row of planRows) void tx.objectStore('duePlans').put(row);
 
   if (billingSettings) {
     void tx.objectStore('billingSettings').put({
