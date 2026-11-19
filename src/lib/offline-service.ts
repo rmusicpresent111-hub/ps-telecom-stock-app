@@ -32,7 +32,7 @@ import { getLocalUser, updateLocalUser } from './local-auth';
 import { generateRecordId } from './id';
 import { notifyLocalDataChanged, notifyLocalWipe } from './sync-events';
 import { computeGst, normalizeGstMode, round2 } from './gst';
-import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillItem, BillingSettings, PaymentMethod, StaffPayment, StaffPaymentKind, Investment, DueEntry, DueScheduleItem, BillTemplateId, ExtraIncome } from './types';
+import { Category, Product, Transaction, Expense, CashEntry, ServiceTransaction, ServiceCategoryType, Bill, BillItem, BillingSettings, PaymentMethod, StaffPayment, StaffPaymentKind, Investment, DueEntry, DueScheduleItem, DuePaymentMethod, DuePaymentRecord, BillTemplateId, ExtraIncome } from './types';
 import { BILL_TEMPLATE_IDS } from './bill-templates';
 
 // ============ DATE HELPERS (local timezone — never use UTC for business days) ============
@@ -1214,16 +1214,51 @@ export async function deleteExtraIncomeOffline(id: string, userId: string): Prom
 }
 
 /**
+ * v2.45.0 — normalize the "when was the money taken" timestamp for an
+ * installment payment. Shopkeepers back-fill yesterday's collections, so a
+ * past date/time is fine — but a future one would poison the day-wise due
+ * history, so it is rejected. Returns an ISO string.
+ */
+function resolveDuePaymentAt(at?: string): string {
+  if (!at || !at.trim()) return new Date().toISOString();
+  const t = Date.parse(at);
+  if (!Number.isFinite(t)) throw new Error('Invalid payment date/time');
+  if (t > Date.now() + 60_000) throw new Error('Payment date/time cannot be in the future');
+  return new Date(t).toISOString();
+}
+
+/**
+ * v2.45.0 — append one installment payment to the due's payment ledger
+ * (`duePayments`). Append-only: history rows are never rewritten, so the
+ * timeline always reflects exactly what was collected and when.
+ */
+function appendDuePaymentLedger(
+  row: { duePayments?: DuePaymentRecord[] },
+  payment: { amount: number; at: string; method?: DuePaymentMethod; note?: string }
+): DuePaymentRecord[] {
+  const rec: DuePaymentRecord = {
+    id: generateRecordId(),
+    amount: payment.amount,
+    at: payment.at,
+    method: payment.method || 'cash',
+    ...(payment.note && payment.note.trim() ? { note: payment.note.trim().slice(0, 200) } : {}),
+  };
+  return [...(row.duePayments || []), rec];
+}
+
+/**
  * Record a collection against a due entry.
  *  - `opts.scheduleItemId` → pay THAT installment's remaining balance first.
  *  - otherwise            → fill unpaid installments chronologically.
  * Any leftover (advance payment / no fixed schedule) lands on the entry itself.
+ * v2.45.0 — every collection also appends to the entry's `duePayments`
+ * ledger (amount + date + time + method + note).
  */
 export async function recordDueEntryPaymentOffline(
   id: string,
   userId: string,
   amount?: number,
-  opts?: { scheduleItemId?: string }
+  opts?: { scheduleItemId?: string; at?: string; method?: DuePaymentMethod; note?: string }
 ): Promise<{ dueEntry: DueEntry }> {
   const row = await offlineDueEntries.getById(id);
   if (!row || row.userId !== userId) throw new Error('Due entry not found');
@@ -1275,10 +1310,13 @@ export async function recordDueEntryPaymentOffline(
     }
   }
 
+  const payAt = resolveDuePaymentAt(opts?.at);
+
   const next: OfflineDBSchema['dueEntries']['value'] = {
     ...row,
     paidAmount: round2(paid + pay),
     schedule,
+    duePayments: appendDuePaymentLedger(row, { amount: pay, at: payAt, method: opts?.method, note: opts?.note }),
     updatedAt: new Date().toISOString(),
   };
 
@@ -2671,6 +2709,7 @@ export async function markBillPaidOffline(
   id: string,
   userId: string,
   amount?: number,
+  opts?: { at?: string; method?: DuePaymentMethod; note?: string }
 ): Promise<{ bill: Bill }> {
   const db = await getOfflineDB();
   const row = await db.get('bills', id);
@@ -2682,6 +2721,9 @@ export async function markBillPaidOffline(
 
   let pay = amount === undefined ? due : round2(Math.max(0, Number(amount) || 0));
   pay = Math.min(pay, due);
+  if (pay <= 0) throw new Error('Payment amount must be greater than 0');
+
+  const payAt = resolveDuePaymentAt(opts?.at);
 
   const paidAmount = round2(Math.min(total, (Number(row.paidAmount) || 0) + pay));
   const dueAmount = round2(total - paidAmount);
@@ -2690,6 +2732,9 @@ export async function markBillPaidOffline(
     ...row,
     paidAmount,
     dueAmount,
+    // v2.45.0 — installment ledger: this collection is appended with the
+    // exact date+time (+method/note) it was taken.
+    duePayments: appendDuePaymentLedger(row, { amount: pay, at: payAt, method: opts?.method, note: opts?.note }),
     // A full settlement makes the payment obvious in every list/report.
     paymentMethod: dueAmount === 0 && row.paymentMethod === 'due' ? 'cash' : row.paymentMethod,
     updatedAt: new Date().toISOString(),

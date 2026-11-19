@@ -185,6 +185,29 @@ export interface DueScheduleItem {
   paidAt?: string;
 }
 
+/** How an installment was collected — printed as a badge in the payment
+ *  history timeline. 'bank' covers net-banking / NEFT style transfers. */
+export type DuePaymentMethod = 'cash' | 'upi' | 'card' | 'bank';
+
+/**
+ * ONE collected installment (কিস্তি পেমেন্ট) against a due — v2.45.0.
+ * An append-only ledger row: every partial/full collection against a bill
+ * due or a due entry lands here with the exact date+time the money was
+ * taken (shopkeepers back-fill yesterday's collections, so `at` is freely
+ * editable at record time — never in the future).
+ * Additive field on Bill/DueEntry — old synced rows decode untouched.
+ */
+export interface DuePaymentRecord {
+  id: string;
+  /** Collected amount (₹). */
+  amount: number;
+  /** ISO datetime — when the money was actually taken. */
+  at: string;
+  method: DuePaymentMethod;
+  /** Optional one-line note (e.g. "2nd kisti", "by brother"). */
+  note?: string;
+}
+
 /**
  * A standalone due entry created from the Admin Panel / Due Book —
  * customer buys on credit with CUSTOMER + PRODUCT photos, an amount and
@@ -207,6 +230,9 @@ export interface DueEntry {
   paidAmount: number;
   /** Payment schedule (কিস্তি) — may be empty when there is no fixed plan. */
   schedule: DueScheduleItem[];
+  /** v2.45.0 — append-only installment payment ledger (amount+date+time+method).
+   *  Legacy rows (pre-2.45) lack it → treated as empty. */
+  duePayments?: DuePaymentRecord[];
   note: string;
   /** YYYY-MM-DD (local) — the day the credit was given. */
   date: string;
@@ -286,6 +312,11 @@ export interface Bill {
   /** v2.43.0 — unique 10-digit Order ID generated per bill (user spec).
    *  Additive optional field — pre-2.43 bills fall back to a stable id hash on print. */
   orderId?: string;
+  /** v2.45.0 — append-only installment payment ledger for THIS bill's due
+   *  (amount + date + time + method per collection). Bills previously had
+   *  no payment history at all. Additive optional field — old synced rows
+   *  decode untouched. */
+  duePayments?: DuePaymentRecord[];
   shopSnapshot: { name: string; address: string; phone: string; gstNumber: string; proprietorName?: string };
   date: string;            // YYYY-MM-DD (local)
   createdAt: string;

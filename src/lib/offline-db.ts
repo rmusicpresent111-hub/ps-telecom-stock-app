@@ -6,6 +6,7 @@
 
 import { openDB, type IDBPDatabase } from 'idb';
 import { Bill, BillingSettings } from './types';
+import type { DuePaymentRecord } from './types';
 
 const DB_NAME = 'ps-telecom-offline';
 // v10 (v2.23.0): + 'dueEntries' — custom due ledger (customer/product photos,
@@ -240,6 +241,8 @@ export interface OfflineDBSchema {
         paidAmount: number;
         paidAt?: string;
       }[];                 // payment schedule (kisti) — may be empty
+      /** v2.45.0 — append-only installment payment ledger (amount+date+time+method). */
+      duePayments?: DuePaymentRecord[];
       note: string;
       date: string;        // YYYY-MM-DD (local) — credit given on
       createdAt: string;

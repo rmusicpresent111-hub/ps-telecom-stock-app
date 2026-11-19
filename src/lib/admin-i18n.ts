@@ -193,6 +193,28 @@ const D: Record<string, Entry> = {
   'due.remindMsg': { bn: 'নমস্কার! আপনার কিছু বাকি টাকা আছে — অনুগ্রহ করে পরিশোধ করুন। 🙏', en: 'Hello! You have a pending due — please settle it when convenient. 🙏', hi: 'नमस्ते! आपकी कुछ बाकी राशि है — कृपया भुगतान करें। 🙏' },
   'due.walkIn': { bn: 'নাম-নেই কাস্টমার', en: 'Unnamed customer', hi: 'अनाम ग्राहक' },
 
+  // ── installment payments (কিস্তি পেমেন্ট, v2.45.0) ─────────────
+  'due.payTitle': { bn: 'কিস্তি পেমেন্ট নিন', en: 'Take installment payment', hi: 'किस्ती भुगतान लें' },
+  'due.payAmount': { bn: 'কিস্তির পরিমাণ (₹)', en: 'Installment amount (₹)', hi: 'किस्ती राशि (₹)' },
+  'due.payDate': { bn: 'তারিখ', en: 'Date', hi: 'तारीख' },
+  'due.payTime': { bn: 'সময়', en: 'Time', hi: 'समय' },
+  'due.payMethod': { bn: 'মাধ্যম', en: 'Method', hi: 'माध्यम' },
+  'due.payNote': { bn: 'নোট (ঐচ্ছিক)', en: 'Note (optional)', hi: 'नोट (वैकल्पिक)' },
+  'due.payRemaining': { bn: 'এই কিস্তির পরে বাকি', en: 'Remaining after this installment', hi: 'इस किस्ती के बाद बाकी' },
+  'due.payHistory': { bn: 'কিস্তি ইতিহাস', en: 'Installment history', hi: 'किस्ती इतिहास' },
+  'due.payNoHistory': { bn: 'এখনও কোনো কিস্তি নেওয়া হয়নি', en: 'No installments collected yet', hi: 'अभी कोई किस्ती नहीं ली गई' },
+  'due.payLast': { bn: 'শেষ কিস্তি', en: 'Last installment', hi: 'आख़िरी किस्ती' },
+  'due.paySaved': { bn: 'কিস্তি জমা হয়েছে', en: 'Installment recorded', hi: 'किस्ती दर्ज हुई' },
+  'due.payNeedAmount': { bn: 'সঠিক পরিমাণ দিন', en: 'Enter a valid amount', hi: 'सही राशि दर्ज करें' },
+  'due.payTooMuch': { bn: 'পরিমাণ মোট বাকির বেশি হতে পারে না', en: 'Amount cannot exceed the total due', hi: 'राशि कुल बाकी से ज़्यादा नहीं' },
+  'due.payNeedWhen': { bn: 'তারিখ ও সময় দিন', en: 'Pick date and time', hi: 'तारीख और समय चुनें' },
+  'due.payFuture': { bn: 'ভবিষ্যতের তারিখ/সময় দেওয়া যাবে না', en: 'Date/time cannot be in the future', hi: 'भविष्य की तारीख/समय नहीं' },
+  'due.method.cash': { bn: 'নগদ', en: 'Cash', hi: 'नकद' },
+  'due.method.upi': { bn: 'UPI', en: 'UPI', hi: 'UPI' },
+  'due.method.card': { bn: 'কার্ড', en: 'Card', hi: 'कार्ड' },
+  'due.method.bank': { bn: 'ব্যাংক', en: 'Bank', hi: 'बैंक' },
+  'due.payCount': { bn: '{n} টা কিস্তি', en: '{n} installments', hi: '{n} किस्ती' },
+
   // ── due entry (custom credit ledger, v2.23.0) ───────────────
   'dentry.add': { bn: 'নতুন বাকি', en: 'New Due', hi: 'नई उधार' },
   'dentry.edit': { bn: 'বাকি এডিট', en: 'Edit Due', hi: 'उधार बदलें' },
