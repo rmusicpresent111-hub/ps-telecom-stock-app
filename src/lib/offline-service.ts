@@ -142,6 +142,18 @@ export function isSaleType(type: string): boolean {
 }
 
 /**
+ * v2.47.0 audit — revenue-side sale predicate. A quantity CORRECTION
+ * (product-screen quantity edit mirrored as a ₹0 STOCK_OUT/STOCK_IN row)
+ * is bookkeeping, not a sale: it must feed stock-movement stats but NEVER
+ * revenue/profit/units-sold surfaces (a ₹10,000 purchase-price product
+ * corrected 10→9 used to book a ₹10,000 phantom LOSS on the dashboard,
+ * Profit tab, reports and the cash book).
+ */
+export function isRevenueSale(t: Pick<Transaction, 'type' | 'correction'>): boolean {
+  return isSaleType(t.type) && !t.correction;
+}
+
+/**
  * FIFO cost engine — "purches price ager gulo theke suruhobe, tarpor last
  * purches price asbe".
  *
@@ -168,7 +180,12 @@ function computeFifoUnitCost(
     .filter(t => t.productId === product.id)
     .sort((a, b) => {
       if (a.date !== b.date) return a.date.localeCompare(b.date);
-      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      const ca = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      if (ca !== 0) return ca;
+      // v2.47.0 audit: same-millisecond rows (one cart call mints several)
+      // used to fall back to IDB primary-key order — a random-suffix id —
+      // so per-line FIFO attribution could pick the wrong lot boundary.
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
     });
 
   for (const t of chron) {
@@ -580,6 +597,10 @@ export async function updateProductOffline(id: string, updates: Partial<Product>
       date: localDateStr(new Date(now)),
       userId: updates.userId,
       createdAt: now,
+      // v2.47.0 audit: flag the mirror row so every revenue/profit surface
+      // (isRevenueSale) skips it — an un-flagged row booked the correction's
+      // ₹0 revenue as a phantom loss of qty × purchase price.
+      correction: true,
       product: {
         id,
         name: updatedProduct.name,
@@ -773,14 +794,18 @@ export async function createTransactionOffline(transactionData: {
 }
 
 export async function getTransactionsOffline(userId: string, options?: { type?: string; productId?: string; from?: string; to?: string }): Promise<Transaction[]> {
-  let localTxns = await offlineTransactions.getAll(userId);
-
-  if (options?.type) localTxns = localTxns.filter(t => t.type === options.type);
-  if (options?.productId) localTxns = localTxns.filter(t => t.productId === options.productId);
-  if (options?.from) localTxns = localTxns.filter(t => t.date >= options.from!);
-  if (options?.to) localTxns = localTxns.filter(t => t.date <= options.to!);
-
-  return localTxnsToTransactions(localTxns);
+  const localTxns = await offlineTransactions.getAll(userId);
+  const txns = localTxnsToTransactions(localTxns);
+  // v2.47.0 audit fix: filter AFTER normalization — legacy rows store a full
+  // ISO timestamp in `date`; filtering on the raw value before
+  // localTxnsToTransactions sliced it made dated queries silently drop
+  // them (report ranges / category detail lost those rows entirely).
+  let out = txns;
+  if (options?.type) out = out.filter(t => t.type === options.type);
+  if (options?.productId) out = out.filter(t => t.productId === options.productId);
+  if (options?.from) out = out.filter(t => t.date >= options.from!);
+  if (options?.to) out = out.filter(t => t.date <= options.to!);
+  return out;
 }
 
 // ============ DASHBOARD (Local) ============
@@ -829,7 +854,7 @@ export async function getDashboardOffline(userId: string) {
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
   const sevenDaysAgoStr = localDateStr(sevenDaysAgo);
 
-  const saleTxns = transactions.filter(t => isSaleType(t.type) && t.date >= sevenDaysAgoStr);
+  const saleTxns = transactions.filter(t => isRevenueSale(t) && t.date >= sevenDaysAgoStr);
   const saleMap = new Map<string, { sales: number; quantity: number; profit: number }>();
   for (const t of saleTxns) {
     const existing = saleMap.get(t.date) || { sales: 0, quantity: 0, profit: 0 };
@@ -886,7 +911,7 @@ export async function getDashboardOffline(userId: string) {
   // Profit = totalAmount − (quantity × FIFO cost snapshot at sale time).
   // Both SELL and STOCK_OUT count — everyday sales are recorded via Stock Out.
   const todayProfit = todayTxns.reduce((sum, tx) => {
-    if (!isSaleType(tx.type)) return sum;
+    if (!isRevenueSale(tx)) return sum;
     // Same fallback as txnCostBasis(): legacy/imported rows without a price
     // snapshot cost the product's CURRENT purchase price — never ₹0-cost.
     const cost = (tx.quantity || 0)
@@ -1167,6 +1192,43 @@ export async function updateDueEntryOffline(
   };
 
   await offlineDueEntries.put(next);
+
+  // v2.47.0 audit fix: a rename that changes the GROUP KEY (mobile || name)
+  // used to orphan the customer's payment schedule — the plan card vanished
+  // ("Create schedule" showed as if none existed) and the shopkeeper would
+  // create a second, duplicate plan. Re-key the plan when no OTHER open
+  // bill/entry still holds the old key.
+  const planKeyOf = (x: { customerMobile?: string; customerName?: string }): string =>
+    (x.customerMobile || '').trim() || (x.customerName || '').trim() || 'walk-in';
+  const oldKey = planKeyOf(row);
+  const newKey = planKeyOf(next);
+  if (newKey !== oldKey) {
+    try {
+      const [otherEntries, allBills, allPlans] = await Promise.all([
+        offlineDueEntries.getAll(userId),
+        offlineBills.getAll(userId),
+        offlineDuePlans.getAll(userId),
+      ]);
+      const othersOnOldKey =
+        otherEntries.some(e => e.id !== row.id && (Number(e.amount) - Number(e.paidAmount || 0)) > DUE_EPS && planKeyOf(e) === oldKey) ||
+        allBills.some(b => (Number(b.dueAmount) || 0) > DUE_EPS && planKeyOf(b) === oldKey);
+      if (!othersOnOldKey) {
+        const plan = allPlans.find(p => (p.customerKey || '').trim() === oldKey);
+        if (plan) {
+          await offlineDuePlans.put({
+            ...plan,
+            customerKey: newKey,
+            customerName: (next.customerName || '').trim(),
+            customerMobile: (next.customerMobile || '').trim(),
+            updatedAt: new Date().toISOString(),
+            _synced: Date.now(),
+            _dirty: Date.now(),
+          });
+        }
+      }
+    } catch { /* re-keying is a repair — never block the entry save */ }
+  }
+
   notifyLocalDataChanged(userId);
   return { dueEntry: stripSync<DueEntry>(next) };
 }
@@ -1192,14 +1254,20 @@ function normalizePlanItems(raw: unknown): DuePlanItem[] {
       const amount = round2(Math.max(0, Number(r.amount) || 0));
       const item: DuePlanItem = {
         id: typeof r.id === 'string' && r.id ? r.id : `p${ix}-${Date.now().toString(36)}-${ix}`,
-        dueDate: typeof r.dueDate === 'string' ? r.dueDate.slice(0, 10) : '',
+        // v2.47.0 audit: strict date shape — a hand-edited backup with
+        // "2025-1-5" used to restore cleanly and then misfire the overdue
+        // compare (string compare) and print the raw string.
+        dueDate: typeof r.dueDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.dueDate) ? r.dueDate.slice(0, 10) : '',
         amount,
       };
+      // v2.47.0 audit: keep a collected slot's paidAt even when its amount
+      // was later edited down to ~0 — dropping it silently erased the
+      // collection progress from the plan view (the money stays in the ledger).
       const paidAt = typeof r.paidAt === 'string' && r.paidAt && Number.isFinite(Date.parse(r.paidAt)) ? r.paidAt : '';
-      if (amount > DUE_EPS && paidAt) item.paidAt = paidAt;
+      if (paidAt) item.paidAt = paidAt;
       return item;
     })
-    .filter(it => it.amount > DUE_EPS)
+    .filter(it => (it.amount > DUE_EPS || !!it.paidAt) && /^\d{4}-\d{2}-\d{2}$/.test(it.dueDate))
     .sort((a, b) => (a.dueDate || '9999-99-99').localeCompare(b.dueDate || '9999-99-99'));
 }
 
@@ -1224,6 +1292,12 @@ export async function saveDuePlanOffline(data: {
   /** Full replacement rows; per-item paidAt progress carries over by id. */
   items: { id?: string; dueDate: string; amount: number; paidAt?: string }[];
   note?: string;
+  /** v2.47.0 audit — when the addressed plan is missing (deleted on another
+   *  device between modal open and save), ADOPT any other plan for the same
+   *  customerKey instead of creating an invisible duplicate. Slot-marking
+   *  after a one-tap collect must NOT set this: re-creating a deleted plan
+   *  would resurrect it behind a tombstone. */
+  adoptExisting?: boolean;
 }): Promise<{ plan: DuePaymentPlan }> {
   const customerKey = (data.customerKey || '').trim();
   if (!customerKey) throw new Error('Customer key is required');
@@ -1235,22 +1309,33 @@ export async function saveDuePlanOffline(data: {
   }
 
   const now = new Date().toISOString();
-  let row: OfflineDBSchema['duePlans']['value'];
+  // v2.47.0 audit fix: resolve the TARGET plan — the addressed id, or (when
+  // adopting) any other plan sharing this customerKey. Two devices creating
+  // a schedule for the same customer offline used to sync TWO plans; the
+  // loser stayed invisible and undeletable forever (plansByKey first-wins).
+  let target: OfflineDBSchema['duePlans']['value'] | undefined;
   if (data.id) {
     const existing = await offlineDuePlans.getById(data.id);
-    if (!existing || existing.userId !== data.userId) throw new Error('Payment plan not found');
+    if (existing && existing.userId === data.userId) target = existing;
+  }
+  if (!target && data.adoptExisting) {
+    const all = await offlineDuePlans.getAll(data.userId);
+    target = all.find(p => (p.customerKey || '').trim() === customerKey);
+  }
+  let row: OfflineDBSchema['duePlans']['value'];
+  if (target) {
     // Carry each previously-collected installment's progress over by id
     // (same rule the due-entry schedule editor uses).
-    const prevById = new Map(normalizePlanItems(existing.items).map(it => [it.id, it] as const));
+    const prevById = new Map(normalizePlanItems(target.items).map(it => [it.id, it] as const));
     const carried = items.map(it => {
       const prev = prevById.get(it.id);
       return prev?.paidAt ? { ...it, paidAt: prev.paidAt } : it;
     });
     row = {
-      ...(existing as OfflineDBSchema['duePlans']['value']),
+      ...(target as OfflineDBSchema['duePlans']['value']),
       customerKey,
-      customerName: (data.customerName ?? existing.customerName ?? '').trim(),
-      customerMobile: (data.customerMobile ?? existing.customerMobile ?? '').trim(),
+      customerName: (data.customerName ?? target.customerName ?? '').trim(),
+      customerMobile: (data.customerMobile ?? target.customerMobile ?? '').trim(),
       frequency: freq,
       items: carried,
       ...(data.note !== undefined ? { note: (data.note || '').trim().slice(0, 200) } : {}),
@@ -1495,20 +1580,45 @@ export interface CashBook {
  *  - Expenses: every expense takes cash out (−).
  */
 export async function getCashBookOffline(userId: string, options?: { limit?: number }): Promise<CashBook> {
-  const [localBills, localTxns, localExpenses, localInvestments, localProducts] = await Promise.all([
+  // v2.47.0 audit fix: due ENTRIES load too — cash collected against a
+  // বাকি এন্ট্রি (recordDueEntryPaymentOffline) never appeared in the cash
+  // book before; the balance and the growth graph under-reported real cash.
+  const [localBills, localTxns, localExpenses, localInvestments, localProducts, localDueEntries] = await Promise.all([
     offlineBills.getAll(userId),
     offlineTransactions.getAll(userId),
     offlineExpenses.getAll(userId),
     offlineInvestments.getAll(userId),
     offlineProducts.getAll(userId),
+    offlineDueEntries.getAll(userId),
   ]);
 
   const products = localProducts.map(p => stripSync<Product>(p));
   const txns = localTxnsToTransactions(localTxns);
   const txnById = new Map(txns.map(t => [t.id, t]));
-  const billTxnIds = new Set(
-    localBills.map(b => b.transactionId).filter((x): x is string => typeof x === 'string' && x !== '')
-  );
+  // v2.47.0 audit fix: cart bills mint ONE SELL txn per line but only stored
+  // ids[0] — every sibling line used to leak into section 2 below as a
+  // "standalone sale" on top of the bill's own entry (balance inflated by
+  // the extra line totals). Collect every documented id (legacy single id +
+  // the v2.47 `transactionIds` array) into the exclusion set.
+  const billTxnIds = new Set<string>();
+  for (const b of localBills) {
+    if (typeof b.transactionId === 'string' && b.transactionId !== '') billTxnIds.add(b.transactionId);
+    if (Array.isArray(b.transactionIds)) {
+      for (const x of b.transactionIds) if (typeof x === 'string' && x !== '') billTxnIds.add(x);
+    }
+  }
+  // Legacy repair: pre-2.47 cart bills only carry ids[0] — their sibling
+  // lines are linkable by the EXACT same createdAt (minted together in one
+  // atomic call; a same-millisecond unrelated sale is practically impossible).
+  // These siblings must not double-count as standalone sales either.
+  const legacyCartCreatedAt = new Set<string>();
+  for (const b of localBills) {
+    if (
+      typeof b.transactionId === 'string' && b.transactionId !== '' &&
+      Array.isArray(b.items) && b.items.length > 1 &&
+      typeof b.createdAt === 'string' && b.createdAt !== ''
+    ) legacyCartCreatedAt.add(b.createdAt);
+  }
 
   const fifoProfit = (t: Transaction): number =>
     round2((t.totalAmount || 0) - (t.quantity || 0) * txnCostBasis(t, products));
@@ -1521,7 +1631,26 @@ export async function getCashBookOffline(userId: string, options?: { limit?: num
   for (const b of localBills) {
     const paid = round2(Number(b.paidAmount) || 0);
     if (paid <= 0) continue; // pure-due bill — nothing in cash yet
-    const tx = b.transactionId ? txnById.get(b.transactionId) : undefined;
+    // v2.47.0 audit fix: the profit line must cover EVERY documented txn —
+    // it used to read only ids[0], so multi-line cart bills showed the
+    // first line's FIFO profit and silently dropped the rest.
+    const docIds = new Set<string>([
+      ...(typeof b.transactionId === 'string' && b.transactionId !== '' ? [b.transactionId] : []),
+      ...(Array.isArray(b.transactionIds) ? (b.transactionIds.filter(x => typeof x === 'string') as string[]) : []),
+    ]);
+    let profit = 0;
+    for (const tid of docIds) {
+      const tx = txnById.get(tid);
+      if (tx && !tx.correction) profit += fifoProfit(tx);
+    }
+    if (docIds.size === 0 && legacyCartCreatedAt.has(b.createdAt || '')) {
+      // legacy cart bill whose sibling txns can't be linked by id — sum the
+      // same-millisecond group so the profit column still reflects all lines
+      for (const t of txns) {
+        if (t.createdAt === b.createdAt && isSaleType(t.type) && !billTxnIds.has(t.id) && !t.correction) profit += fifoProfit(t);
+      }
+    }
+    profit = round2(profit);
     const due = round2(Number(b.dueAmount) || 0);
     entries.push({
       id: `b:${b.id}`,
@@ -1532,7 +1661,7 @@ export async function getCashBookOffline(userId: string, options?: { limit?: num
       sub: due > 0 ? String(due) : '',
       cashIn: paid,
       cashOut: 0,
-      profit: tx ? fifoProfit(tx) : 0,
+      profit,
       due,
     });
   }
@@ -1540,8 +1669,9 @@ export async function getCashBookOffline(userId: string, options?: { limit?: num
   // 2) Sale transactions not documented by any bill (Stock-Out / instant SELL)
   //    — the full sell amount (profit included) lands in cash.
   for (const t of txns) {
-    if (!isSaleType(t.type)) continue;
+    if (!isRevenueSale(t)) continue; // v2.47.0: corrections are not sales
     if (billTxnIds.has(t.id)) continue; // the bill entry above already counts it
+    if (legacyCartCreatedAt.has(t.createdAt) && !billTxnIds.has(t.id)) continue; // legacy cart sibling line
     entries.push({
       id: `t:${t.id}`,
       kind: 'sale',
@@ -1554,6 +1684,31 @@ export async function getCashBookOffline(userId: string, options?: { limit?: num
       profit: fifoProfit(t),
       due: 0,
     });
+  }
+
+  // 2b) বাকি এন্ট্রি collections — v2.47.0 audit fix: standalone due-entry
+  //     payments are real cash-in but never showed up here (only BILL dues
+  //     fed the cash book via paidAmount). One entry per duePayment record.
+  for (const e of localDueEntries) {
+    const payments = Array.isArray(e.duePayments) ? e.duePayments : [];
+    for (const p of payments) {
+      const amount = round2(Number(p?.amount) || 0);
+      if (amount <= 0) continue;
+      const atMs = Date.parse(p.at || '') || 0;
+      const day = atMs ? localDateStr(new Date(atMs)) : (p.at || '').slice(0, 10);
+      entries.push({
+        id: `dp:${p.id || `${e.id}:${p.at}`}`,
+        kind: 'sale',
+        date: day || localDateStr(),
+        at: atMs,
+        title: e.productName ? `${e.customerName || 'Walk-in'} · ${e.productName}` : (e.customerName || 'Walk-in'),
+        sub: 'বাকি এন্ট্রি',
+        cashIn: amount,
+        cashOut: 0,
+        profit: 0,
+        due: 0,
+      });
+    }
   }
 
   // 3) Others Invest — extra cash brought into the business (+)
@@ -2036,7 +2191,7 @@ export async function getReportsOffline(userId: string, type: string, options?: 
 
       // SELL *and* STOCK_OUT earn revenue — everyday sales are recorded via
       // Stock Out, so reports must match the Dashboard/Profit surfaces.
-      if (isSaleType(t.type)) {
+      if (isRevenueSale(t)) {
         entry.revenue += t.totalAmount || 0;
         entry.cost += (t.quantity || 0) * costBasis;
         entry.profit += (t.totalAmount || 0) - (t.quantity || 0) * costBasis;
@@ -2081,7 +2236,7 @@ export async function getReportsOffline(userId: string, type: string, options?: 
       const entry = monthlyMap.get(month)!;
       const costBasis = txnCostBasis(t, products);
 
-      if (isSaleType(t.type)) {
+      if (isRevenueSale(t)) {
         entry.revenue += t.totalAmount || 0;
         entry.cost += (t.quantity || 0) * costBasis;
         entry.profit += (t.totalAmount || 0) - (t.quantity || 0) * costBasis;
@@ -2131,7 +2286,7 @@ export async function getReportsOffline(userId: string, type: string, options?: 
       const entry = categoryMap.get(catId)!;
       const costBasis = txnCostBasis(t, products);
 
-      if (isSaleType(t.type)) {
+      if (isRevenueSale(t)) {
         entry.revenue += t.totalAmount || 0;
         entry.cost += (t.quantity || 0) * costBasis;
         entry.profit += (t.totalAmount || 0) - (t.quantity || 0) * costBasis;
@@ -2531,6 +2686,10 @@ export async function createBillOffline(data: {
     dueAmount,
     note: (data.note ?? '').trim(),
     transactionId: data.transactionId,
+    // v2.47.0 audit: uniform id list (single-line bill → exactly one id) so
+    // the cash book and profit surfaces can trust the set without legacy
+    // special-casing.
+    transactionIds: [data.transactionId],
     date,
     shopSnapshot: {
       name: settings.shopName,
@@ -2541,6 +2700,12 @@ export async function createBillOffline(data: {
     },
     createdAt: now,
     updatedAt: now,
+    // v2.47.0 audit: stamp dirty at creation — without it the row's only
+    // lost-update guard (_dirty > 0) didn't exist until the pull echo
+    // stamped it, leaving a push→pull-failure window where a concurrent
+    // cloud row could overwrite this bill.
+    _synced: Date.now(),
+    _dirty: Date.now(),
   };
 
   void billsOs.put(bill);
@@ -2676,9 +2841,14 @@ export async function createCartBillOffline(data: {
     }
     const product = fresh;
     let remaining = normalizeSerialList(product.serialNumbers);
+    // v2.47.0 audit (perf): the FIFO history used to be re-read from IDB per
+    // cart line INSIDE the write tx — O(lines × all-user-txns) deserialization
+    // while holding a readwrite lock. Sell rows added during this tx don't
+    // create lots, so one read up front is exactly equivalent.
+    const fifoHistory = await transactionsStore.index('by-userId').getAll(data.userId);
     for (const e of lines) {
       // FIFO cost basis needs the history INSIDE the same atomic tx.
-      const history = await transactionsStore.index('by-userId').getAll(data.userId);
+      const history = fifoHistory;
       const fifoUnitCost = computeFifoUnitCost(product, history, e.quantity);
       const lineTotal = round2(e.quantity * e.unitPrice);
 
@@ -2780,6 +2950,11 @@ export async function createCartBillOffline(data: {
     dueAmount,
     note: (data.note ?? '').trim(),
     transactionId: createdTxnIds[0],
+    // v2.47.0 audit fix: cart bills mint ONE SELL txn PER LINE — storing only
+    // ids[0] made the cash book count every sibling line AGAIN as a
+    // standalone sale (balance inflated by the extra line totals). All ids
+    // now ride on the bill.
+    transactionIds: [...createdTxnIds],
     shopSnapshot: {
       name: settings.shopName,
       proprietorName: settings.proprietorName,
@@ -2790,6 +2965,9 @@ export async function createCartBillOffline(data: {
     date,
     createdAt: now,
     updatedAt: now,
+    // v2.47.0 audit: dirty stamp at creation (see createBillOffline).
+    _synced: Date.now(),
+    _dirty: Date.now(),
   };
   void billsOs.put(bill);
 
@@ -2918,7 +3096,9 @@ export async function exportBackupOffline(userId: string) {
     expenses: localExpenses.map(e => stripSync(e)),
     cashEntries: localCashEntries.map(e => stripSync(e)),
     serviceTransactions: localServiceTxns.map(s => stripSync(s)),
-    bills: localBills.map(b => b),
+    // v2.47.0 audit: strip sync bookkeeping here too — every other store
+    // does; import re-stamps _dirty anyway.
+    bills: localBills.map(b => stripSync(b as unknown as Record<string, unknown>)),
     staffPayments: localStaffPayments.map(p => stripSync(p)),
     investments: localInvestments.map(i => stripSync(i)),
     dueEntries: localDueEntries.map(d => stripSync(d)),
@@ -3190,11 +3370,48 @@ export async function importBackupOffline(userId: string, backupData: {
       ...billingSettings,
       userId,
       updatedAt: nowIso,
+      // v2.47.0 audit fix: stamp like every other restored store — without
+      // _dirty a pull landing between restore and push could silently revert
+      // the restored settings to the cloud's pre-restore copy.
+      _synced: now,
+      _dirty: Date.now(),
     } as OfflineDBSchema['billingSettings']['value']);
   }
 
   // Commits everything or nothing — any failed request rejects and rolls back.
   await tx.done;
+
+  // v2.47.0 audit fix (restore REPLACE semantics): queued tombstones for rows
+  // that the backup RESTORED used to kill those rows on the very next push
+  // (pendingDeletes ran before the push candidates, and a tomb whose ver
+  // tied/exceeded the import timestamp deleted the just-restored row locally
+  // AND in the cloud). The user restored this data on purpose — drop every
+  // queued delete that points at a row present in the backup. Deletes for
+  // rows ABSENT from the backup stay queued (restore = replace).
+  try {
+    const restoredPairs = new Set<string>();
+    const addPairs = (store: string, rows: { id?: string }[]) => {
+      for (const r of rows) if (r && typeof r.id === 'string' && r.id) restoredPairs.add(`${store}:${r.id}`);
+    };
+    addPairs('categories', catRows);
+    addPairs('products', prodRows);
+    addPairs('transactions', txnRows);
+    addPairs('expenses', expRows);
+    addPairs('cashEntries', cashRows);
+    addPairs('serviceTransactions', svcRows);
+    addPairs('bills', billRows);
+    addPairs('staffPayments', staffRows);
+    addPairs('investments', invRows);
+    addPairs('dueEntries', dueRows);
+    addPairs('extraIncome', eiRows);
+    addPairs('duePlans', planRows);
+    const pdTx = db.transaction('pendingDeletes', 'readwrite');
+    const pending = await pdTx.store.getAll();
+    for (const p of pending) {
+      if (p.userId === userId && restoredPairs.has(`${p.storeName}:${p.itemId}`)) void pdTx.store.delete(p.id);
+    }
+    await pdTx.done;
+  } catch { /* non-fatal — worst case the row re-deletes on push */ }
 
   notifyLocalDataChanged(userId);
   return { message: 'Backup imported successfully' };

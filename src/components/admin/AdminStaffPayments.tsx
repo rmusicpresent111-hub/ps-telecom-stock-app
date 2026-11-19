@@ -141,7 +141,6 @@ export default function AdminStaffPayments() {
   }, [rows, search]);
 
   const total = useMemo(() => filtered.reduce((s, p) => s + (p.amount || 0), 0), [filtered]);
-  const staffCount = useMemo(() => new Set(rows.map((p) => p.staffName)).size, [rows]);
   // v2.45.1 audit fix: the by-staff card (and its grand-total footer) must use
   // ONE basis. `byStaff` is the unfiltered range summary while `total` sums the
   // search-filtered rows — with a search active the footer no longer equalled
@@ -159,6 +158,10 @@ export default function AdminStaffPayments() {
     }
     return [...m.values()].sort((a, b) => b.total - a.total);
   }, [byStaff, filtered, search]);
+  // v2.47.0 audit fix: the header chip counted the RANGE rows while the card
+  // and footer used the search-filtered rows — with a search active the two
+  // disagreed. One basis (the same rows the money is summed from).
+  const staffCount = useMemo(() => new Set(staffRows.map((p) => p.name)).size, [staffRows]);
 
   const openAdd = () => {
     setEditing(null);

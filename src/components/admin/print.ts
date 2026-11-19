@@ -614,8 +614,19 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
   const expectedTotal = (bill.subtotal || 0) - disc + (gstOn && !inclusiveGst ? gstAmt : 0);
   const roundOff = Math.round(((bill.total || 0) - expectedTotal) * 100) / 100;
 
+  // v2.47.0 audit fix — discounted-bill reconciliation: the item grid used
+  // raw PRE-discount line totals while the totals plate worked on the
+  // discounted base, so a discounted GST invoice never summed up (grid Σ
+  // ≠ Sub Total, and the plate double-counted the discount). Each line now
+  // carries its proportional share of the discount; the plate shows the
+  // PRE-discount Sub Total with an explicit Less-Discount row below it.
+  const sub0 = bill.subtotal || 0;
+  const hasDisc = disc > 0.009;
+  const discFactor = hasDisc && sub0 > 0 ? Math.max(0, (sub0 - disc) / sub0) : 1;
+
   // per-item GST columns — inclusive: carve out of the price; exclusive: add on top
-  const calc = (total: number): { tx: number; gst: number | null; tot: number } => {
+  const calc = (raw: number): { tx: number; gst: number | null; tot: number } => {
+    const total = raw * discFactor;
     if (!gstOn) return { tx: total, gst: null, tot: total };
     if (inclusiveGst) {
       const tx = total / (1 + rate);
@@ -654,9 +665,20 @@ export function buildBillReceiptHtml(bill: Bill, _lang: AdminLang, settings?: Bi
   const cgstLbl = gstOn ? `CGST @ ${halfTxt}` : 'CGST Amt';
   const sgstLbl = gstOn ? `SGST @ ${halfTxt}` : 'SGST Amt';
 
+  // v2.47.0 audit: on a discounted EXCLUSIVE bill the Sub Total row shows the
+  // PRE-discount figure and the Discount row below subtracts it — so the
+  // printed plate sums to the grand total (before: the taxable base already
+  // netted the discount AND a separate -Discount row double-counted it).
+  // Inclusive bills keep the taxable+GST=total plate (the discount row is
+  // omitted there — the taxable value already nets it).
+  const showDiscRow = hasDisc && !inclusiveGst;
+  const sub3v1 = showDiscRow ? sub0 : taxableBase;
+  const sub3v2 = gstOn && !showDiscRow ? amt2(gstAmt) : dash;
+  const sub3v3 = showDiscRow ? amt2(sub0) : amt2(expectedTotal);
+
   const totRows = `
-    <div class="trow sub3"><span class="lbl">Sub Total</span><span class="c">:</span><span class="v1">${amtTrim(taxableBase)}</span><span class="v2">${gstOn ? amt2(gstAmt) : dash}</span><span class="v3">${amt2(expectedTotal)}</span></div>
-    ${disc > 0.009 ? `<div class="trow"><span class="lbl">Discount</span><span class="c">:</span><span class="val">-${amt2(disc)}</span></div>` : ''}
+    <div class="trow sub3"><span class="lbl">Sub Total</span><span class="c">:</span><span class="v1">${amtTrim(sub3v1)}</span><span class="v2">${sub3v2}</span><span class="v3">${sub3v3}</span></div>
+    ${showDiscRow ? `<div class="trow"><span class="lbl">Discount</span><span class="c">:</span><span class="val">-${amt2(disc)}</span></div>` : ''}
     <div class="trow"><span class="lbl">${esc(cgstLbl)}</span><span class="c">:</span><span class="val">${val(cgstV)}</span></div>
     <div class="trow"><span class="lbl">${esc(sgstLbl)}</span><span class="c">:</span><span class="val">${val(sgstV)}</span></div>
     <div class="trow"><span class="lbl">IGST Amt</span><span class="c">:</span><span class="val">${dash}</span></div>

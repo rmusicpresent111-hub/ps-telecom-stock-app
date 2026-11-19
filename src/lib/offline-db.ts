@@ -84,6 +84,8 @@ export interface OfflineDBSchema {
       userId: string;
       createdAt: string;
       product?: { id: string; name: string; purchasePrice: number; sellingPrice: number };
+      /** v2.47.0 audit — stock-correction mirror row (not a real sale). */
+      correction?: boolean;
       _synced: number;
       _dirty: number;
     };

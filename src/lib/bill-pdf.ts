@@ -323,14 +323,26 @@ export async function generateBillPdf(
 
   const tblTop = y;
   const headH = 15;
-  doc.setFillColor(...NAVY);
-  doc.rect(tblLeft, tblTop, tblW, headH, 'F');
-  txt('SL.', xNo + cNo / 2, tblTop + 10, { size: 6.2, style: 'bold', color: WHITE, align: 'center', cs: 0.4 });
-  txt('DESCRIPTION OF GOODS', xItem + 5, tblTop + 10, { size: 6.2, style: 'bold', color: WHITE, cs: 0.4 });
-  txt('QTY', xQty + cQty / 2, tblTop + 10, { size: 6.2, style: 'bold', color: WHITE, align: 'center', cs: 0.4 });
-  txt('RATE', xRate + cRate - 5, tblTop + 10, { size: 6.2, style: 'bold', color: WHITE, align: 'right', cs: 0.4 });
-  txt('PER', xPer + cPer / 2, tblTop + 10, { size: 6.2, style: 'bold', color: WHITE, align: 'center', cs: 0.4 });
-  txt('AMOUNT', xAmt + cAmt - 5, tblTop + 10, { size: 6.2, style: 'bold', color: WHITE, align: 'right', cs: 0.4 });
+  // v2.47.0 audit fix — MULTI-PAGE TABLE: a big cart used to grow rowY
+  // unbounded on the fixed A5 page and draw the items grid straight over the
+  // words/terms/QR bands. Rows now flow onto continuation pages (header
+  // re-drawn per page); the outer frame is drawn per page segment.
+  const PAGE_H = doc.internal.pageSize.getHeight();
+  // keep room on the LAST page for adjustments + grand plate + words + terms + QR
+  const TABLE_BOTTOM_LIMIT = PAGE_H - 150;
+  const frameSegments: { top: number; bottom: number }[] = [];
+  let segTop = tblTop;
+  const drawTableHeader = (top: number): void => {
+    doc.setFillColor(...NAVY);
+    doc.rect(tblLeft, top, tblW, headH, 'F');
+    txt('SL.', xNo + cNo / 2, top + 10, { size: 6.2, style: 'bold', color: WHITE, align: 'center', cs: 0.4 });
+    txt('DESCRIPTION OF GOODS', xItem + 5, top + 10, { size: 6.2, style: 'bold', color: WHITE, cs: 0.4 });
+    txt('QTY', xQty + cQty / 2, top + 10, { size: 6.2, style: 'bold', color: WHITE, align: 'center', cs: 0.4 });
+    txt('RATE', xRate + cRate - 5, top + 10, { size: 6.2, style: 'bold', color: WHITE, align: 'right', cs: 0.4 });
+    txt('PER', xPer + cPer / 2, top + 10, { size: 6.2, style: 'bold', color: WHITE, align: 'center', cs: 0.4 });
+    txt('AMOUNT', xAmt + cAmt - 5, top + 10, { size: 6.2, style: 'bold', color: WHITE, align: 'right', cs: 0.4 });
+  };
+  drawTableHeader(tblTop);
 
   let rowY = tblTop + headH;
   const items = bill.items.length ? bill.items : [{ productId: '', name: '—', quantity: 0, unitPrice: 0, total: 0 }];
@@ -340,6 +352,14 @@ export async function generateBillPdf(
     const sns = (item.serialNumbers || []).filter(Boolean);
     const catName = (item.categoryName || '').trim();
     const rowH = Math.max(16, nameLines.length * 9 + 7 + (catName ? 7 : 0) + (sns.length ? 7 : 0));
+    // page break — never let a row cross the bottom limit
+    if (idx > 0 && rowY + rowH > TABLE_BOTTOM_LIMIT) {
+      frameSegments.push({ top: segTop, bottom: rowY });
+      doc.addPage();
+      drawTableHeader(tblTop);
+      rowY = tblTop + headH;
+      segTop = tblTop;
+    }
 
     txt(String(idx + 1), xNo + cNo / 2, rowY + 11.5, { size: 7, color: INK, align: 'center' });
     txt(nameLines, xItem + 5, rowY + 11.5, { size: 7.6, color: NAVY_INK });
@@ -408,14 +428,17 @@ export async function generateBillPdf(
   txt(`GRAND TOTAL  Rs. ${formatMoney(bill.total)}`, splitMid + (tblRight - splitMid) / 2, rowY + 12, { size: 8, style: 'bold', color: WHITE, align: 'center', cs: 0.4 });
   rowY += splitH;
 
-  // outer frame + column separators over the whole table
+  // outer frame + column separators — per page segment (multi-page carts)
+  frameSegments.push({ top: segTop, bottom: rowY });
   doc.setDrawColor(...NAVY);
   doc.setLineWidth(1.1);
-  doc.rect(tblLeft, tblTop, tblW, rowY - tblTop, 'S');
-  line(xItem, tblTop, xItem, rowY, 0.5, BLUE_BORDER);
-  line(xQty, tblTop, xQty, rowY, 0.5, BLUE_BORDER);
-  line(xRate, tblTop, xRate, rowY, 0.5, BLUE_BORDER);
-  line(xPer, tblTop, xPer, rowY, 0.5, BLUE_BORDER);
+  for (const seg of frameSegments) {
+    doc.rect(tblLeft, seg.top, tblW, seg.bottom - seg.top, 'S');
+    line(xItem, seg.top, xItem, seg.bottom, 0.5, BLUE_BORDER);
+    line(xQty, seg.top, xQty, seg.bottom, 0.5, BLUE_BORDER);
+    line(xRate, seg.top, xRate, seg.bottom, 0.5, BLUE_BORDER);
+    line(xPer, seg.top, xPer, seg.bottom, 0.5, BLUE_BORDER);
+  }
   line(splitMid, rowY - splitH, splitMid, rowY, 1.1, NAVY);
 
   // ================= AMOUNT IN WORDS band =================

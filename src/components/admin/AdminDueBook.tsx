@@ -329,6 +329,14 @@ export default function AdminDueBook() {
     for (const p of plans) if (!m.has(p.customerKey)) m.set(p.customerKey, p);
     return m;
   }, [plans]);
+  /** v2.47.0 audit — plans whose customer has NO open due (group gone):
+   *  settled schedules + cross-device orphans. They used to vanish entirely
+   *  (undeletable, invisible) and a stale plan re-attached to the customer's
+   *  next due with months-old overdue chips. */
+  const settledPlans = useMemo(() => {
+    const openKeys = new Set(groups.map((g) => g.key));
+    return plans.filter((p) => !openKeys.has(p.customerKey));
+  }, [plans, groups]);
   /** v2.45.0 — newest installment across every open item of a group. */
   const lastPayments = useMemo(() => {
     const m = new Map<string, DuePaymentRecord>();
@@ -516,14 +524,24 @@ export default function AdminDueBook() {
     }
   };
 
-  /** Re-generate the modal rows from count/frequency/start — never erases
-   *  collection progress (paidAt carries over by row index). */
+  /** Re-generate the modal rows from count/frequency/start — v2.47.0 audit
+   *  fix: ALREADY-COLLECTED rows are preserved verbatim (dates, amounts,
+   *  paid stamps — they are historical facts recorded in the ledger) and
+   *  only the UNPAID portion is rebuilt over the remaining due. Shrinking
+   *  the count used to silently drop paid slots (progress vanished from the
+   *  plan while the money stayed in the ledger). */
   const regenPlan = (patch: Partial<Pick<PlanModalState, 'count' | 'freq' | 'start'>>) => {
     setPlanModal((p) => {
       if (!p) return p;
       const next = { ...p, ...patch };
       const count = Math.max(1, Math.min(PLAN_MAX_KISTI, Math.round(Number(next.count) || 1)));
-      return { ...next, count: String(count), rows: buildPlanRows(next.liveDue, count, next.freq, next.start, p.rows) };
+      const paidRows = p.rows.filter((r) => r.paidAt && /^\d{4}-\d{2}-\d{2}$/.test(r.dueDate) && (Number(r.amount) || 0) > 0);
+      const paidTotal = r2(paidRows.reduce((s, r) => s + (Number(r.amount) || 0), 0));
+      const remainDue = Math.max(0, r2(next.liveDue - paidTotal));
+      const freshCount = Math.max(0, count - paidRows.length);
+      const freshRows = freshCount > 0 ? buildPlanRows(remainDue, freshCount, next.freq, next.start) : [];
+      const rows = [...paidRows.map((r) => ({ ...r })), ...freshRows];
+      return { ...next, count: String(rows.length), rows };
     });
   };
 
@@ -553,14 +571,23 @@ export default function AdminDueBook() {
       return;
     }
     for (const r of rows) {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(r.dueDate) || !(Number(r.amount) > 0)) {
+      // v2.47.0 audit: amount must clear the service's DUE_EPS filter or the
+      // row is silently dropped at save ("Schedule saved" with one fewer
+      // kisti than the modal showed).
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(r.dueDate) || !(Number(r.amount) >= 0.01)) {
         adminToast(t('due.plan.needRow'), 'err');
         return;
       }
     }
-    const sum = r2(rows.reduce((s, r) => s + (Number(r.amount) || 0), 0));
-    if (sum > planModal.liveDue + EPS) {
-      adminToast(tf('due.plan.overAssigned', { amount: fmtMoney(r2(sum - planModal.liveDue)) }), 'err');
+    // v2.47.0 audit fix: the over-assignment guard counted ALREADY-COLLECTED
+    // slots against the LIVE due — but collected money is no longer part of
+    // the due, so after the first kisti the edit banner showed "exceeds by
+    // ₹X" permanently and Confirm was blocked (only escape: regen, which
+    // rebuilt the whole agreement). Only the UNPAID rows must fit the
+    // remaining due; paid rows are historical facts.
+    const unpaidSum = r2(rows.filter((r) => !r.paidAt).reduce((s, r) => s + (Number(r.amount) || 0), 0));
+    if (unpaidSum > planModal.liveDue + EPS) {
+      adminToast(tf('due.plan.overAssigned', { amount: fmtMoney(r2(unpaidSum - planModal.liveDue)) }), 'err');
       return;
     }
     setPlanBusy(true);
@@ -572,6 +599,9 @@ export default function AdminDueBook() {
         customerName: planModal.name,
         customerMobile: planModal.mobile,
         frequency: planModal.freq,
+        // v2.47.0: adopt any same-key plan if the addressed one vanished
+        // remotely between open and save — never leave an invisible duplicate.
+        adoptExisting: true,
         items: rows.map((r) => ({
           id: r.id,
           dueDate: r.dueDate,
@@ -928,11 +958,60 @@ export default function AdminDueBook() {
             </div>
           )
         ) : groups.length === 0 ? (
-          <div className="p-4 sm:p-5">
+          <div className="p-4 sm:p-5 space-y-3">
+            {/* v2.47.0 audit: with zero open dues the settled schedules still
+                list (view + delete) instead of vanishing under the empty state. */}
+            {settledPlans.map((plan) => (
+              <div key={plan.id} className="rounded-lg border border-[var(--psa-border)] bg-[var(--psa-card)] px-3 py-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-bold text-[var(--psa-ink)] inline-flex items-center gap-1.5">
+                    <CalendarClock size={13} className="text-[#16A34A]" /> {t('due.plan.title')}
+                    <span className="text-[var(--psa-faint)] font-normal">· {plan.customerName || plan.customerMobile || plan.customerKey}</span>
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <Badge tone="green">{t('due.plan.settled')}</Badge>
+                    <Btn size="sm" variant="ghost" onClick={() => setPlanDeleting(plan)} aria-label={t('c.delete')}>
+                      <Trash2 size={13} />
+                    </Btn>
+                  </div>
+                </div>
+                <p className="text-[10px] text-[var(--psa-faint)] mt-1 tabular-nums">
+                  {tf('due.plan.progress', { paid: plan.items.filter((x) => !!x.paidAt).length, total: plan.items.length })}
+                  {' · '}{t('due.plan.doneAll')}
+                </p>
+              </div>
+            ))}
             <EmptyState icon={<CheckCircle2 size={22} />} title={t('due.noDue')} />
           </div>
         ) : (
           <div className="divide-y divide-[var(--psa-line)] max-h-[68vh] overflow-y-auto">
+            {/* v2.47.0 audit fix — SETTLED/ORPHAN schedules: plans whose customer
+              has no open due never rendered (the group disappears once settled),
+              so "settled slots show বাকি শেষ" could never appear, the plan was
+              undeletable, and a stale plan silently re-attached (old overdue
+              chips) when the customer returned with a NEW due. They list here. */}
+            {settledPlans.map((plan) => (
+              <div key={plan.id} className="px-4 sm:px-5 py-3">
+                <div className="rounded-lg border border-[var(--psa-border)] bg-[var(--psa-card)] px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-bold text-[var(--psa-ink)] inline-flex items-center gap-1.5">
+                      <CalendarClock size={13} className="text-[#16A34A]" /> {t('due.plan.title')}
+                      <span className="text-[var(--psa-faint)] font-normal">· {plan.customerName || plan.customerMobile || plan.customerKey}</span>
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <Badge tone="green">{t('due.plan.settled')}</Badge>
+                      <Btn size="sm" variant="ghost" onClick={() => setPlanDeleting(plan)} aria-label={t('c.delete')}>
+                        <Trash2 size={13} />
+                      </Btn>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-[var(--psa-faint)] mt-1 tabular-nums">
+                    {tf('due.plan.progress', { paid: plan.items.filter((x) => !!x.paidAt).length, total: plan.items.length })}
+                    {' · '}{t('due.plan.doneAll')}
+                  </p>
+                </div>
+              </div>
+            ))}
             {groups.map((g) => (
               <div key={g.key}>
                 <button
@@ -1245,7 +1324,9 @@ export default function AdminDueBook() {
         }
       >
         {planModal && (() => {
-          const sum = r2(planModal.rows.reduce((s, r) => s + (Number(r.amount) || 0), 0));
+          // v2.47.0 audit: banner on the UNPAID basis — matches the save
+          // guard; collected slots are history, not part of the remaining due.
+          const sum = r2(planModal.rows.filter((r) => !r.paidAt).reduce((s, r) => s + (Number(r.amount) || 0), 0));
           const over = r2(sum - planModal.liveDue);
           const per = Number(planModal.count) > 0 ? r2(planModal.liveDue / Number(planModal.count)) : 0;
           return (

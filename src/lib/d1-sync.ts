@@ -622,7 +622,17 @@ function collectPushCandidates(
   const out: PushItem[] = [];
   for (const row of rows) {
     const recordVer = recordVersionEpoch(row);
-    if (recordVer <= pushWm) continue; // unchanged since last push (device clock domain)
+    const dirtyAtCollect = typeof row._dirty === 'number' ? row._dirty : 0;
+    // v2.47.0 audit fix: rows carrying an UN-CLEARED _dirty are selected even
+    // when their recordVer sits below the push watermark. A small backwards
+    // clock jump (<60s) used to leave rows written during the blind window
+    // permanently below the watermark — the integrity pass skipped them too
+    // because the OLD row still existed in the cloud, so those writes never
+    // propagated until re-edited. markPushedRows clears _dirty after the
+    // server acknowledges, so this converges (re-push is an idempotent
+    // conditional UPSERT); oversized payloads keep their stamp and simply
+    // warn again each cycle.
+    if (recordVer <= pushWm && !(dirtyAtCollect > 0)) continue; // unchanged since last push (device clock domain)
     // v2.17.0 SERVER-DOMAIN VERSIONS: the outgoing cloud version is normalised
     // to push time (server clock). Previously the cloud version was the origin
     // device's LOCAL record time — a device with a behind clock wrote rows
@@ -632,7 +642,6 @@ function collectPushCandidates(
     const pushVer = Math.max(recordVer, nowMs());
     const sv = typeof row._sv === 'number' ? row._sv : 0;
     if (sv && sv >= pushVer) continue; // echo guard: row came from the cloud unchanged
-    const dirtyAtCollect = typeof row._dirty === 'number' ? row._dirty : 0;
     // resurrection guard: a newer tombstone for this id exists — drop locally instead.
     // 🔒 v2.14.0: the guard NEVER applies to categories — they are immortal,
     // so a stale tombstone must not block publishing a live category either.
@@ -1005,7 +1014,22 @@ async function applyPulledRow(
     payload._sv = ver;
     payload._dirty = 0;
     payload._synced = Date.now();
-    await db.put('billingSettings', payload as unknown as OfflineDBSchema['billingSettings']['value']);
+    // v2.47.0 audit fix: the guard read above and this write were separate
+    // transactions — a local edit stamping _dirty between the two was
+    // silently overwritten by the cloud payload. Re-check inside the write tx.
+    const tx = db.transaction('billingSettings', 'readwrite');
+    try {
+      const fresh = (await tx.store.get(DEFAULT_USER_ID)) as unknown as Row | undefined;
+      if (fresh && typeof fresh._dirty === 'number' && fresh._dirty > 0) {
+        tx.abort();
+        tx.done.catch(() => {});
+        return false; // the local edit wins — it pushes next cycle
+      }
+      void tx.store.put(payload as unknown as OfflineDBSchema['billingSettings']['value']);
+      await tx.done;
+    } catch {
+      return false; // aborted by the dirty re-check or a write failure
+    }
     return true;
   }
 
@@ -1042,9 +1066,24 @@ async function applyPulledRow(
   payload._dirty = 0;
   payload._synced = Date.now();
   payload.userId = DEFAULT_USER_ID; // v2.17.0: legacy userId rows stay visible
+  // v2.47.0 audit fix: TOCTOU — the _dirty guard read and this put ran in
+  // DIFFERENT transactions. A user write stamping _dirty between the two was
+  // overwritten by the cloud payload and, already marked synced, never
+  // re-pushed: the payment vanished silently. The re-check now runs inside
+  // the same write transaction that applies the row.
   const tx = db.transaction(store as 'products', 'readwrite');
-  void tx.store.put(payload as unknown as OfflineDBSchema['products']['value']);
-  await tx.done;
+  try {
+    const fresh = (await tx.store.get(id)) as unknown as Row | undefined;
+    if (fresh && typeof fresh._dirty === 'number' && fresh._dirty > 0) {
+      tx.abort();
+      tx.done.catch(() => {});
+      return false; // the un-pushed local edit wins — it pushes next cycle
+    }
+    void tx.store.put(payload as unknown as OfflineDBSchema['products']['value']);
+    await tx.done;
+  } catch {
+    return false; // aborted by the dirty re-check or a write failure
+  }
   return true;
 }
 
@@ -1171,11 +1210,25 @@ async function pullOnce(syncId: string): Promise<{ ok: boolean; error?: string }
     const db = await getOfflineDB();
     let maxVer = pullWatermark;
 
+    // v2.47.0 audit fix — keyset pagination: the old loop advanced the
+    // watermark to the page's MAX updated_at and re-queried with a strictly
+    // greater comparison, so rows sharing the page's max ver beyond row 400
+    // (bulk restore/import: hundreds of rows stamped the same instant) were
+    // NEVER delivered by the watermark path. The cursor now continues at
+    // (updated_at, store, id) — nothing at or after the page boundary is
+    // skipped, regardless of ver ties.
+    let cursor: { ver: number; store: string; id: string } | null = null;
+
     for (;;) {
-      const rows = await d1QuerySafe<PullRow>(
-        'SELECT store, id, payload, updated_at AS ver FROM sync_data WHERE user_id=? AND updated_at>? ORDER BY updated_at ASC LIMIT ?',
-        [syncId, pullWatermark, PULL_PAGE_LIMIT]
-      );
+      const rows = cursor
+        ? await d1QuerySafe<PullRow>(
+            'SELECT store, id, payload, updated_at AS ver FROM sync_data WHERE user_id=? AND (updated_at > ? OR (updated_at = ? AND (store > ? OR (store = ? AND id > ?)))) ORDER BY updated_at ASC, store ASC, id ASC LIMIT ?',
+            [syncId, cursor.ver, cursor.ver, cursor.store, cursor.store, cursor.id, PULL_PAGE_LIMIT]
+          )
+        : await d1QuerySafe<PullRow>(
+            'SELECT store, id, payload, updated_at AS ver FROM sync_data WHERE user_id=? AND updated_at>? ORDER BY updated_at ASC, store ASC, id ASC LIMIT ?',
+            [syncId, pullWatermark, PULL_PAGE_LIMIT]
+          );
       for (const r of rows) {
         const ver = Number(r.ver);
         maxVer = Math.max(maxVer, ver);
@@ -1220,6 +1273,8 @@ async function pullOnce(syncId: string): Promise<{ ok: boolean; error?: string }
         await applyPulledRow(r.store, r.id, ver, payload, key);
       }
       if (rows.length < PULL_PAGE_LIMIT) break;
+      const lastRow = rows[rows.length - 1];
+      cursor = { ver: Number(lastRow.ver), store: String(lastRow.store), id: String(lastRow.id) };
       pullWatermark = maxVer;
       await saveWatermark(WM_PULL, syncId, pullWatermark);
     }

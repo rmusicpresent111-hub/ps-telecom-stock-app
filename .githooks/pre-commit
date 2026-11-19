@@ -23,4 +23,30 @@ if [ -n "$blocked" ]; then
   exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# v2.47.0 AUTO-FIX layer — "code e next bug ele jeno auto fix hoy"
+# Every staged TS/TSX file is eslint --fix'd and RE-STAGED, so the commit
+# carries the repaired code. Type errors then BLOCK the commit (tsc gate
+# below), which keeps type-level bugs out of main entirely. Same guarantee
+# runs repo-wide after push: .github/workflows/auto-fix.yml, and locally:
+#   bun run fix
+# ---------------------------------------------------------------------------
+if [ -f node_modules/.bin/eslint ] && [ -f tsconfig.json ]; then
+  staged_ts=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(ts|tsx)$' || true)
+  if [ -n "$staged_ts" ]; then
+    # shellcheck disable=SC2086
+    npx eslint --fix $staged_ts >/dev/null 2>&1 || true
+    # re-stage whatever eslint repaired so the commit includes the fixes
+    git add -- $staged_ts 2>/dev/null || true
+
+    # hard gate — a type error must never enter history
+    if ! npx tsc --noEmit >/tmp/ps-precommit-tsc.log 2>&1; then
+      echo "✋ AUTO-FIX: commit BLOCKED — TypeScript errors (nothing was auto-fixable):"
+      head -12 /tmp/ps-precommit-tsc.log | sed 's/^/      /'
+      echo "   Full log: /tmp/ps-precommit-tsc.log · fix them, or run: bun run fix"
+      exit 1
+    fi
+  fi
+fi
+
 exit 0

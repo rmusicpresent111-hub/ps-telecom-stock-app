@@ -18,7 +18,7 @@
 // string starts a fresh cache, and the activate handler below deletes the
 // previous one, so old hashed /_next/static chunks can no longer accumulate
 // forever in a single never-changing cache. Bump alongside app-version.ts.
-const CACHE = 'ps-telecom-v2.46.0';
+const CACHE = 'ps-telecom-v2.47.0';
 // Base path derived from the SW scope — works both at root (APK / server) and
 // under a sub-path (GitHub Pages mirror, e.g. /ps-telecom-stock-app/).
 const BASE = new URL(self.registration.scope).pathname;

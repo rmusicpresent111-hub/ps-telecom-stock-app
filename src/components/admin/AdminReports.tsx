@@ -52,7 +52,7 @@ import {
   getCategoriesOffline,
   getStaffPaymentsOffline,
   localDateStr,
-  isSaleType,
+  isRevenueSale,
 } from '@/lib/offline-service';
 import { DEFAULT_USER_ID } from '@/lib/local-auth';
 import { useAdminStore } from '@/store/adminStore';
@@ -95,7 +95,7 @@ const TABS: { key: ReportTab; icon: React.ComponentType<{ size?: number | string
 ];
 
 /** Tabs that ignore the period selector (they show current/recent state). */
-const PERIODLESS: ReportTab[] = ['lowstock', 'purchases'];
+const PERIODLESS: ReportTab[] = ['lowstock', 'purchases', 'catqty'];
 
 function rangeFor(period: Period, customFrom: string, customTo: string): { from: string; to: string } {
   const today = localDateStr();
@@ -110,7 +110,12 @@ function rangeFor(period: Period, customFrom: string, customTo: string): { from:
     d.setDate(d.getDate() - 29);
     return { from: localDateStr(d), to: today };
   }
-  return customFrom <= customTo ? { from: customFrom, to: customTo } : { from: customTo, to: customFrom };
+  // v2.47.0 audit fix: an empty From used to become `''` → falsy → the
+  // service treated it as "no filter" and the report silently rendered
+  // ALL-TIME data while the header showed "→ {to}". Empty now means today.
+  const from = customFrom || today;
+  const to = customTo || today;
+  return from <= to ? { from, to } : { from: to, to: from };
 }
 
 function dayLabel(dateStr: string): string {
@@ -179,7 +184,7 @@ export default function AdminReports() {
 
   // ── shared sales math (per-transaction profit via FIFO cost snapshot) ──
   const salesStats = useMemo(() => {
-    const sales = txns.filter((x) => isSaleType(x.type));
+    const sales = txns.filter((x) => isRevenueSale(x));
     let totalSales = 0;
     let totalProfit = 0;
     const dayMap = new Map<string, { day: string; sales: number; profit: number }>();
@@ -265,7 +270,7 @@ export default function AdminReports() {
       }
     }
     for (const x of txns) {
-      if (!isSaleType(x.type)) continue;
+      if (!isRevenueSale(x)) continue;
       const name = prodCat.get(x.productId) || '';
       const row = name ? ensure(name) : unknown;
       const revenue = x.totalAmount || 0;
@@ -320,10 +325,12 @@ export default function AdminReports() {
     return rows;
   }, [products, lowByCat, prodCat, t]);
 
-  const chartData = useMemo(() => {
-    if (salesStats.byDay.length <= 15) return salesStats.byDay;
-    return salesStats.byDay.filter((_, i) => i % 2 === 0 || i === salesStats.byDay.length - 1);
-  }, [salesStats.byDay]);
+  // v2.47.0 audit fix: this used to FILTER THE DATA POINTS (every odd day
+  // dropped) — in the month view ~15 days of sales/profit silently vanished
+  // from the chart while the stat cards above kept the full totals. The
+  // chart now gets ALL days; only the tick labels thin out (XAxis interval).
+  const chartData = salesStats.byDay;
+  const chartTickInterval = chartData.length > 15 ? Math.ceil(chartData.length / 10) - 1 : 0;
 
   const periodLabel = `${fmtDate(range.from)} → ${fmtDate(range.to)}`;
 
@@ -869,7 +876,7 @@ export default function AdminReports() {
                 <div className="h-64 w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: -10, bottom: 0 }}>
-                      <XAxis dataKey="day" tick={{ fontSize: 11, fill: dark ? '#8E9AAB' : '#6B7280' }} axisLine={false} tickLine={false} />
+                      <XAxis dataKey="day" interval={chartTickInterval} tick={{ fontSize: 11, fill: dark ? '#8E9AAB' : '#6B7280' }} axisLine={false} tickLine={false} />
                       <YAxis tick={{ fontSize: 11, fill: dark ? '#8E9AAB' : '#6B7280' }} axisLine={false} tickLine={false} width={58} />
                       <RTooltip
                         formatter={(v: number, name: string) => [

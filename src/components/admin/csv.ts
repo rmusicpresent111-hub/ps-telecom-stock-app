@@ -8,7 +8,11 @@
  */
 
 export function csvEscape(v: unknown): string {
-  const s = String(v ?? '');
+  let s = String(v ?? '');
+  // v2.47.0 audit: neutralize spreadsheet formula injection — a customer or
+  // product name like "=HYPERLINK(...)" / "+cmd" / "@..." would EXECUTE when
+  // the exported CSV opens in Excel. Quote-prefixed cells are inert text.
+  if (/^[=+@\t\r-]/.test(s)) s = `'${s}`;
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 

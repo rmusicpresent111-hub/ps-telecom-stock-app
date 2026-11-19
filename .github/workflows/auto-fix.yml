@@ -1,0 +1,64 @@
+# PS TELECOM AUTO-FIX (v2.47.0) — "code e next bug ele jeno auto fix hoy"
+#
+# After every push to main this workflow re-runs the safe repair train
+# (eslint --fix ×2) on the repo. Anything it repairs is committed back
+# automatically with [skip ci] (no loop). tsc --noEmit runs last and its
+# failure turns the workflow red — a visible, permanent record that the
+# branch carries a type-level bug.
+#
+# Local layers of the same guarantee:
+#   - bun run fix        (scripts/auto-fix.js)
+#   - .githooks/pre-commit (staged TS/TSX auto-fixed before every commit)
+
+name: auto-fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'package.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-fix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  autofix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Auto-fix (eslint --fix, two passes)
+        run: |
+          bunx eslint src --fix || true
+          bunx eslint src --fix || true
+
+      - name: Commit auto-fixes
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "ps-telecom-auto-fix"
+            git config user.email "actions@users.noreply.github.com"
+            git add -A
+            git commit -m "chore: auto-fix (eslint --fix) [skip ci]"
+            git push
+          else
+            echo "Nothing to fix — tree already clean."
+          fi
+
+      - name: Type check (hard gate, red on failure)
+        run: npx tsc --noEmit

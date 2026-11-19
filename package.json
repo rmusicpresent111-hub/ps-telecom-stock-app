@@ -1,6 +1,6 @@
 {
   "name": "nextjs_tailwind_shadcn_ts",
-  "version": "2.46.0",
+  "version": "2.47.0",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
@@ -14,7 +14,9 @@
     "cap:open": "npx cap open android",
     "build:pages": "node scripts/build-web-pages.js",
     "guard": "node scripts/guard-check.js",
-    "guard:fix": "node scripts/guard-check.js --fix"
+    "guard:fix": "node scripts/guard-check.js --fix",
+    "fix": "node scripts/auto-fix.js",
+    "fix:check": "node scripts/auto-fix.js --check"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.1",

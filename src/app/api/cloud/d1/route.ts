@@ -244,12 +244,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // sync engine's single parameterized statements against sync_data. Reject
   // multi-statement strings and any DDL/PRAGMA/ATTACH so a same-origin
   // visitor cannot DROP/ALTER the database from devtools.
+  //
+  // v2.47.0 audit fix: the client's own `ensureSchema()` bootstrap DDL
+  // (CREATE TABLE/INDEX IF NOT EXISTS for the three sync_* tables) was
+  // rejected by this very guard since v2.35.0 — every FRESH device failed
+  // connectSync with "Forbidden SQL statement" and could never join/create
+  // a shop, and a dropped table could never self-heal. The exact idempotent
+  // bootstrap statements are now whitelisted; everything else stays blocked.
+  // Still safe: every caller must present the sync PIN (timing-safe) to get
+  // here, and the whitelist pins the full statement prefix — no arbitrary
+  // CREATE can slip through.
   {
     const noStrings = sql.replace(/'(?:[^']|'')*'/g, "''");
     if ((noStrings.match(/;/g) || []).length > 0) {
       return json({ ok: false, error: 'Multiple SQL statements are not allowed' });
     }
-    if (/\b(drop|alter|create|pragma|attach|detach|vacuum|reindex)\b/i.test(noStrings)) {
+    const trimmed = noStrings.trim();
+    const isBootstrapDdl =
+      /^CREATE TABLE IF NOT EXISTS (sync_data|sync_accounts|sync_tombstones)\s*\(/i.test(trimmed) ||
+      /^CREATE INDEX IF NOT EXISTS idx_sd_ver\b/i.test(trimmed);
+    if (!isBootstrapDdl && /\b(drop|alter|create|pragma|attach|detach|vacuum|reindex)\b/i.test(noStrings)) {
       return json({ ok: false, error: 'Forbidden SQL statement' });
     }
   }

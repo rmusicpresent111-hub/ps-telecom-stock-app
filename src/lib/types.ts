@@ -83,6 +83,11 @@ export interface Transaction {
   date: string;
   userId: string;
   createdAt: string;
+  /** v2.47.0 audit — quantity CORRECTION mirror row (a direct quantity edit
+   *  on the product screen), not a real sale: carries ₹0 revenue by design.
+   *  Every revenue/profit surface must exclude these or a ₹10k stock typo
+   *  books a ₹10k phantom loss. Additive optional — old rows decode untouched. */
+  correction?: boolean;
 }
 
 export interface User {
@@ -356,6 +361,11 @@ export interface Bill {
    *  no payment history at all. Additive optional field — old synced rows
    *  decode untouched. */
   duePayments?: DuePaymentRecord[];
+  /** v2.47.0 audit — ALL transaction ids this bill documents. Cart bills
+   *  mint one SELL txn per line but only stored ids[0] before, so the cash
+   *  book double-counted the sibling lines as standalone sales. Additive
+   *  optional — old synced rows decode untouched. */
+  transactionIds?: string[];
   shopSnapshot: { name: string; address: string; phone: string; gstNumber: string; proprietorName?: string };
   date: string;            // YYYY-MM-DD (local)
   createdAt: string;

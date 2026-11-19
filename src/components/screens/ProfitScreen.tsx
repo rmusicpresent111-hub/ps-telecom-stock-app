@@ -6,7 +6,7 @@ import { t } from '@/lib/i18n';
 import { Product, Transaction, ServiceTransaction, ExtraIncome } from '@/lib/types';
 import { TrendingUp, Calendar, ChevronDown, Package, IndianRupee, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { toast } from 'sonner';
-import { getTransactionsOffline, getProductsOffline, getServiceTransactionsOffline, getExtraIncomeOffline, localDateStr, isSaleType } from '@/lib/offline-service';
+import { getTransactionsOffline, getProductsOffline, getServiceTransactionsOffline, getExtraIncomeOffline, localDateStr, isRevenueSale } from '@/lib/offline-service';
 import { motion, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
 
@@ -161,7 +161,9 @@ export default function ProfitScreen() {
   }, [dateRange]);
 
   const sellTransactions = useMemo(() => {
-    return transactions.filter(t => isSaleType(t.type) && inRange(t.date));
+    // v2.47.0 audit: quantity CORRECTIONS (₹0 mirror rows) are not sales —
+    // an un-flagged count used to book a phantom loss of qty × purchase price.
+    return transactions.filter(t => isRevenueSale(t) && inRange(t.date));
   }, [transactions, inRange]);
 
   // Product map for quick lookup

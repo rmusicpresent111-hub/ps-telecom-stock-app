@@ -26,6 +26,7 @@ import {
   Cell,
 } from 'recharts';
 import { fmtMoney, fmtDate } from './admin-ui';
+import { useAdminStore } from '@/store/adminStore';
 
 export type Period = '7' | '30' | 'all';
 
@@ -114,7 +115,10 @@ export function DailyTallyChart({
   legend: { green?: string; red?: string; line: string };
   testId?: string;
 }) {
-  const dark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
+  // v2.47.0 audit fix: admin dark mode is applied as an `admin-dark` class on
+  // the shell wrapper — the documentElement `dark` check never matched, so
+  // every shared chart rendered light-theme tick/grid colors in admin dark.
+  const dark = useAdminStore((s) => s.theme === 'dark');
   const tickFill = dark ? '#8E9AAB' : '#6B7280';
   const gridStroke = dark ? 'rgba(142,154,171,0.15)' : 'rgba(107,114,128,0.18)';
   const tooltipStyle = {

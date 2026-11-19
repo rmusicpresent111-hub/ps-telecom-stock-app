@@ -89,12 +89,12 @@ export default function AdminSync() {
       csv += [
         csvEscape(p.name),
         csvEscape(catNames.get(p.categoryId) || ''),
-        p.quantity,
+        Number(p.quantity) || 0,
         csvEscape(p.boxNumber),
-        p.purchasePrice,
-        p.sellingPrice,
-        p.lowStockThreshold,
-        (p.quantity * p.purchasePrice).toFixed(2),
+        Number(p.purchasePrice) || 0,
+        Number(p.sellingPrice) || 0,
+        Number(p.lowStockThreshold) || 0,
+        ((Number(p.quantity) || 0) * (Number(p.purchasePrice) || 0)).toFixed(2),
       ].join(',') + '\n';
     }
     downloadBlob(csv, `ps-admin-products-${localDateStr()}.csv`, 'text/csv;charset=utf-8');
@@ -102,27 +102,35 @@ export default function AdminSync() {
   };
 
   const exportBillsCsv = async () => {
-    const bills = await getBillsOffline(DEFAULT_USER_ID);
-    let csv = '\uFEFF';
-    csv += 'Bill No,Date,Customer,Mobile,Items,Subtotal,Discount,GST,Total,Paid,Due,Payment\n';
-    for (const b of bills) {
-      csv += [
-        csvEscape(b.billNumber),
-        b.date,
-        csvEscape(b.customerName),
-        csvEscape(b.customerMobile),
-        csvEscape(b.items.map((i) => `${i.name} x${i.quantity}`).join('; ')),
-        b.subtotal.toFixed(2),
-        b.discountAmount.toFixed(2),
-        b.gstAmount.toFixed(2),
-        b.total.toFixed(2),
-        b.paidAmount.toFixed(2),
-        b.dueAmount.toFixed(2),
-        b.paymentMethod,
-      ].join(',') + '\n';
+    try {
+      const bills = await getBillsOffline(DEFAULT_USER_ID);
+      let csv = '\uFEFF';
+      csv += 'Bill No,Date,Customer,Mobile,Items,Subtotal,Discount,GST,Total,Paid,Due,Payment\n';
+      for (const b of bills) {
+        // v2.47.0 audit: legacy/imported rows can lack numeric fields —
+        // `b.subtotal.toFixed(2)` threw and the user got NOTHING (unhandled
+        // rejection) instead of a file. Guard every figure.
+        const num = (v: unknown): string => (Number(v) || 0).toFixed(2);
+        csv += [
+          csvEscape(b.billNumber),
+          b.date,
+          csvEscape(b.customerName),
+          csvEscape(b.customerMobile),
+          csvEscape((b.items || []).map((i) => `${i.name} x${i.quantity}`).join('; ')),
+          num(b.subtotal),
+          num(b.discountAmount),
+          num(b.gstAmount),
+          num(b.total),
+          num(b.paidAmount),
+          num(b.dueAmount),
+          b.paymentMethod,
+        ].join(',') + '\n';
+      }
+      downloadBlob(csv, `ps-admin-bills-${localDateStr()}.csv`, 'text/csv;charset=utf-8');
+      adminToast(t('sync.csvDone'));
+    } catch {
+      adminToast(t('c.error'), 'err');
     }
-    downloadBlob(csv, `ps-admin-bills-${localDateStr()}.csv`, 'text/csv;charset=utf-8');
-    adminToast(t('sync.csvDone'));
   };
 
   const exportJson = async () => {
