@@ -1,0 +1,33 @@
+{
+  "name": "PS TELECOM — Stock Management",
+  "short_name": "PS TELECOM",
+  "description": "Stock, billing, profit and customer due management for telecom shops — works offline, syncs across devices.",
+  "id": ".",
+  "start_url": ".",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#091413",
+  "theme_color": "#091413",
+  "lang": "bn",
+  "icons": [
+    {
+      "src": "pwa-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "pwa-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "pwa-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
