@@ -62,7 +62,11 @@ export const useAdminStore = create<AdminState>()(
     }),
     {
       name: 'ps-admin-store-v1',
-      version: 1,
+      // v2.45.1 audit fix: this MUST differ from previously-persisted states
+      // or zustand never calls `migrate` (it only runs on a version mismatch).
+      // The v2.44.0 'dueentry' mapping below was dead at version 1 — stale
+      // 'dueentry' sections hydrated unmapped and rendered a blank panel.
+      version: 2,
       // v2.16.0 removed the Database View section; v2.20.0 added 'cash' and
       // 'invest' — a stale persisted value (or anything unknown) must fall
       // back to the dashboard instead of rendering a blank content area.

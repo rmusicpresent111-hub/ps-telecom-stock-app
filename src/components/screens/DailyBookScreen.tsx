@@ -130,7 +130,6 @@ export default function DailyBookScreen() {
   const saveCashBusyRef = useRef(false);
   const handleSaveCash = async () => {
     if (saveCashBusyRef.current) return;
-    saveCashBusyRef.current = true;
     if (!user?.id) return;
     // A cleared date input would save an orphan row (date: '') that no period
     // filter can ever display again.
@@ -151,6 +150,10 @@ export default function DailyBookScreen() {
       return;
     }
 
+    // Set the busy guard only AFTER all validation early-returns: setting it
+    // before them would leave it stuck true on a failed validation and every
+    // later Save tap would silently do nothing.
+    saveCashBusyRef.current = true;
     setLoading(true);
     try {
       if (editingCashId) {
@@ -216,7 +219,6 @@ export default function DailyBookScreen() {
   const handleSaveExpense = async () => {
     if (saveExpenseBusyRef.current) return;
     if (!user?.id || !expenseAmount) return;
-    saveExpenseBusyRef.current = true;
 
     const amount = Number(expenseAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -228,6 +230,8 @@ export default function DailyBookScreen() {
       return;
     }
 
+    // Busy guard after validations — see handleSaveCash for the reason.
+    saveExpenseBusyRef.current = true;
     setLoading(true);
     try {
       if (editingExpenseId) {

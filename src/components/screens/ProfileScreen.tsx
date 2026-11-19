@@ -242,6 +242,13 @@ export default function ProfileScreen() {
         cashEntries: arr('cashEntries'),
         serviceTransactions: arr('serviceTransactions'),
         bills: arr('bills'),
+        // All four of these MUST be passed: the import wipes every store
+        // before writing, so an omitted key here would silently erase that
+        // store's data even when the backup file contains it.
+        staffPayments: arr('staffPayments'),
+        investments: arr('investments'),
+        dueEntries: arr('dueEntries'),
+        extraIncome: arr('extraIncome'),
         billingSettings: backupData.billingSettings,
       });
       // Refresh the UI-side category cache from the imported rows (Add Product's

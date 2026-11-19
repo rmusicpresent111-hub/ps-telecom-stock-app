@@ -22,6 +22,7 @@ import {
   dueEntryOutstanding, localDateStr,
 } from '@/lib/offline-service';
 import { fileToResizedDataUrl } from '@/lib/image-utils';
+import { generateRecordId } from '@/lib/id';
 import { openWhatsappChat } from '@/lib/bill-pdf';
 import { registerBackModal } from '@/lib/modal-back';
 import { Bill, DueEntry, DueScheduleItem } from '@/lib/types';
@@ -1190,7 +1191,9 @@ function EntryTab() {
                     <button
                       onClick={() => setForm(p => ({
                         ...p,
-                        schedule: [...p.schedule, { key: `s-${Date.now().toString(36)}`, dueDate: localDateStr(addMonthsSafe(new Date(), p.schedule.length + 1)), amount: '' }],
+                        // generateRecordId — two rapid taps could land in the same
+                        // millisecond and mint duplicate Date.now() keys.
+                        schedule: [...p.schedule, { key: `s-${generateRecordId()}`, dueDate: localDateStr(addMonthsSafe(new Date(), p.schedule.length + 1)), amount: '' }],
                       }))}
                       className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-amber-400/15 border border-amber-400/30 text-amber-300"
                     >

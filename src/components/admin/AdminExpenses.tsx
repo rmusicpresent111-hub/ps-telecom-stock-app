@@ -42,6 +42,15 @@ type ExpTab = 'list' | 'history';
 
 const CATEGORY_KEYS = ['exp.cat.rent', 'exp.cat.bill', 'exp.cat.salary', 'exp.cat.transport', 'exp.cat.other'];
 
+/** v2.45.1 audit fix: the mobile Daily Book stores raw category keys (rent,
+ *  transport, electricity…) — map the ones with a direct admin chip so the
+ *  edit form preselects the right category instead of defaulting to "Other". */
+const MOBILE_KEY_TO_ADMIN: Record<string, string> = {
+  rent: 'exp.cat.rent',
+  transport: 'exp.cat.transport',
+  electricity: 'exp.cat.bill',
+};
+
 const CAT_LABELS: Record<string, { bn: string; en: string; hi: string }> = {
   'exp.cat.rent': { bn: 'দোকান ভাড়া', en: 'Shop rent', hi: 'दुकान किराया' },
   'exp.cat.bill': { bn: 'বিদ্যুৎ/ফোন বিল', en: 'Electricity/Phone bill', hi: 'बिजली/फोन बिल' },
@@ -119,11 +128,12 @@ export default function AdminExpenses() {
 
   const openEdit = (e: Expense) => {
     setEditing(e);
-    const known = CATEGORY_KEYS.find((k) => catLabel(k, 'en').toLowerCase() === (e.category || '').toLowerCase());
+    const cat = (e.category || '').toLowerCase();
+    const known = CATEGORY_KEYS.find((k) => catLabel(k, 'en').toLowerCase() === cat);
     setForm({
       date: e.date,
       amount: String(e.amount),
-      category: known || 'exp.cat.other',
+      category: known || MOBILE_KEY_TO_ADMIN[cat] || 'exp.cat.other',
       description: e.description || '',
     });
     setFormOpen(true);
@@ -139,7 +149,17 @@ export default function AdminExpenses() {
     try {
       const category = catLabel(form.category, 'en');
       if (editing) {
-        await updateExpenseOffline(editing.id, { amount, category, description: form.description.trim() }, DEFAULT_USER_ID);
+        // v2.45.1 audit fix: a category the admin panel doesn't know (e.g. a
+        // mobile-app key like "food") preselects "Other" in the form — saving
+        // that default must NOT silently re-categorize the row, so send the
+        // original string back unchanged when the user didn't pick a chip.
+        const origKnown =
+          CATEGORY_KEYS.some((k) => catLabel(k, 'en').toLowerCase() === (editing.category || '').toLowerCase()) ||
+          !!MOBILE_KEY_TO_ADMIN[(editing.category || '').toLowerCase()];
+        const finalCategory = !origKnown && form.category === 'exp.cat.other'
+          ? (editing.category || '')
+          : category;
+        await updateExpenseOffline(editing.id, { amount, category: finalCategory, description: form.description.trim() }, DEFAULT_USER_ID);
         adminToast(t('c.saved'));
       } else {
         await createExpenseOffline({

@@ -38,6 +38,10 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 const CF_BASE = process.env.CLOUDFLARE_API_BASE || 'https://api.cloudflare.com/client/v4';
 const TIMEOUT_MS = 30_000;
 const MAX_SQL_LENGTH = 1_000_000;
+/** v2.45.1 audit: bound the whole request body — previously only `sql` was
+ *  capped and `params` could be unbounded (memory/upstream DoS). 3MB leaves
+ *  headroom above the sync engine's 450K-char row payloads (encrypted+base64). */
+const MAX_BODY_BYTES = 3_000_000;
 
 interface D1RequestBody {
   /** Ignored — credentials are server-side only since v2.28.0. */
@@ -46,7 +50,10 @@ interface D1RequestBody {
   apiToken?: string;
   sql?: string;
   params?: unknown[];
-  /** Sync PIN — required from cross-origin / non-browser callers. */
+  /** Sync PIN — required from EVERY caller (v2.45.1 audit: the old
+   *  same-origin exemption let any visitor of the site run arbitrary
+   *  DML from devtools without knowing the PIN). The app client already
+   *  sends its PIN on every request, so this changes nothing for it. */
   pin?: string;
 }
 
@@ -127,32 +134,6 @@ function json(payload: D1Response, status = 200): NextResponse {
 
 // ---- Auth helpers ----
 
-/**
- * Same-origin evidence from a real browser: Sec-Fetch-Site is set by modern
- * browsers and cannot be spoofed by page JS. When absent we fall back to an
- * Origin/host match (older browsers); requests with NEITHER header (native
- * shells, curl) are treated as NOT same-origin and must present the pin.
- */
-function isSameOrigin(req: NextRequest): boolean {
-  const secFetchSite = (req.headers.get('sec-fetch-site') || '').toLowerCase();
-  if (secFetchSite === 'same-origin' || secFetchSite === 'same-site') return true;
-  if (secFetchSite === 'cross-site') return false;
-
-  // No Sec-Fetch-Site — older browser or non-browser client.
-  const origin = req.headers.get('origin');
-  if (!origin) return false; // curl / native / no Origin → needs pin
-  try {
-    const originHost = new URL(origin).host;
-    const hostHeader = (req.headers.get('host') || '').trim();
-    // v2.35.0 audit: x-forwarded-host fallback REMOVED — it is a
-    // client-supplied header, so matching it let a native caller declare
-    // itself "same-origin" (Origin: https://evil.com + X-Forwarded-Host: evil.com).
-    return originHost === hostHeader;
-  } catch {
-    return false;
-  }
-}
-
 /** Constant-time pin comparison (both sides hashed to fixed length first). */
 function pinMatches(candidate: string, serverPin: string): boolean {
   const a = createHash('sha256').update(candidate).digest();
@@ -208,13 +189,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   let body: D1RequestBody;
   try {
+    // v2.45.1 audit: reject oversized bodies before parsing them.
+    const contentLength = Number(req.headers.get('content-length') || 0);
+    if (contentLength > MAX_BODY_BYTES) {
+      return json({ ok: false, error: 'Request body too large' }, 413);
+    }
     body = (await req.json()) as D1RequestBody;
   } catch {
     return json({ ok: false, error: 'Invalid request body' });
   }
 
-  // ---- Auth gate: same-origin browsers pass; everyone else needs the pin ----
-  if (!isSameOrigin(req)) {
+  // ---- Auth gate: EVERY caller must present the sync PIN ----
+  // v2.45.1 audit: the previous same-origin exemption meant anyone simply
+  // VISITING the deployed site could fire arbitrary DML (DELETE/INSERT/SELECT
+  // all passed the statement guard — only DDL was blocked) from devtools
+  // without knowing the PIN, and even forge plaintext rows that every device
+  // would apply. The client always sends its PIN, so this costs it nothing.
+  {
     const serverPin = (process.env.SYNC_PIN || process.env.NEXT_PUBLIC_SYNC_PIN || '').trim();
     if (!serverPin) {
       return json(

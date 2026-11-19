@@ -289,7 +289,9 @@ function AdminShellInner() {
   useEffect(() => {
     const raw = window.location.hash.replace('#', '') as AdminSection;
     const hash = raw === 'dueentry' ? 'due' : raw;
-    if (SECTION_TITLE[hash]) setSection(hash);
+    // Object.hasOwn — a plain truthy check walks the prototype chain, so a
+    // crafted hash like "#constructor" would pass and blank the panel.
+    if (Object.hasOwn(SECTION_TITLE, hash)) setSection(hash);
   }, []);
 
   const title = ta(SECTION_TITLE[section], lang);

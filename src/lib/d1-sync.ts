@@ -96,7 +96,7 @@ const PUSH_CONCURRENCY = 3;
 const CLOCK_OFFSET_MAX_MS = 48 * 60 * 60 * 1000;
 const HEAL_INTERVAL_MS = 6 * 60 * 60 * 1000; // self-heal sweep every 6h
 const HEAL_MAX_MISSING = 1000; // cap re-asserts per heal sweep
-const MAX_PAYLOAD_JSON = 200_000; // skip pathological rows (JSON chars)
+const MAX_PAYLOAD_JSON = 450_000; // skip pathological rows (JSON chars). v2.45.1 audit: 200K silently dropped media rows FOREVER — the 250KB payment QR (~345K JSON) and dual due photos (~190K) never synced, with zero signal. D1 rows tolerate 2MB, so 450K covers QR + photos + a growing kisti ledger; oversized rows now also log a visible warning.
 
 const SYNCED_STORES = [
   'categories',
@@ -652,7 +652,10 @@ function collectPushCandidates(
     const payload = stripForCloud(row);
     payload.id = row.id;
     payload.userId = (row.userId as string) ?? DEFAULT_USER_ID;
-    if (JSON.stringify(payload).length > MAX_PAYLOAD_JSON) continue; // pathological row
+    if (JSON.stringify(payload).length > MAX_PAYLOAD_JSON) {
+      console.warn(`[d1-sync] ${store}/${row.id} payload exceeds ${MAX_PAYLOAD_JSON} chars — skipped (shrink its photos/QR)`);
+      continue; // pathological row
+    }
     out.push({ store, id: String(row.id), payload, ver: pushVer, dirty: dirtyAtCollect });
   }
   return out;
@@ -987,9 +990,20 @@ async function applyPulledRow(
 
   if (store === 'billingSettings') {
     const local = (await db.get('billingSettings', DEFAULT_USER_ID)) as unknown as Row | undefined;
-    if (local && typeof local._sv === 'number' && local._sv >= ver) return false;
+    if (local) {
+      // v2.45.1 audit fix: the general path's guards were missing here — a
+      // cloud settings row could silently revert an un-pushed local edit
+      // (bill prefix, GST mode, admin PIN…). Same dirty + version gates now.
+      const localDirty = typeof local._dirty === 'number' && local._dirty > 0;
+      if (localDirty) return false; // never clobber an un-pushed local edit
+      const localSv = typeof local._sv === 'number' ? local._sv : 0;
+      if (localSv >= ver) return false; // already have this (or newer) version
+      if (localSv === 0 && recordVersionEpoch(local) > ver) return false;
+    }
     payload.userId = DEFAULT_USER_ID;
     payload._sv = ver;
+    payload._dirty = 0;
+    payload._synced = Date.now();
     await db.put('billingSettings', payload as unknown as OfflineDBSchema['billingSettings']['value']);
     return true;
   }
@@ -1124,7 +1138,10 @@ async function integrityPass(syncId: string, key: CryptoKey): Promise<void> {
         const payload = stripForCloud(row);
         payload.id = id;
         payload.userId = (row.userId as string) ?? DEFAULT_USER_ID;
-        if (JSON.stringify(payload).length > MAX_PAYLOAD_JSON) continue;
+        if (JSON.stringify(payload).length > MAX_PAYLOAD_JSON) {
+          console.warn(`[d1-sync] ${store}/${id} payload exceeds ${MAX_PAYLOAD_JSON} chars — skipped (shrink its photos/QR)`);
+          continue;
+        }
         extra.push({ store, id, payload, ver: pushVer });
         if (extra.length >= 50) break;
       }
@@ -1309,7 +1326,10 @@ async function healPass(syncId: string): Promise<void> {
         const payload = stripForCloud(row);
         payload.id = id;
         payload.userId = (row.userId as string) ?? DEFAULT_USER_ID;
-        if (JSON.stringify(payload).length > MAX_PAYLOAD_JSON) continue;
+        if (JSON.stringify(payload).length > MAX_PAYLOAD_JSON) {
+          console.warn(`[d1-sync] ${store}/${id} payload exceeds ${MAX_PAYLOAD_JSON} chars — skipped (shrink its photos/QR)`);
+          continue;
+        }
         missing.push({ store, id, payload, ver: Math.max(ver, nowMs()) });
         if (missing.length + pushed >= HEAL_MAX_MISSING) break;
       }

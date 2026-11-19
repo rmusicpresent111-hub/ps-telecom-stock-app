@@ -142,6 +142,23 @@ export default function AdminStaffPayments() {
 
   const total = useMemo(() => filtered.reduce((s, p) => s + (p.amount || 0), 0), [filtered]);
   const staffCount = useMemo(() => new Set(rows.map((p) => p.staffName)).size, [rows]);
+  // v2.45.1 audit fix: the by-staff card (and its grand-total footer) must use
+  // ONE basis. `byStaff` is the unfiltered range summary while `total` sums the
+  // search-filtered rows — with a search active the footer no longer equalled
+  // the sum of the displayed rows. No search → exactly the summary as before;
+  // with a search → re-aggregated from the same filtered rows as `total`.
+  const staffRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return byStaff;
+    const m = new Map<string, { name: string; total: number; count: number }>();
+    for (const p of filtered) {
+      const e = m.get(p.staffName) || { name: p.staffName, total: 0, count: 0 };
+      e.total += p.amount || 0;
+      e.count += 1;
+      m.set(p.staffName, e);
+    }
+    return [...m.values()].sort((a, b) => b.total - a.total);
+  }, [byStaff, filtered, search]);
 
   const openAdd = () => {
     setEditing(null);
@@ -246,7 +263,7 @@ export default function AdminStaffPayments() {
             { label: t('staff.paidCount'), right: true },
             { label: t('staff.total'), right: true },
           ],
-          rows: byStaff.map((s, i) => [String(i + 1), escHtml(s.name), String(s.count), fmtMoney(s.total)]),
+          rows: staffRows.map((s, i) => [String(i + 1), escHtml(s.name), String(s.count), fmtMoney(s.total)]),
         },
         {
           sectionTitle: t('staff.detailList'),
@@ -385,11 +402,11 @@ export default function AdminStaffPayments() {
         </AdminCard>
 
         <AdminCard title={t('staff.byStaff')}>
-          {byStaff.length === 0 ? (
+          {staffRows.length === 0 ? (
             <EmptyState icon={<Users size={22} />} title={t('staff.none')} />
           ) : (
             <div className="space-y-2.5 max-h-[58vh] overflow-y-auto pr-1">
-              {byStaff.map((s) => (
+              {staffRows.map((s) => (
                 <div key={s.name} className="flex items-center justify-between gap-2 rounded-lg border border-[var(--psa-field-border)] px-3 py-2">
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-[var(--psa-sub)] truncate">{s.name}</p>

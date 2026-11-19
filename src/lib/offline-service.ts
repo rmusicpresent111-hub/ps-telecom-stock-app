@@ -757,6 +757,11 @@ export async function createTransactionOffline(transactionData: {
     purchasePrice: lastPurchasePrice,
     ...(soldSerials.length ? { serialNumbers: remainingSerials, serialNumber: remainingSerials[0] ?? '' } : {}),
     updatedAt: now,
+    // v2.45.1 audit fix: a sale mutates stock/serials — the row MUST be
+    // stamped dirty or a concurrent pull (other device's push landing before
+    // ours) overwrites it via the dirty-guard and the sold stock reverts.
+    _synced: Date.now(),
+    _dirty: Date.now(),
   });
 
   // Commit — rejects (and rolls back both stores) if anything failed.
@@ -780,7 +785,7 @@ export async function getTransactionsOffline(userId: string, options?: { type?: 
 // ============ DASHBOARD (Local) ============
 
 export async function getDashboardOffline(userId: string) {
-  const [localProducts, localCategories, localTransactions, localBills, localDueEntries, localExtraIncome] = await Promise.all([
+  const [localProducts, localCategories, localTransactions, localBills, localDueEntries, localExtraIncome, localServiceTxns] = await Promise.all([
     offlineProducts.getAll(userId),
     offlineCategories.getAll(userId),
     offlineTransactions.getAll(userId),
@@ -790,6 +795,9 @@ export async function getDashboardOffline(userId: string) {
     offlineDueEntries.getAll(userId),
     // v2.38.0: extra income adds DIRECTLY to the displayed profit.
     offlineExtraIncome.getAll(userId),
+    // v2.45.1 audit fix: today's profit must match the Profit tab — service
+    // income/expense rows are part of that definition.
+    offlineServiceTransactions.getAll(userId),
   ]);
 
   const products = localProducts.map(p => stripSync<Product>(p));
@@ -884,6 +892,12 @@ export async function getDashboardOffline(userId: string) {
       * (tx.product?.purchasePrice ?? products.find(p => p.id === tx.productId)?.purchasePrice ?? 0);
     return sum + ((tx.totalAmount || 0) - cost);
   }, 0)
+    // v2.45.1 audit fix: service profit (repairing income / withdraw-deposit
+    // expense) dated today now counts here too — the Profit tab already
+    // included it, so the dashboard card and its Details tab disagreed.
+    + localServiceTxns
+        .filter(s => s.date === today)
+        .reduce((sum, s) => sum + (s.transactionType === 'income' ? (s.amount || 0) : -(s.amount || 0)), 0)
     // v2.38.0: extra income entries dated today are added DIRECTLY to profit.
     + (extraByDay.get(today) || 0);
 
@@ -1145,6 +1159,10 @@ export async function updateDueEntryOffline(
     ...(updates.note !== undefined ? { note: updates.note.trim() } : {}),
     ...(updates.date ? { date: updates.date } : {}),
     updatedAt: new Date().toISOString(),
+    // v2.45.1 audit fix: edits must be dirty or a concurrent cloud pull can
+    // revert them before this device pushes (lost-update guard in d1-sync).
+    _synced: Date.now(),
+    _dirty: Date.now(),
   };
 
   await offlineDueEntries.put(next);
@@ -1318,6 +1336,10 @@ export async function recordDueEntryPaymentOffline(
     schedule,
     duePayments: appendDuePaymentLedger(row, { amount: pay, at: payAt, method: opts?.method, note: opts?.note }),
     updatedAt: new Date().toISOString(),
+    // v2.45.1 audit fix: stamp dirty — a concurrent pull must never revert a
+    // recorded installment (paidAmount/duePayments lost-update guard).
+    _synced: Date.now(),
+    _dirty: Date.now(),
   };
 
   await offlineDueEntries.put(next);
@@ -2161,7 +2183,7 @@ export async function getBillingSettingsOffline(userId: string): Promise<Billing
 
 export async function saveBillingSettingsOffline(userId: string, updates: Partial<Omit<BillingSettings, 'userId' | 'updatedAt'>>): Promise<BillingSettings> {
   const current = await getBillingSettingsOffline(userId);
-  const next: BillingSettings = {
+  const next: BillingSettings & { _synced?: number; _dirty?: number } = {
     ...current,
     ...updates,
     // Never allow blank shop name — bill header must always render
@@ -2172,6 +2194,11 @@ export async function saveBillingSettingsOffline(userId: string, updates: Partia
     adminPin: (updates.adminPin ?? current.adminPin ?? '').replace(/\D/g, '').slice(0, 12) || '9732881732',
     userId,
     updatedAt: new Date().toISOString(),
+    // v2.45.1 audit fix: settings edits must be dirty — the sync pull path
+    // honours this guard, otherwise an un-pushed edit is overwritten by a
+    // concurrent cloud copy of the same row.
+    _synced: Date.now(),
+    _dirty: Date.now(),
   };
   const db = await getOfflineDB();
   await db.put('billingSettings', next);
@@ -2589,6 +2616,10 @@ export async function createCartBillOffline(data: {
       quantity: product.quantity - totalQty,
       ...(soldSerials.length ? { serialNumbers: remaining, serialNumber: remaining[0] ?? '' } : {}),
       updatedAt: now,
+      // v2.45.1 audit fix: stamp dirty — same lost-update class as single
+      // sales; see createTransactionOffline.
+      _synced: Date.now(),
+      _dirty: Date.now(),
     });
   }
   for (const p of touched.values()) void productsStore.put(p);
@@ -2738,6 +2769,10 @@ export async function markBillPaidOffline(
     // A full settlement makes the payment obvious in every list/report.
     paymentMethod: dueAmount === 0 && row.paymentMethod === 'due' ? 'cash' : row.paymentMethod,
     updatedAt: new Date().toISOString(),
+    // v2.45.1 audit fix: stamp dirty — a concurrent pull must never revert a
+    // recorded collection (paidAmount/duePayments lost-update guard).
+    _synced: Date.now(),
+    _dirty: Date.now(),
   } as OfflineDBSchema['bills']['value'];
 
   await db.put('bills', next);

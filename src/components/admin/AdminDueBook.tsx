@@ -20,7 +20,7 @@ import {
   CheckCircle2, LineChart as LineChartIcon, Banknote, ArrowDownLeft, ArrowUpRight,
   HandCoins, CalendarClock, Plus, CreditCard, Landmark, History as HistoryIcon,
 } from 'lucide-react';
-import { getBillsOffline, markBillPaidOffline, getDueEntriesOffline, recordDueEntryPaymentOffline, dueEntryOutstanding } from '@/lib/offline-service';
+import { getBillsOffline, markBillPaidOffline, getDueEntriesOffline, recordDueEntryPaymentOffline, dueEntryOutstanding, localDateStr } from '@/lib/offline-service';
 import { buildDueDaily } from '@/lib/cash-daily';
 import type { DueEntry, DuePaymentMethod, DuePaymentRecord } from '@/lib/types';
 import { DEFAULT_USER_ID } from '@/lib/local-auth';
@@ -60,6 +60,15 @@ const PAY_METHOD_META: Record<DuePaymentMethod, { icon: typeof Banknote; tone: '
 const todayLocal = (): string => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+/** Local YYYY-MM-DD of a UTC ISO timestamp (ledger `at`, `paidAt`, `updatedAt`).
+ *  String-slicing a UTC ISO gives the UTC day — wrong between local midnight
+ *  and UTC midnight (e.g. IST 00:00–05:30) — so convert through Date. Falls
+ *  back to the raw slice for unparseable input instead of "NaN-NaN-NaN". */
+const dayOfIso = (iso: string): string => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? String(iso).slice(0, 10) : localDateStr(d);
 };
 
 /** HH:MM for "now" (local) — used as the default installment time. */
@@ -139,7 +148,10 @@ export default function AdminDueBook() {
         getDueEntriesOffline(DEFAULT_USER_ID),
       ]);
       if (!alive) return;
-      setBills(rows.filter((b) => (b.dueAmount || 0) > EPS));
+      // ALL bills (settled ones too): the due LIST below filters open bills,
+      // but the day-wise history must keep settled bills' due-made and
+      // installment collections or they vanish once a bill is paid off.
+      setBills(rows);
       setDueEntries(entries);
     })();
     return () => {
@@ -156,6 +168,7 @@ export default function AdminDueBook() {
       return g;
     };
     for (const b of bills) {
+      if ((Number(b.dueAmount) || 0) <= EPS) continue; // settled bills don't clutter the due list
       const mobile = (b.customerMobile || '').trim();
       const name = (b.customerName || '').trim();
       const key = mobile || name || 'walk-in';
@@ -212,7 +225,7 @@ export default function AdminDueBook() {
     return m;
   }, [groups]);
   const overdueItems = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayLocal(); // local day — UTC slicing mislabels 00:00–05:30 IST
     let n = 0;
     for (const e of dueEntries) {
       if (dueEntryOutstanding(e) <= EPS) continue;
@@ -226,33 +239,39 @@ export default function AdminDueBook() {
   // ── history: day-wise due made/collected + running outstanding ──
   const daily = useMemo(() => {
     const events: { date: string; dueMade: number; collected: number }[] = [];
-    // open bill dues — remaining due attributed to the bill's own date;
-    // day-end balance still converges EXACTLY to today's real outstanding
+    // bill dues — ALL bills (settled included, so their history rows survive):
+    // the principal that went to due at bill time is `dueAmount + Σ(duePayments)`
+    // (paidAmount = paid-at-creation + every installment), NOT the remaining
+    // `dueAmount` — pushing the remaining due AND the installments subtracted
+    // each installment twice and the day-end balance landed below the real
+    // outstanding (₹1000 bill, ₹400 kisti → showed ₹200 outstanding, real ₹600).
     for (const b of bills) {
-      if ((b.dueAmount || 0) > EPS) events.push({ date: b.date, dueMade: Number(b.dueAmount) || 0, collected: 0 });
-      // v2.45.0 — bill collections dated by their ledger timestamp (exact,
-      // even for back-filled installments); falls through for legacy bills.
+      const paySum = ((b as Bill).duePayments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+      const made = (Number(b.dueAmount) || 0) + paySum;
+      if (made > EPS) events.push({ date: b.date, dueMade: made, collected: 0 });
+      // v2.45.0 — bill collections dated by their ledger timestamp's LOCAL day
+      // (exact, even for back-filled installments); falls through for legacy bills.
       for (const p of (b as Bill).duePayments || []) {
-        events.push({ date: String(p.at).slice(0, 10), dueMade: 0, collected: Number(p.amount) || 0 });
+        events.push({ date: dayOfIso(p.at), dueMade: 0, collected: Number(p.amount) || 0 });
       }
     }
     // standalone due entries — full amount on creation date
     for (const e of dueEntries) {
       if ((Number(e.amount) || 0) > 0) events.push({ date: e.date, dueMade: Number(e.amount) || 0, collected: 0 });
-      // v2.45.0 — collections dated by the ledger's exact date+time
+      // v2.45.0 — collections dated by the ledger's exact date+time (local day)
       for (const p of e.duePayments || []) {
-        events.push({ date: String(p.at).slice(0, 10), dueMade: 0, collected: Number(p.amount) || 0 });
+        events.push({ date: dayOfIso(p.at), dueMade: 0, collected: Number(p.amount) || 0 });
       }
       // legacy fallback (pre-2.45 rows without a ledger): collections dated
       // by each installment's paidAt (exact when paid in one go)
       if (!(e.duePayments || []).length) {
         for (const it of e.schedule || []) {
           const got = Number(it.paidAmount) || 0;
-          if (got > 0 && it.paidAt) events.push({ date: String(it.paidAt).slice(0, 10), dueMade: 0, collected: got });
+          if (got > 0 && it.paidAt) events.push({ date: dayOfIso(it.paidAt), dueMade: 0, collected: got });
         }
         // schedule-less entries: collection dated by last update (best effort)
         const noSched = (e.schedule || []).length === 0 ? Number(e.paidAmount) || 0 : 0;
-        if (noSched > 0 && e.updatedAt) events.push({ date: String(e.updatedAt).slice(0, 10), dueMade: 0, collected: noSched });
+        if (noSched > 0 && e.updatedAt) events.push({ date: dayOfIso(e.updatedAt), dueMade: 0, collected: noSched });
       }
     }
     return buildDueDaily(events);
@@ -517,7 +536,7 @@ export default function AdminDueBook() {
                   <div className="flex items-center gap-2 shrink-0">
                     {lastPayments.get(g.key) && (
                       <span className="hidden md:inline-flex items-center gap-1 text-[10px] font-semibold text-[#16A34A] bg-[var(--psa-soft-green)] rounded-full px-2 py-0.5 tabular-nums">
-                        {t('due.payLast')} {fmtMoney(lastPayments.get(g.key)!.amount)} · {fmtDate(String(lastPayments.get(g.key)!.at).slice(0, 10))}
+                        {t('due.payLast')} {fmtMoney(lastPayments.get(g.key)!.amount)} · {fmtDate(dayOfIso(lastPayments.get(g.key)!.at))}
                       </span>
                     )}
                     <span className="text-sm font-bold text-[#DC2626] tabular-nums">{fmtMoney(g.totalDue)}</span>
